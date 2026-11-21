@@ -27,28 +27,32 @@ fn test_red_adversarial_nema_syntax_rejection() {
 
     // 攻击性注入 1: 字段间未转义双空格 (NEMA 语法禁止)
     let bad_double_space = " \\1 1\n\\%2\n\\# Key Val\nA  B\n\n\n";
-    let res1 = ws.coedit_full(FullCoEditRequest {
-        file_id: file.into(),
-        author: "malicious_agent".into(),
-        new_text: bad_double_space.into(),
-        base_revision: Some(1),
-        op_id: Some("attack-001".into()),
-        mode: Some(CollabMode::Nema),
-    }).unwrap();
+    let res1 = ws
+        .coedit_full(FullCoEditRequest {
+            file_id: file.into(),
+            author: "malicious_agent".into(),
+            new_text: bad_double_space.into(),
+            base_revision: Some(1),
+            op_id: Some("attack-001".into()),
+            mode: Some(CollabMode::Nema),
+        })
+        .unwrap();
 
     assert_eq!(res1["ok"], false, "Red Check: 非法连续双空格必须被拒绝");
     assert_eq!(res1["status"], "REJECTED_NEMA_SYNTAX_ERROR");
 
     // 攻击性注入 2: 正文域注入 TAB 字符 (TAB 专供域控制，正文严格使用 ASCII 空格)
     let bad_tab = " \\1 1\n\\%2\n\\# Key Val\nA\tB\n\n\n";
-    let res2 = ws.coedit_full(FullCoEditRequest {
-        file_id: file.into(),
-        author: "malicious_agent".into(),
-        new_text: bad_tab.into(),
-        base_revision: Some(1),
-        op_id: Some("attack-002".into()),
-        mode: Some(CollabMode::Nema),
-    }).unwrap();
+    let res2 = ws
+        .coedit_full(FullCoEditRequest {
+            file_id: file.into(),
+            author: "malicious_agent".into(),
+            new_text: bad_tab.into(),
+            base_revision: Some(1),
+            op_id: Some("attack-002".into()),
+            mode: Some(CollabMode::Nema),
+        })
+        .unwrap();
 
     assert_eq!(res2["ok"], false, "Red Check: TAB 字符注入必须被拒绝");
     assert_eq!(res2["status"], "REJECTED_NEMA_SYNTAX_ERROR");
@@ -70,14 +74,16 @@ fn test_green_nema_concurrent_safe_coedit() {
 
     // Agent A (Claude) 基于 Rev 1 在后面追加 Beta 记录
     let agent_a_text = " \\1 1\n\\%2\n\\# Key Val\nAlpha 100\nBeta 200\n\n\n";
-    let res_a = ws.coedit_full(FullCoEditRequest {
-        file_id: file.into(),
-        author: "claude-3-7-sonnet".into(),
-        new_text: agent_a_text.into(),
-        base_revision: Some(1),
-        op_id: Some("claude-nema-1".into()),
-        mode: Some(CollabMode::Nema),
-    }).unwrap();
+    let res_a = ws
+        .coedit_full(FullCoEditRequest {
+            file_id: file.into(),
+            author: "claude-3-7-sonnet".into(),
+            new_text: agent_a_text.into(),
+            base_revision: Some(1),
+            op_id: Some("claude-nema-1".into()),
+            mode: Some(CollabMode::Nema),
+        })
+        .unwrap();
 
     assert_eq!(res_a["ok"], true);
     assert_eq!(res_a["revision"], 2);
@@ -85,14 +91,16 @@ fn test_green_nema_concurrent_safe_coedit() {
 
     // Agent B (GPT-4o) 同时基于旧的 Rev 1 在后面追加 Gamma 记录 (未感知 Rev 2)
     let agent_b_text = " \\1 1\n\\%2\n\\# Key Val\nAlpha 100\nGamma 300\n\n\n";
-    let res_b = ws.coedit_full(FullCoEditRequest {
-        file_id: file.into(),
-        author: "gpt-4o".into(),
-        new_text: agent_b_text.into(),
-        base_revision: Some(1), // 并发基准
-        op_id: Some("gpt-nema-1".into()),
-        mode: Some(CollabMode::Nema),
-    }).unwrap();
+    let res_b = ws
+        .coedit_full(FullCoEditRequest {
+            file_id: file.into(),
+            author: "gpt-4o".into(),
+            new_text: agent_b_text.into(),
+            base_revision: Some(1), // 并发基准
+            op_id: Some("gpt-nema-1".into()),
+            mode: Some(CollabMode::Nema),
+        })
+        .unwrap();
 
     assert_eq!(res_b["ok"], true);
     assert_eq!(res_b["revision"], 3);
@@ -102,8 +110,11 @@ fn test_green_nema_concurrent_safe_coedit() {
     // 验证合并产物的 NEMA 语法封闭性
     let final_text = res_b["content"].as_str().unwrap();
     let parse_res = nema_codec::parse_source(final_text);
-    assert!(parse_res.is_ok(), "Green Check: 合并产物必须通过严格 NEMA AST 语法校验");
-    
+    assert!(
+        parse_res.is_ok(),
+        "Green Check: 合并产物必须通过严格 NEMA AST 语法校验"
+    );
+
     let doc = parse_res.unwrap();
     assert_eq!(doc.domains.len(), 1);
     // 包含 Alpha, Beta, Gamma 三条记录
@@ -122,26 +133,30 @@ fn test_git_mode_red_green_conflict_and_clean_merge() {
     ws.open_doc(file, base, "rust", "system", "init");
 
     // Agent A 改 step1 (Rev 1 -> Rev 2)
-    let res_a = ws.coedit_full(FullCoEditRequest {
-        file_id: file.into(),
-        author: "claude".into(),
-        new_text: "fn step1() { 101 }\nfn step2() { 2 }\nfn step3() { 3 }\n".into(),
-        base_revision: Some(1),
-        op_id: None,
-        mode: Some(CollabMode::Git),
-    }).unwrap();
+    let res_a = ws
+        .coedit_full(FullCoEditRequest {
+            file_id: file.into(),
+            author: "claude".into(),
+            new_text: "fn step1() { 101 }\nfn step2() { 2 }\nfn step3() { 3 }\n".into(),
+            base_revision: Some(1),
+            op_id: None,
+            mode: Some(CollabMode::Git),
+        })
+        .unwrap();
     assert_eq!(res_a["ok"], true);
     assert_eq!(res_a["revision"], 2);
 
     // Green Case: Agent B 改 step3 (无重叠区间，自动合入)
-    let res_b_green = ws.coedit_full(FullCoEditRequest {
-        file_id: file.into(),
-        author: "gpt".into(),
-        new_text: "fn step1() { 1 }\nfn step2() { 2 }\nfn step3() { 303 }\n".into(),
-        base_revision: Some(1),
-        op_id: None,
-        mode: Some(CollabMode::Git),
-    }).unwrap();
+    let res_b_green = ws
+        .coedit_full(FullCoEditRequest {
+            file_id: file.into(),
+            author: "gpt".into(),
+            new_text: "fn step1() { 1 }\nfn step2() { 2 }\nfn step3() { 303 }\n".into(),
+            base_revision: Some(1),
+            op_id: None,
+            mode: Some(CollabMode::Git),
+        })
+        .unwrap();
     assert_eq!(res_b_green["ok"], true);
     assert_eq!(res_b_green["revision"], 3);
     assert_eq!(res_b_green["merged"], true);
@@ -151,16 +166,21 @@ fn test_git_mode_red_green_conflict_and_clean_merge() {
     assert!(c3.contains("step3() { 303 }"));
 
     // Red Case: Agent C 基于旧的 Rev 1 也修改 step1，但改成 999 (与 Claude 产生直接行冲突)
-    let res_c_red = ws.coedit_full(FullCoEditRequest {
-        file_id: file.into(),
-        author: "deepseek".into(),
-        new_text: "fn step1() { 999 }\nfn step2() { 2 }\nfn step3() { 3 }\n".into(),
-        base_revision: Some(1),
-        op_id: None,
-        mode: Some(CollabMode::Git),
-    }).unwrap();
+    let res_c_red = ws
+        .coedit_full(FullCoEditRequest {
+            file_id: file.into(),
+            author: "deepseek".into(),
+            new_text: "fn step1() { 999 }\nfn step2() { 2 }\nfn step3() { 3 }\n".into(),
+            base_revision: Some(1),
+            op_id: None,
+            mode: Some(CollabMode::Git),
+        })
+        .unwrap();
 
-    assert_eq!(res_c_red["ok"], false, "Red Check: 冲突修改时 ok 必须为 false");
+    assert_eq!(
+        res_c_red["ok"], false,
+        "Red Check: 冲突修改时 ok 必须为 false"
+    );
     assert_eq!(res_c_red["status"], "CONFLICT");
     assert!(res_c_red["conflicts"].as_u64().unwrap() >= 1);
     let c4 = res_c_red["content"].as_str().unwrap();
@@ -194,7 +214,10 @@ fn test_math_invariant_idempotence() {
     let r2 = ws.coedit_full(req).unwrap();
 
     assert_eq!(r1["revision"], r2["revision"], "幂等调用不得生成新的版本号");
-    assert_eq!(r1["content_hash"], r2["content_hash"], "幂等调用内容哈希必须完全一致");
+    assert_eq!(
+        r1["content_hash"], r2["content_hash"],
+        "幂等调用内容哈希必须完全一致"
+    );
     assert_eq!(r2["idempotent_replay"], true, "必须显式声明为幂等重放");
 }
 
@@ -211,14 +234,16 @@ fn test_math_invariant_revision_monotonicity() {
 
     for i in 1..=5 {
         let text = format!("{}\n", i);
-        let res = ws.coedit_full(FullCoEditRequest {
-            file_id: file.into(),
-            author: format!("agent_{i}"),
-            new_text: text,
-            base_revision: Some(prev_rev),
-            op_id: None,
-            mode: Some(CollabMode::Git),
-        }).unwrap();
+        let res = ws
+            .coedit_full(FullCoEditRequest {
+                file_id: file.into(),
+                author: format!("agent_{i}"),
+                new_text: text,
+                base_revision: Some(prev_rev),
+                op_id: None,
+                mode: Some(CollabMode::Git),
+            })
+            .unwrap();
 
         let cur_rev = res["revision"].as_u64().unwrap();
         let cur_hash = res["content_hash"].as_str().unwrap().to_string();
@@ -248,15 +273,18 @@ fn test_math_invariant_commutativity_disjoint_edits() {
         base_revision: Some(1),
         op_id: None,
         mode: Some(CollabMode::Git),
-    }).unwrap();
-    let res1 = ws1.coedit_full(FullCoEditRequest {
-        file_id: "test.rs".into(),
-        author: "B".into(),
-        new_text: "fn head() { 0 }\n\nfn middle() { 50 }\n\nfn tail() { 999 }\n".into(),
-        base_revision: Some(1), // 从 base 提交
-        op_id: None,
-        mode: Some(CollabMode::Git),
-    }).unwrap();
+    })
+    .unwrap();
+    let res1 = ws1
+        .coedit_full(FullCoEditRequest {
+            file_id: "test.rs".into(),
+            author: "B".into(),
+            new_text: "fn head() { 0 }\n\nfn middle() { 50 }\n\nfn tail() { 999 }\n".into(),
+            base_revision: Some(1), // 从 base 提交
+            op_id: None,
+            mode: Some(CollabMode::Git),
+        })
+        .unwrap();
 
     // 试验 2: Agent B 先改 tail，Agent A 后并发改 head (逆序)
     let mut ws2 = CoEditWorkspace::default();
@@ -268,20 +296,26 @@ fn test_math_invariant_commutativity_disjoint_edits() {
         base_revision: Some(1),
         op_id: None,
         mode: Some(CollabMode::Git),
-    }).unwrap();
-    let res2 = ws2.coedit_full(FullCoEditRequest {
-        file_id: "test.rs".into(),
-        author: "A".into(),
-        new_text: "fn head() { 111 }\n\nfn middle() { 50 }\n\nfn tail() { 100 }\n".into(),
-        base_revision: Some(1), // 从 base 提交
-        op_id: None,
-        mode: Some(CollabMode::Git),
-    }).unwrap();
+    })
+    .unwrap();
+    let res2 = ws2
+        .coedit_full(FullCoEditRequest {
+            file_id: "test.rs".into(),
+            author: "A".into(),
+            new_text: "fn head() { 111 }\n\nfn middle() { 50 }\n\nfn tail() { 100 }\n".into(),
+            base_revision: Some(1), // 从 base 提交
+            op_id: None,
+            mode: Some(CollabMode::Git),
+        })
+        .unwrap();
 
     let text1 = res1["content"].as_str().unwrap();
     let text2 = res2["content"].as_str().unwrap();
 
-    assert_eq!(text1, text2, "数学对称性：独立无交叉改动在两种提交时序下最终合并文本完全同构");
+    assert_eq!(
+        text1, text2,
+        "数学对称性：独立无交叉改动在两种提交时序下最终合并文本完全同构"
+    );
     assert!(text1.contains("fn head() { 111 }"));
     assert!(text1.contains("fn middle() { 50 }"));
     assert!(text1.contains("fn tail() { 999 }"));

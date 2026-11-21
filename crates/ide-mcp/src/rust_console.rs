@@ -55,7 +55,12 @@ impl RustConsoleEvaluator {
             "Empty script (no statements executed)".to_string()
         } else {
             let passed = steps.iter().filter(|s| s.ok).count();
-            format!("Executed {} statement(s): {} passed, {} failed", steps.len(), passed, steps.len() - passed)
+            format!(
+                "Executed {} statement(s): {} passed, {} failed",
+                steps.len(),
+                passed,
+                steps.len() - passed
+            )
         };
 
         ScriptResult {
@@ -129,7 +134,10 @@ impl RustConsoleEvaluator {
         if let Some(args) = Self::strip_call(clean, "ide::data::history") {
             let arg = args.trim().trim_matches('"');
             return match ws.doc_history(arg) {
-                Ok(v) => (true, serde_json::to_string_pretty(&v["history"]).unwrap_or_default()),
+                Ok(v) => (
+                    true,
+                    serde_json::to_string_pretty(&v["history"]).unwrap_or_default(),
+                ),
                 Err(e) => (false, e),
             };
         }
@@ -137,19 +145,29 @@ impl RustConsoleEvaluator {
         if let Some(args) = Self::strip_call(clean, "ide::ops::open") {
             let parts = Self::parse_args(args);
             if parts.len() < 3 {
-                return (false, "ide::ops::open requires 3 args: (file_id, language, content)".into());
+                return (
+                    false,
+                    "ide::ops::open requires 3 args: (file_id, language, content)".into(),
+                );
             }
             let doc = ws.open_doc(&parts[0], &parts[2], &parts[1], "rust_script", "console");
             return (
                 true,
-                format!("Opened '{}' (rev 1, hash={})", doc.file_id, doc.content_hash),
+                format!(
+                    "Opened '{}' (rev 1, hash={})",
+                    doc.file_id, doc.content_hash
+                ),
             );
         }
 
         if let Some(args) = Self::strip_call(clean, "ide::ops::edit") {
             let parts = Self::parse_args(args);
             if parts.len() < 4 {
-                return (false, "ide::ops::edit requires 4 args: (file_id, start_line, end_line, replacement)".into());
+                return (
+                    false,
+                    "ide::ops::edit requires 4 args: (file_id, start_line, end_line, replacement)"
+                        .into(),
+                );
             }
             let s: usize = parts[1].parse().unwrap_or(1);
             let e: usize = parts[2].parse().unwrap_or(s);
@@ -181,7 +199,10 @@ impl RustConsoleEvaluator {
         if let Some(args) = Self::strip_call(clean, "ide::ops::replace_all") {
             let parts = Self::parse_args(args);
             if parts.len() < 3 {
-                return (false, "ide::ops::replace_all requires 3 args: (file_id, from, to)".into());
+                return (
+                    false,
+                    "ide::ops::replace_all requires 3 args: (file_id, from, to)".into(),
+                );
             }
             let file_id = &parts[0];
             let from = &parts[1];
@@ -192,7 +213,10 @@ impl RustConsoleEvaluator {
             };
             let count = doc.content.matches(from).count();
             if count == 0 {
-                return (true, format!("No occurrences of '{}' found in '{}'", from, file_id));
+                return (
+                    true,
+                    format!("No occurrences of '{}' found in '{}'", from, file_id),
+                );
             }
             let replaced = doc.content.replace(from, to);
             let lines_count = crate::diff::split_lines(&doc.content).len();
@@ -205,10 +229,19 @@ impl RustConsoleEvaluator {
                 end_line: lines_count,
                 replacement: replaced,
                 op_id: None,
-                summary: Some(format!("ide::ops::replace_all: replaced {} instance(s)", count)),
+                summary: Some(format!(
+                    "ide::ops::replace_all: replaced {} instance(s)",
+                    count
+                )),
             };
             return match ws.edit_doc(req) {
-                Ok(v) => (true, format!("Replaced {} instance(s), committed rev {}", count, v["new_revision"])),
+                Ok(v) => (
+                    true,
+                    format!(
+                        "Replaced {} instance(s), committed rev {}",
+                        count, v["new_revision"]
+                    ),
+                ),
                 Err(e) => (false, e),
             };
         }
@@ -216,7 +249,10 @@ impl RustConsoleEvaluator {
         if let Some(args) = Self::strip_call(clean, "ide::ops::diff") {
             let parts = Self::parse_args(args);
             if parts.len() < 3 {
-                return (false, "ide::ops::diff requires 3 args: (file_id, rev_a, rev_b)".into());
+                return (
+                    false,
+                    "ide::ops::diff requires 3 args: (file_id, rev_a, rev_b)".into(),
+                );
             }
             let r_a: u64 = parts[1].parse().unwrap_or(1);
             let r_b: u64 = parts[2].parse().unwrap_or(r_a);
@@ -229,7 +265,10 @@ impl RustConsoleEvaluator {
         if let Some(args) = Self::strip_call(clean, "ide::ops::search") {
             let parts = Self::parse_args(args);
             if parts.len() < 2 {
-                return (false, "ide::ops::search requires 2 args: (file_id, needle)".into());
+                return (
+                    false,
+                    "ide::ops::search requires 2 args: (file_id, needle)".into(),
+                );
             }
             let doc = match ws.docs.get(&parts[0]) {
                 Some(d) => d,
@@ -244,7 +283,12 @@ impl RustConsoleEvaluator {
             }
             return (
                 true,
-                format!("Found {} hit(s) for '{}':\n{}", hits.len(), needle, hits.join("\n")),
+                format!(
+                    "Found {} hit(s) for '{}':\n{}",
+                    hits.len(),
+                    needle,
+                    hits.join("\n")
+                ),
             );
         }
 
@@ -255,7 +299,10 @@ impl RustConsoleEvaluator {
                 None => return (false, format!("Document not found: {arg}")),
             };
             match editcore::agent_api::call("md_outline", &json!({ "text": doc.content })) {
-                Ok(v) => (true, serde_json::to_string_pretty(&v["outline"]).unwrap_or_default()),
+                Ok(v) => (
+                    true,
+                    serde_json::to_string_pretty(&v["outline"]).unwrap_or_default(),
+                ),
                 Err(e) => (false, e),
             }
         } else {
@@ -271,8 +318,8 @@ impl RustConsoleEvaluator {
 
     fn strip_call<'a>(s: &'a str, fn_name: &str) -> Option<&'a str> {
         let trimmed = s.trim();
-        if trimmed.starts_with(fn_name) {
-            let rest = &trimmed[fn_name.len()..].trim();
+        if let Some(rest) = trimmed.strip_prefix(fn_name) {
+            let rest = rest.trim();
             if rest.starts_with('(') && rest.ends_with(')') {
                 return Some(&rest[1..rest.len() - 1]);
             }
@@ -345,12 +392,17 @@ mod tests {
 
         // 验证文件状态
         let read = ws.read_doc("src/algo.rs", None, None).unwrap();
-        assert!(read["content"].as_str().unwrap().contains("pub fn solve() -> i32 { 42 }"));
+        assert!(read["content"]
+            .as_str()
+            .unwrap()
+            .contains("pub fn solve() -> i32 { 42 }"));
         assert_eq!(read["current_revision"], 2);
 
         // 验证 diff 输出
         assert!(res.steps[3].output.contains("@@ -1,1 +1,1 @@"));
-        assert!(res.steps[3].output.contains("+pub fn solve() -> i32 { 42 }"));
+        assert!(res.steps[3]
+            .output
+            .contains("+pub fn solve() -> i32 { 42 }"));
     }
 
     #[test]

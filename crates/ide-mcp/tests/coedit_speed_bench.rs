@@ -60,7 +60,10 @@ impl MathDistribution {
         let total_ms: f64 = latencies.iter().sum();
         let mean_ms = total_ms / count as f64;
 
-        let variance: f64 = latencies.iter().map(|&x| (x - mean_ms).powi(2)).sum::<f64>()
+        let variance: f64 = latencies
+            .iter()
+            .map(|&x| (x - mean_ms).powi(2))
+            .sum::<f64>()
             / if count > 1 { (count - 1) as f64 } else { 1.0 };
         let stddev_ms = variance.sqrt();
 
@@ -342,21 +345,42 @@ impl MathEngine {
     println!("  ─────────────────────────────────────────────────────────");
     println!("  - [OCC]   双代理总耗时 (T_2)     : {:.3} ms", t2_occ_ms);
     println!("  - [OCC]   加速比 S = T_1/T_2     : {:.2}x", speedup_occ);
-    println!("  - [OCC]   并行效率 E = S/2       : {:.2}%", efficiency_occ);
+    println!(
+        "  - [OCC]   并行效率 E = S/2       : {:.2}%",
+        efficiency_occ
+    );
     println!("  ─────────────────────────────────────────────────────────");
     println!("  - [Mutex] 双代理总耗时 (T_2)     : {:.3} ms", t2_mutex_ms);
     println!("  - [Mutex] 加速比 S = T_1/T_2     : {:.2}x", speedup_mutex);
-    println!("  - [Mutex] 并行效率 E = S/2       : {:.2}%", efficiency_mutex);
+    println!(
+        "  - [Mutex] 并行效率 E = S/2       : {:.2}%",
+        efficiency_mutex
+    );
     println!("  ─────────────────────────────────────────────────────────");
-    println!("  >>> OCC vs Mutex 提速比           : {:.2}x <<<", improvement);
+    println!(
+        "  >>> OCC vs Mutex 提速比           : {:.2}x <<<",
+        improvement
+    );
     println!("--------------------------------------------------------------------------------");
     println!(" [延迟分布分位数对比 (ms)]");
     println!("  指标         | 单代理         | OCC 双代理     | Mutex 双代理");
     println!("  ------------ | -------------- | -------------- | --------------");
-    println!("  Mean (均值)  | {:>10.4} ms | {:>10.4} ms | {:>10.4} ms", single_dist.mean_ms, occ_dist.mean_ms, mutex_dist.mean_ms);
-    println!("  P50 (中位数) | {:>10.4} ms | {:>10.4} ms | {:>10.4} ms", single_dist.p50_ms, occ_dist.p50_ms, mutex_dist.p50_ms);
-    println!("  P95 (长尾)   | {:>10.4} ms | {:>10.4} ms | {:>10.4} ms", single_dist.p95_ms, occ_dist.p95_ms, mutex_dist.p95_ms);
-    println!("  StdDev       | {:>10.4} ms | {:>10.4} ms | {:>10.4} ms", single_dist.stddev_ms, occ_dist.stddev_ms, mutex_dist.stddev_ms);
+    println!(
+        "  Mean (均值)  | {:>10.4} ms | {:>10.4} ms | {:>10.4} ms",
+        single_dist.mean_ms, occ_dist.mean_ms, mutex_dist.mean_ms
+    );
+    println!(
+        "  P50 (中位数) | {:>10.4} ms | {:>10.4} ms | {:>10.4} ms",
+        single_dist.p50_ms, occ_dist.p50_ms, mutex_dist.p50_ms
+    );
+    println!(
+        "  P95 (长尾)   | {:>10.4} ms | {:>10.4} ms | {:>10.4} ms",
+        single_dist.p95_ms, occ_dist.p95_ms, mutex_dist.p95_ms
+    );
+    println!(
+        "  StdDev       | {:>10.4} ms | {:>10.4} ms | {:>10.4} ms",
+        single_dist.stddev_ms, occ_dist.stddev_ms, mutex_dist.stddev_ms
+    );
     println!("--------------------------------------------------------------------------------");
 
     // ------------------------------------------------------------------------
@@ -399,7 +423,10 @@ impl MathEngine {
     }
 
     println!("  [PASS] 数学不变式检验全部通过: 无数据丢失，版本严格单调递增收敛!");
-    println!("  [PASS] OCC 加速比: {:.2}x, Mutex 加速比: {:.2}x, OCC 相对提速: {:.2}x\n", speedup_occ, speedup_mutex, improvement);
+    println!(
+        "  [PASS] OCC 加速比: {:.2}x, Mutex 加速比: {:.2}x, OCC 相对提速: {:.2}x\n",
+        speedup_occ, speedup_mutex, improvement
+    );
 }
 
 // ============================================================================
@@ -578,7 +605,10 @@ fn test_math_bench_nema_mode_single_vs_dual_speed() {
     println!("  - [Mutex] 双代理总耗时 (T_2)     : {:.3} ms", t2_mutex_ms);
     println!("  - [Mutex] 加速比 S = T_1/T_2     : {:.2}x", speedup_mutex);
     println!("  ─────────────────────────────────────────────────────────");
-    println!("  >>> OCC vs Mutex 提速比           : {:.2}x <<<", improvement);
+    println!(
+        "  >>> OCC vs Mutex 提速比           : {:.2}x <<<",
+        improvement
+    );
     println!("--------------------------------------------------------------------------------");
 
     // 语法闭包与无损检验 (OCC)
@@ -599,10 +629,17 @@ fn test_math_bench_nema_mode_single_vs_dual_speed() {
     let mutex_final = ws.docs.get(file_id).unwrap();
     assert!(nema_codec::parse_source(&mutex_final.content).is_ok());
     for i in 1..=edits_half {
-        assert!(mutex_final.content.contains(&format!("AgentA_Item_{i} Ready")));
-        assert!(mutex_final.content.contains(&format!("AgentB_Item_{i} Verified")));
+        assert!(mutex_final
+            .content
+            .contains(&format!("AgentA_Item_{i} Ready")));
+        assert!(mutex_final
+            .content
+            .contains(&format!("AgentB_Item_{i} Verified")));
     }
 
     println!("  [PASS] NEMA 语义合并语法封闭性与无损集合恒等式全部成立!");
-    println!("  [PASS] OCC 加速比: {:.2}x, Mutex 加速比: {:.2}x, OCC 相对提速: {:.2}x\n", speedup_occ, speedup_mutex, improvement);
+    println!(
+        "  [PASS] OCC 加速比: {:.2}x, Mutex 加速比: {:.2}x, OCC 相对提速: {:.2}x\n",
+        speedup_occ, speedup_mutex, improvement
+    );
 }

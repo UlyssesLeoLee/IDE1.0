@@ -324,8 +324,16 @@ pub fn unified(d: &Diff, a_name: &str, b_name: &str) -> String {
     }
     let mut out = format!("--- {a_name}\n+++ {b_name}\n");
     for h in &d.hunks {
-        let a_s = if h.a_len == 0 { h.a_start } else { h.a_start + 1 };
-        let b_s = if h.b_len == 0 { h.b_start } else { h.b_start + 1 };
+        let a_s = if h.a_len == 0 {
+            h.a_start
+        } else {
+            h.a_start + 1
+        };
+        let b_s = if h.b_len == 0 {
+            h.b_start
+        } else {
+            h.b_start + 1
+        };
         out.push_str(&format!("@@ -{a_s},{} +{b_s},{} @@\n", h.a_len, h.b_len));
         for l in &h.lines {
             let tag = match l.op {

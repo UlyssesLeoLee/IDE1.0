@@ -231,16 +231,16 @@ pub fn three_way_merge(base: &str, ours: &str, theirs: &str) -> MergeOutcome {
             }
             (Some(o), None) => {
                 // 仅 ours 改动
-                for j in o.b0..o.b1 {
-                    merged.push_str(ours_lines[j]);
+                for line in &ours_lines[o.b0..o.b1] {
+                    merged.push_str(line);
                 }
                 base_idx = o.a1;
                 oi += 1;
             }
             (None, Some(t)) => {
                 // 仅 theirs 改动
-                for j in t.b0..t.b1 {
-                    merged.push_str(theirs_lines[j]);
+                for line in &theirs_lines[t.b0..t.b1] {
+                    merged.push_str(line);
                 }
                 base_idx = t.a1;
                 ti += 1;
@@ -267,7 +267,7 @@ pub fn three_way_merge(base: &str, ours: &str, theirs: &str) -> MergeOutcome {
 
 /// 针对 NEMA 文本的结构化语义合并：解决因尾部三换行物理终止符导致的虚假行重叠。
 fn try_nema_semantic_merge(base: &str, ours: &str, theirs: &str) -> Option<MergeOutcome> {
-    fn extract_lines<'a>(src: &'a str) -> (Vec<&'a str>, Vec<&'a str>) {
+    fn extract_lines(src: &str) -> (Vec<&str>, Vec<&str>) {
         let mut headers = Vec::new();
         let mut body = Vec::new();
         for l in src.lines() {
@@ -289,7 +289,10 @@ fn try_nema_semantic_merge(base: &str, ours: &str, theirs: &str) -> Option<Merge
     let (theirs_headers, theirs_body) = extract_lines(theirs);
 
     // 头部定义必须兼容
-    if ours_headers != base_headers && theirs_headers != base_headers && ours_headers != theirs_headers {
+    if ours_headers != base_headers
+        && theirs_headers != base_headers
+        && ours_headers != theirs_headers
+    {
         return None;
     }
     let final_headers = if ours_headers != base_headers {
@@ -307,28 +310,22 @@ fn try_nema_semantic_merge(base: &str, ours: &str, theirs: &str) -> Option<Merge
 
     // 先保留未被两方删除的 base 记录
     for &b in &base_body {
-        if ours_set.contains(b) && theirs_set.contains(b) {
-            if seen.insert(b) {
-                merged_body.push(b);
-            }
+        if ours_set.contains(b) && theirs_set.contains(b) && seen.insert(b) {
+            merged_body.push(b);
         }
     }
 
     // 追加 ours 的新增记录
     for &o in &ours_body {
-        if !base_set.contains(o) {
-            if seen.insert(o) {
-                merged_body.push(o);
-            }
+        if !base_set.contains(o) && seen.insert(o) {
+            merged_body.push(o);
         }
     }
 
     // 追加 theirs 的新增记录
     for &t in &theirs_body {
-        if !base_set.contains(t) {
-            if seen.insert(t) {
-                merged_body.push(t);
-            }
+        if !base_set.contains(t) && seen.insert(t) {
+            merged_body.push(t);
         }
     }
 
@@ -365,8 +362,10 @@ fn try_nema_semantic_merge(base: &str, ours: &str, theirs: &str) -> Option<Merge
 /// 2. 交换律与一致性：不同域或不同记录行的安全合并结果保持 AST 语法合法。
 pub fn nema_merge(base: &str, ours: &str, theirs: &str) -> Result<MergeOutcome, String> {
     // 1. 红绿测试前置守护：严格校验 ours 与 theirs 是否符合 NEMA 语法规范
-    nema_codec::parse_source(ours).map_err(|e| format!("Ours NEMA 语法校验未通过 (Red Guard): {e}"))?;
-    nema_codec::parse_source(theirs).map_err(|e| format!("Theirs NEMA 语法校验未通过 (Red Guard): {e}"))?;
+    nema_codec::parse_source(ours)
+        .map_err(|e| format!("Ours NEMA 语法校验未通过 (Red Guard): {e}"))?;
+    nema_codec::parse_source(theirs)
+        .map_err(|e| format!("Theirs NEMA 语法校验未通过 (Red Guard): {e}"))?;
 
     // 2. 优先尝试零分配语义合并 (针对结构化记录并发追加，速度比 Myers 快 50x)
     if let Some(semantic_res) = try_nema_semantic_merge(base, ours, theirs) {
@@ -380,20 +379,18 @@ pub fn nema_merge(base: &str, ours: &str, theirs: &str) -> Result<MergeOutcome, 
         // 4. 数学性质校验：合并结果必须满足 NEMA 语法封闭性 (Syntax Closure)
         match nema_codec::parse_source(&outcome.merged_text) {
             Ok(_) => Ok(outcome),
-            Err(_err) => {
-                Ok(MergeOutcome {
-                    clean: false,
-                    merged_text: outcome.merged_text,
-                    conflicts: vec![ConflictHunk {
-                        base_line_start: 1,
-                        base_line_end: 1,
-                        ours: "valid_nema_ours".into(),
-                        theirs: "valid_nema_theirs".into(),
-                    }],
-                    ours_changes: outcome.ours_changes,
-                    theirs_changes: outcome.theirs_changes,
-                })
-            }
+            Err(_err) => Ok(MergeOutcome {
+                clean: false,
+                merged_text: outcome.merged_text,
+                conflicts: vec![ConflictHunk {
+                    base_line_start: 1,
+                    base_line_end: 1,
+                    ours: "valid_nema_ours".into(),
+                    theirs: "valid_nema_theirs".into(),
+                }],
+                ours_changes: outcome.ours_changes,
+                theirs_changes: outcome.theirs_changes,
+            }),
         }
     } else {
         Ok(outcome)
@@ -600,20 +597,20 @@ impl CoEditWorkspace {
         let e = req.end_line.min(base_lines.len());
 
         let mut candidate = String::new();
-        for i in 0..s {
-            candidate.push_str(base_lines[i]);
+        for line in &base_lines[..s] {
+            candidate.push_str(line);
         }
         candidate.push_str(&req.replacement);
         if !req.replacement.is_empty() && !req.replacement.ends_with('\n') {
             candidate.push('\n');
         }
         if e >= s {
-            for i in e..base_lines.len() {
-                candidate.push_str(base_lines[i]);
+            for line in &base_lines[e..] {
+                candidate.push_str(line);
             }
         } else {
-            for i in s..base_lines.len() {
-                candidate.push_str(base_lines[i]);
+            for line in &base_lines[s..] {
+                candidate.push_str(line);
             }
         }
 
@@ -749,7 +746,8 @@ impl CoEditWorkspace {
             // 并发分支
             match mode {
                 CollabMode::Git => {
-                    let merge = three_way_merge(&base_snapshot.content, &doc.content, &req.new_text);
+                    let merge =
+                        three_way_merge(&base_snapshot.content, &doc.content, &req.new_text);
                     let clean = merge.clean;
                     let count = merge.conflicts.len();
                     (merge.merged_text, true, clean, count)
@@ -805,7 +803,9 @@ impl CoEditWorkspace {
             "file_id": doc.file_id,
             "previous_revision": new_rev - 1,
             "revision": new_rev,
+            "new_revision": new_rev,
             "merged": auto_merged,
+            "auto_merged": auto_merged,
             "conflicts": conflicts_count,
             "author": author_tag,
             "content": final_content,
@@ -938,7 +938,6 @@ pub struct ConcurrentCoEditWorkspace {
     idempotency: Mutex<HashMap<String, Value>>,
 }
 
-
 impl Default for ConcurrentCoEditWorkspace {
     fn default() -> Self {
         let ws = Self {
@@ -966,7 +965,7 @@ impl ConcurrentCoEditWorkspace {
         language: &str,
         provider: &str,
         agent_id: &str,
-    ) {
+    ) -> Value {
         let hash = fnv1a_hash(content);
         let rev1 = RevisionRecord {
             revision: 1,
@@ -988,7 +987,7 @@ impl ConcurrentCoEditWorkspace {
             language: language.to_string(),
             current_revision: 1,
             content: content.to_string(),
-            content_hash: hash,
+            content_hash: hash.clone(),
             revisions,
         };
 
@@ -999,6 +998,14 @@ impl ConcurrentCoEditWorkspace {
             }
         }
         docs.insert(file_id.to_string(), RwLock::new(doc));
+
+        json!({
+            "status": "OPENED",
+            "file_id": file_id,
+            "language": language,
+            "current_revision": 1,
+            "content_hash": hash
+        })
     }
 
     /// 读取文档内容（持有文档 RwLock 读锁）
@@ -1089,6 +1096,96 @@ impl ConcurrentCoEditWorkspace {
             "current_revision": doc.current_revision,
             "history": history
         }))
+    }
+
+    /// 计算两个版本间的 Unified Diff (并发无锁读取)
+    pub fn diff_revisions(
+        &self,
+        file_id: &str,
+        from_rev: u64,
+        to_rev: u64,
+        context: usize,
+    ) -> Result<Value, String> {
+        let docs = self.docs.read().unwrap();
+        let doc_lock = docs
+            .get(file_id)
+            .ok_or_else(|| format!("Document not found: {file_id}"))?;
+        let doc = doc_lock.read().unwrap();
+        let r1 = doc
+            .revisions
+            .iter()
+            .find(|r| r.revision == from_rev)
+            .ok_or_else(|| format!("Revision {from_rev} not found"))?;
+        let r2 = doc
+            .revisions
+            .iter()
+            .find(|r| r.revision == to_rev)
+            .ok_or_else(|| format!("Revision {to_rev} not found"))?;
+
+        let d = crate::diff::diff_text(&r1.content, &r2.content, context);
+        let u = crate::diff::unified(&d, &format!("rev_{from_rev}"), &format!("rev_{to_rev}"));
+
+        Ok(json!({
+            "file_id": file_id,
+            "from_revision": from_rev,
+            "to_revision": to_rev,
+            "added": d.added,
+            "removed": d.removed,
+            "identical": d.identical,
+            "coarse": d.coarse,
+            "unified_diff": u
+        }))
+    }
+
+    /// 行级范围编辑 (基于 OCC 自动合并)
+    pub fn edit_doc(&self, req: EditRequest) -> Result<Value, String> {
+        let (base_rev, base_content) = {
+            let docs = self.docs.read().unwrap();
+            let doc_lock = docs
+                .get(&req.file_id)
+                .ok_or_else(|| format!("Document not found: {}", req.file_id))?;
+            let doc = doc_lock.read().unwrap();
+            let b_rev = req.base_revision.unwrap_or(doc.current_revision);
+            let b_content = doc
+                .revisions
+                .iter()
+                .find(|r| r.revision == b_rev)
+                .ok_or_else(|| format!("Base revision {b_rev} not available"))?
+                .content
+                .clone();
+            (b_rev, b_content)
+        };
+
+        let base_lines = split_lines(&base_content);
+        let s = req.start_line.saturating_sub(1).min(base_lines.len());
+        let e = req.end_line.min(base_lines.len());
+
+        let mut candidate = String::new();
+        for line in &base_lines[..s] {
+            candidate.push_str(line);
+        }
+        candidate.push_str(&req.replacement);
+        if !req.replacement.is_empty() && !req.replacement.ends_with('\n') {
+            candidate.push('\n');
+        }
+        if e >= s {
+            for line in &base_lines[e..] {
+                candidate.push_str(line);
+            }
+        } else {
+            for line in &base_lines[s..] {
+                candidate.push_str(line);
+            }
+        }
+
+        self.coedit_concurrent(FullCoEditRequest {
+            file_id: req.file_id,
+            author: format!("{}/{}", req.provider, req.agent_id),
+            new_text: candidate,
+            base_revision: Some(base_rev),
+            op_id: req.op_id,
+            mode: Some(CollabMode::Git),
+        })
     }
 
     /// OCC 3-Phase 全文并发协同编辑 — 核心提速方法
@@ -1216,12 +1313,20 @@ impl ConcurrentCoEditWorkspace {
                     let mut shifted_a0 = a0 as isize;
                     let mut shifted_a1 = a1 as isize;
 
-                    for rev in doc.revisions.iter().filter(|r| r.revision > snapshot.head_revision) {
+                    for rev in doc
+                        .revisions
+                        .iter()
+                        .filter(|r| r.revision > snapshot.head_revision)
+                    {
                         let (r0, r1) = (rev.touched_range.0 as isize, rev.touched_range.1 as isize);
-                        if r1 <= shifted_a0 && !(r0 == r1 && shifted_a0 == shifted_a1 && r0 == shifted_a0) {
+                        if r1 <= shifted_a0
+                            && !(r0 == r1 && shifted_a0 == shifted_a1 && r0 == shifted_a0)
+                        {
                             shifted_a0 += rev.line_delta;
                             shifted_a1 += rev.line_delta;
-                        } else if shifted_a1 <= r0 && !(r0 == r1 && shifted_a0 == shifted_a1 && r0 == shifted_a0) {
+                        } else if shifted_a1 <= r0
+                            && !(r0 == r1 && shifted_a0 == shifted_a1 && r0 == shifted_a0)
+                        {
                             // 后置改动，无需位移
                         } else {
                             disjoint = false;
@@ -1294,7 +1399,9 @@ impl ConcurrentCoEditWorkspace {
                         "file_id": doc.file_id,
                         "previous_revision": new_rev - 1,
                         "revision": new_rev,
+                        "new_revision": new_rev,
                         "merged": was_auto_merged,
+                        "auto_merged": was_auto_merged,
                         "conflicts": conflicts_count,
                         "author": author_tag,
                         "content": commit_content,
@@ -1347,19 +1454,13 @@ impl ConcurrentCoEditWorkspace {
             } else {
                 match mode {
                     CollabMode::Git => {
-                        let merge = three_way_merge(
-                            &base_snapshot.content,
-                            &doc.content,
-                            &req.new_text,
-                        );
+                        let merge =
+                            three_way_merge(&base_snapshot.content, &doc.content, &req.new_text);
                         (merge.merged_text, true, merge.clean, merge.conflicts.len())
                     }
                     CollabMode::Nema => {
-                        let merge = nema_merge(
-                            &base_snapshot.content,
-                            &doc.content,
-                            &req.new_text,
-                        )?;
+                        let merge =
+                            nema_merge(&base_snapshot.content, &doc.content, &req.new_text)?;
                         (merge.merged_text, true, merge.clean, merge.conflicts.len())
                     }
                 }
@@ -1407,7 +1508,9 @@ impl ConcurrentCoEditWorkspace {
                 "file_id": doc.file_id,
                 "previous_revision": new_rev - 1,
                 "revision": new_rev,
+                "new_revision": new_rev,
                 "merged": auto_merged,
+                "auto_merged": auto_merged,
                 "conflicts": conflicts_count,
                 "author": author_tag,
                 "content": final_content,

@@ -13,9 +13,10 @@ pub mod diff;
 pub mod merge;
 pub mod rust_console;
 
-use merge::{CoEditWorkspace, EditRequest};
+use merge::{CoEditWorkspace, ConcurrentCoEditWorkspace, EditRequest};
 use rust_console::RustConsoleEvaluator;
 use serde_json::{json, Value};
+use std::sync::Arc;
 
 pub const MCP_PROTOCOL_VERSION: &str = "2024-11-05";
 pub const SERVER_NAME: &str = "ide10-mcp";
@@ -24,6 +25,7 @@ pub const DEFAULT_WEB_URL: &str = "https://ide1-0.vercel.app";
 
 pub struct McpServer {
     pub workspace: CoEditWorkspace,
+    pub concurrent_workspace: Arc<ConcurrentCoEditWorkspace>,
     pub web_url: String,
 }
 
@@ -37,6 +39,7 @@ impl McpServer {
     pub fn new(web_url: impl Into<String>) -> Self {
         Self {
             workspace: CoEditWorkspace::default(),
+            concurrent_workspace: Arc::new(ConcurrentCoEditWorkspace::default()),
             web_url: web_url.into(),
         }
     }
@@ -361,7 +364,8 @@ impl McpServer {
 
         // 引入 editcore 的 12 项智能工具
         for t in editcore::agent_api::TOOLS {
-            let schema: Value = serde_json::from_str(t.schema).unwrap_or(json!({ "type": "object" }));
+            let schema: Value =
+                serde_json::from_str(t.schema).unwrap_or(json!({ "type": "object" }));
             tools.push(json!({
                 "name": t.name,
                 "description": t.description,
@@ -375,12 +379,31 @@ impl McpServer {
     pub fn call_tool(&mut self, name: &str, args: &Value) -> Result<Value, String> {
         match name {
             "headless_open" => {
-                let file_id = args.get("file_id").and_then(Value::as_str).ok_or("Missing file_id")?;
-                let content = args.get("content").and_then(Value::as_str).ok_or("Missing content")?;
-                let language = args.get("language").and_then(Value::as_str).unwrap_or("plain");
-                let provider = args.get("provider").and_then(Value::as_str).unwrap_or("agent");
-                let agent_id = args.get("agent_id").and_then(Value::as_str).unwrap_or("worker");
-                let doc = self.workspace.open_doc(file_id, content, language, provider, agent_id);
+                let file_id = args
+                    .get("file_id")
+                    .and_then(Value::as_str)
+                    .ok_or("Missing file_id")?;
+                let content = args
+                    .get("content")
+                    .and_then(Value::as_str)
+                    .ok_or("Missing content")?;
+                let language = args
+                    .get("language")
+                    .and_then(Value::as_str)
+                    .unwrap_or("plain");
+                let provider = args
+                    .get("provider")
+                    .and_then(Value::as_str)
+                    .unwrap_or("agent");
+                let agent_id = args
+                    .get("agent_id")
+                    .and_then(Value::as_str)
+                    .unwrap_or("worker");
+                self.concurrent_workspace
+                    .open_doc(file_id, content, language, provider, agent_id);
+                let doc = self
+                    .workspace
+                    .open_doc(file_id, content, language, provider, agent_id);
                 Ok(json!({
                     "status": "OPENED",
                     "file_id": doc.file_id,
@@ -391,43 +414,81 @@ impl McpServer {
             }
 
             "headless_read" => {
-                let file_id = args.get("file_id").and_then(Value::as_str).ok_or("Missing file_id")?;
-                let s = args.get("start_line").and_then(Value::as_u64).map(|v| v as usize);
-                let e = args.get("end_line").and_then(Value::as_u64).map(|v| v as usize);
-                self.workspace.read_doc(file_id, s, e)
+                let file_id = args
+                    .get("file_id")
+                    .and_then(Value::as_str)
+                    .ok_or("Missing file_id")?;
+                let s = args
+                    .get("start_line")
+                    .and_then(Value::as_u64)
+                    .map(|v| v as usize);
+                let e = args
+                    .get("end_line")
+                    .and_then(Value::as_u64)
+                    .map(|v| v as usize);
+                if let Ok(res) = self.concurrent_workspace.read_doc(file_id, s, e) {
+                    Ok(res)
+                } else {
+                    self.workspace.read_doc(file_id, s, e)
+                }
             }
 
             "headless_coedit" => {
                 let req: merge::FullCoEditRequest = serde_json::from_value(args.clone())
                     .map_err(|e| format!("Invalid coedit arguments: {e}"))?;
-                self.workspace.coedit_full(req)
+                self.concurrent_workspace.coedit_concurrent(req)
             }
 
             "headless_edit" => {
                 let req: EditRequest = serde_json::from_value(args.clone())
                     .map_err(|e| format!("Invalid edit arguments: {e}"))?;
-                self.workspace.edit_doc(req)
+                self.concurrent_workspace.edit_doc(req)
             }
 
             "headless_three_way_merge" => {
-                let base = args.get("base").and_then(Value::as_str).ok_or("Missing base")?;
-                let ours = args.get("ours").and_then(Value::as_str).ok_or("Missing ours")?;
-                let theirs = args.get("theirs").and_then(Value::as_str).ok_or("Missing theirs")?;
+                let base = args
+                    .get("base")
+                    .and_then(Value::as_str)
+                    .ok_or("Missing base")?;
+                let ours = args
+                    .get("ours")
+                    .and_then(Value::as_str)
+                    .ok_or("Missing ours")?;
+                let theirs = args
+                    .get("theirs")
+                    .and_then(Value::as_str)
+                    .ok_or("Missing theirs")?;
                 let m = merge::three_way_merge(base, ours, theirs);
                 Ok(json!(m))
             }
 
             "headless_history" => {
-                let file_id = args.get("file_id").and_then(Value::as_str).ok_or("Missing file_id")?;
-                self.workspace.doc_history(file_id)
+                let file_id = args
+                    .get("file_id")
+                    .and_then(Value::as_str)
+                    .ok_or("Missing file_id")?;
+                if let Ok(res) = self.concurrent_workspace.doc_history(file_id) {
+                    Ok(res)
+                } else {
+                    self.workspace.doc_history(file_id)
+                }
             }
 
-            "headless_list_files" => Ok(self.workspace.list_docs()),
+            "headless_list_files" => Ok(self.concurrent_workspace.list_docs()),
 
             "diff_unified" => {
-                let old_t = args.get("old_text").and_then(Value::as_str).ok_or("Missing old_text")?;
-                let new_t = args.get("new_text").and_then(Value::as_str).ok_or("Missing new_text")?;
-                let ctx = args.get("context_lines").and_then(Value::as_u64).unwrap_or(3) as usize;
+                let old_t = args
+                    .get("old_text")
+                    .and_then(Value::as_str)
+                    .ok_or("Missing old_text")?;
+                let new_t = args
+                    .get("new_text")
+                    .and_then(Value::as_str)
+                    .ok_or("Missing new_text")?;
+                let ctx = args
+                    .get("context_lines")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(3) as usize;
                 let d = diff::diff_text(old_t, new_t, ctx);
                 let u = diff::unified(&d, "original", "modified");
                 Ok(json!({
@@ -440,19 +501,43 @@ impl McpServer {
             }
 
             "diff_revisions" => {
-                let file_id = args.get("file_id").and_then(Value::as_str).ok_or("Missing file_id")?;
-                let from_r = args.get("from_revision").and_then(Value::as_u64).ok_or("Missing from_revision")?;
-                let to_r = args.get("to_revision").and_then(Value::as_u64).ok_or("Missing to_revision")?;
-                let ctx = args.get("context_lines").and_then(Value::as_u64).unwrap_or(3) as usize;
-                self.workspace.diff_revisions(file_id, from_r, to_r, ctx)
+                let file_id = args
+                    .get("file_id")
+                    .and_then(Value::as_str)
+                    .ok_or("Missing file_id")?;
+                let from_r = args
+                    .get("from_revision")
+                    .and_then(Value::as_u64)
+                    .ok_or("Missing from_revision")?;
+                let to_r = args
+                    .get("to_revision")
+                    .and_then(Value::as_u64)
+                    .ok_or("Missing to_revision")?;
+                let ctx = args
+                    .get("context_lines")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(3) as usize;
+                if let Ok(res) = self
+                    .concurrent_workspace
+                    .diff_revisions(file_id, from_r, to_r, ctx)
+                {
+                    Ok(res)
+                } else {
+                    self.workspace.diff_revisions(file_id, from_r, to_r, ctx)
+                }
             }
 
             "ide_rust_eval" => {
-                let script = args.get("script").and_then(Value::as_str).ok_or("Missing script")?;
+                let script = args
+                    .get("script")
+                    .and_then(Value::as_str)
+                    .ok_or("Missing script")?;
                 let res = RustConsoleEvaluator::eval(&mut self.workspace, script);
-                let steps_json: Vec<Value> = res.steps.iter().map(|s| {
-                    json!({ "expr": s.expr, "ok": s.ok, "output": s.output })
-                }).collect();
+                let steps_json: Vec<Value> = res
+                    .steps
+                    .iter()
+                    .map(|s| json!({ "expr": s.expr, "ok": s.ok, "output": s.output }))
+                    .collect();
                 Ok(json!({
                     "ok": res.ok,
                     "summary": res.summary,
@@ -462,7 +547,10 @@ impl McpServer {
 
             "ide_launch_browser" => {
                 let file_id = args.get("file_id").and_then(Value::as_str);
-                let open_local = args.get("open_local").and_then(Value::as_bool).unwrap_or(false);
+                let open_local = args
+                    .get("open_local")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
                 let target_url = if let Some(fid) = file_id {
                     format!("{}/#file={}", self.web_url, url_encode(fid))
                 } else {
@@ -473,7 +561,13 @@ impl McpServer {
                     #[cfg(windows)]
                     {
                         let _ = std::process::Command::new("powershell")
-                            .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &format!("Start-Process '{}'", target_url)])
+                            .args([
+                                "-NoProfile",
+                                "-WindowStyle",
+                                "Hidden",
+                                "-Command",
+                                &format!("Start-Process '{}'", target_url),
+                            ])
                             .spawn();
                     }
                 }
@@ -488,6 +582,289 @@ impl McpServer {
 
             // editcore 12 tools
             _ => editcore::agent_api::call(name, args),
+        }
+    }
+
+    /// 纯只读引用的并发工具调用接口（无需 `&mut self`，成百上千个 Agent 可同时跨线程调用）
+    pub fn call_tool_concurrent(&self, name: &str, args: &Value) -> Result<Value, String> {
+        match name {
+            "headless_open" => {
+                let file_id = args
+                    .get("file_id")
+                    .and_then(Value::as_str)
+                    .ok_or("Missing file_id")?;
+                let content = args
+                    .get("content")
+                    .and_then(Value::as_str)
+                    .ok_or("Missing content")?;
+                let language = args
+                    .get("language")
+                    .and_then(Value::as_str)
+                    .unwrap_or("plain");
+                let provider = args
+                    .get("provider")
+                    .and_then(Value::as_str)
+                    .unwrap_or("agent");
+                let agent_id = args
+                    .get("agent_id")
+                    .and_then(Value::as_str)
+                    .unwrap_or("worker");
+                Ok(self
+                    .concurrent_workspace
+                    .open_doc(file_id, content, language, provider, agent_id))
+            }
+            "headless_read" => {
+                let file_id = args
+                    .get("file_id")
+                    .and_then(Value::as_str)
+                    .ok_or("Missing file_id")?;
+                let s = args
+                    .get("start_line")
+                    .and_then(Value::as_u64)
+                    .map(|v| v as usize);
+                let e = args
+                    .get("end_line")
+                    .and_then(Value::as_u64)
+                    .map(|v| v as usize);
+                self.concurrent_workspace.read_doc(file_id, s, e)
+            }
+            "headless_coedit" => {
+                let req: merge::FullCoEditRequest = serde_json::from_value(args.clone())
+                    .map_err(|e| format!("Invalid coedit arguments: {e}"))?;
+                self.concurrent_workspace.coedit_concurrent(req)
+            }
+            "headless_edit" => {
+                let req: EditRequest = serde_json::from_value(args.clone())
+                    .map_err(|e| format!("Invalid edit arguments: {e}"))?;
+                self.concurrent_workspace.edit_doc(req)
+            }
+            "headless_three_way_merge" => {
+                let base = args
+                    .get("base")
+                    .and_then(Value::as_str)
+                    .ok_or("Missing base")?;
+                let ours = args
+                    .get("ours")
+                    .and_then(Value::as_str)
+                    .ok_or("Missing ours")?;
+                let theirs = args
+                    .get("theirs")
+                    .and_then(Value::as_str)
+                    .ok_or("Missing theirs")?;
+                let m = merge::three_way_merge(base, ours, theirs);
+                Ok(json!(m))
+            }
+            "headless_history" => {
+                let file_id = args
+                    .get("file_id")
+                    .and_then(Value::as_str)
+                    .ok_or("Missing file_id")?;
+                self.concurrent_workspace.doc_history(file_id)
+            }
+            "headless_list_files" => Ok(self.concurrent_workspace.list_docs()),
+            "diff_unified" => {
+                let old_t = args
+                    .get("old_text")
+                    .and_then(Value::as_str)
+                    .ok_or("Missing old_text")?;
+                let new_t = args
+                    .get("new_text")
+                    .and_then(Value::as_str)
+                    .ok_or("Missing new_text")?;
+                let ctx = args
+                    .get("context_lines")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(3) as usize;
+                let d = diff::diff_text(old_t, new_t, ctx);
+                let u = diff::unified(&d, "original", "modified");
+                Ok(json!({
+                    "identical": d.identical,
+                    "added": d.added,
+                    "removed": d.removed,
+                    "coarse": d.coarse,
+                    "unified_diff": u
+                }))
+            }
+            "diff_revisions" => {
+                let file_id = args
+                    .get("file_id")
+                    .and_then(Value::as_str)
+                    .ok_or("Missing file_id")?;
+                let from_r = args
+                    .get("from_revision")
+                    .and_then(Value::as_u64)
+                    .ok_or("Missing from_revision")?;
+                let to_r = args
+                    .get("to_revision")
+                    .and_then(Value::as_u64)
+                    .ok_or("Missing to_revision")?;
+                let ctx = args
+                    .get("context_lines")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(3) as usize;
+                self.concurrent_workspace
+                    .diff_revisions(file_id, from_r, to_r, ctx)
+            }
+            "ide_launch_browser" => {
+                let file_id = args.get("file_id").and_then(Value::as_str);
+                let open_local = args
+                    .get("open_local")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
+                let target_url = if let Some(fid) = file_id {
+                    format!("{}/#file={}", self.web_url, url_encode(fid))
+                } else {
+                    self.web_url.clone()
+                };
+
+                if open_local {
+                    #[cfg(windows)]
+                    {
+                        let _ = std::process::Command::new("powershell")
+                            .args([
+                                "-NoProfile",
+                                "-WindowStyle",
+                                "Hidden",
+                                "-Command",
+                                &format!("Start-Process '{}'", target_url),
+                            ])
+                            .spawn();
+                    }
+                }
+
+                Ok(json!({
+                    "web_url": target_url,
+                    "launched_locally": open_local,
+                    "status": "READY",
+                    "note": "Connect to this URL via browser to inspect and interact with the live workbench UI"
+                }))
+            }
+            _ => editcore::agent_api::call(name, args),
+        }
+    }
+
+    /// 纯只读引用的并发 JSON-RPC 2.0 请求处理（成百上千个 Agent 可零锁跨线程并行调用）
+    pub fn handle_jsonrpc_concurrent(&self, req: &Value) -> Option<Value> {
+        let id = req.get("id").cloned();
+        let method = req.get("method").and_then(Value::as_str)?;
+
+        if method == "notifications/initialized" || method == "cancelled" {
+            return None;
+        }
+
+        let resp_id = id.unwrap_or(Value::Null);
+
+        match method {
+            "ping" => Some(json!({ "jsonrpc": "2.0", "id": resp_id, "result": {} })),
+            "initialize" => Some(json!({
+                "jsonrpc": "2.0",
+                "id": resp_id,
+                "result": {
+                    "protocolVersion": MCP_PROTOCOL_VERSION,
+                    "capabilities": {
+                        "tools": { "listChanged": false },
+                        "resources": { "subscribe": false, "listChanged": false },
+                        "prompts": { "listChanged": false }
+                    },
+                    "serverInfo": {
+                        "name": SERVER_NAME,
+                        "version": SERVER_VERSION,
+                        "description": "IDE1.0 Concurrent Multi-Agent Co-Editing MCP Server"
+                    }
+                }
+            })),
+            "tools/list" => Some(json!({
+                "jsonrpc": "2.0",
+                "id": resp_id,
+                "result": { "tools": self.list_tools() }
+            })),
+            "tools/call" => {
+                let params = req.get("params")?;
+                let tool_name = params.get("name").and_then(Value::as_str)?;
+                let args = params.get("arguments").cloned().unwrap_or(json!({}));
+                let result = self.call_tool_concurrent(tool_name, &args);
+                match result {
+                    Ok(val) => Some(json!({
+                        "jsonrpc": "2.0",
+                        "id": resp_id,
+                        "result": {
+                            "content": [{
+                                "type": "text",
+                                "text": if val.is_string() { val.as_str().unwrap().to_string() } else { serde_json::to_string_pretty(&val).unwrap_or_default() }
+                            }],
+                            "structured_data": val,
+                            "isError": false
+                        }
+                    })),
+                    Err(err) => Some(json!({
+                        "jsonrpc": "2.0",
+                        "id": resp_id,
+                        "result": {
+                            "content": [{ "type": "text", "text": format!("Error: {err}") }],
+                            "isError": true
+                        }
+                    })),
+                }
+            }
+            "resources/list" => Some(json!({
+                "jsonrpc": "2.0",
+                "id": resp_id,
+                "result": {
+                    "resources": [{
+                        "uri": "ide10://files",
+                        "name": "Workspace Open Documents",
+                        "description": "List of active collaborative files with revision metadata",
+                        "mimeType": "application/json"
+                    }]
+                }
+            })),
+            "resources/read" => {
+                let params = req.get("params")?;
+                let uri = params.get("uri").and_then(Value::as_str).unwrap_or("");
+                if uri == "ide10://files" {
+                    Some(json!({
+                        "jsonrpc": "2.0",
+                        "id": resp_id,
+                        "result": {
+                            "contents": [{
+                                "uri": uri,
+                                "mimeType": "application/json",
+                                "text": serde_json::to_string_pretty(&self.concurrent_workspace.list_docs()).unwrap_or_default()
+                            }]
+                        }
+                    }))
+                } else if let Some(file_id) = uri.strip_prefix("ide10://file/") {
+                    match self.concurrent_workspace.read_doc(file_id, None, None) {
+                        Ok(doc) => Some(json!({
+                            "jsonrpc": "2.0",
+                            "id": resp_id,
+                            "result": {
+                                "contents": [{
+                                    "uri": uri,
+                                    "mimeType": "text/plain",
+                                    "text": doc["content"].as_str().unwrap_or("").to_string()
+                                }]
+                            }
+                        })),
+                        Err(e) => Some(json!({
+                            "jsonrpc": "2.0",
+                            "id": resp_id,
+                            "error": { "code": -32602, "message": e }
+                        })),
+                    }
+                } else {
+                    Some(json!({
+                        "jsonrpc": "2.0",
+                        "id": resp_id,
+                        "error": { "code": -32602, "message": format!("Unknown resource URI: {uri}") }
+                    }))
+                }
+            }
+            _ => Some(json!({
+                "jsonrpc": "2.0",
+                "id": resp_id,
+                "error": { "code": -32601, "message": format!("Method not found: {method}") }
+            })),
         }
     }
 }
@@ -602,7 +979,9 @@ mod tests {
             }
         });
         let read_resp = server.handle_jsonrpc(&read_req).unwrap();
-        let content = read_resp["result"]["structured_data"]["content"].as_str().unwrap();
+        let content = read_resp["result"]["structured_data"]["content"]
+            .as_str()
+            .unwrap();
         assert!(content.contains("a + b + 1"));
         assert!(content.contains("a * b * 2"));
     }
@@ -624,5 +1003,78 @@ mod tests {
         let resp = server.handle_jsonrpc(&eval_req).unwrap();
         assert_eq!(resp["result"]["isError"], false);
         assert_eq!(resp["result"]["structured_data"]["ok"], true);
+    }
+
+    #[test]
+    fn test_mcp_concurrent_multi_thread_coedit_via_immutable_server() {
+        let server = Arc::new(McpServer::default());
+
+        let s1 = Arc::clone(&server);
+        let s2 = Arc::clone(&server);
+
+        let h1 = std::thread::spawn(move || {
+            let req = json!({
+                "jsonrpc": "2.0",
+                "id": 301,
+                "method": "tools/call",
+                "params": {
+                    "name": "headless_coedit",
+                    "arguments": {
+                        "file_id": "default:src/math.rs",
+                        "author": "claude",
+                        "new_text": "// Claude Header\npub fn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n\npub fn multiply(a: i32, b: i32) -> i32 {\n    a * b\n}\n",
+                        "base_revision": 1
+                    }
+                }
+            });
+            s1.handle_jsonrpc_concurrent(&req).unwrap()
+        });
+
+        let h2 = std::thread::spawn(move || {
+            let req = json!({
+                "jsonrpc": "2.0",
+                "id": 302,
+                "method": "tools/call",
+                "params": {
+                    "name": "headless_coedit",
+                    "arguments": {
+                        "file_id": "default:src/math.rs",
+                        "author": "gpt",
+                        "new_text": "pub fn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n\npub fn multiply(a: i32, b: i32) -> i32 {\n    a * b\n}\n// GPT Footer\n",
+                        "base_revision": 1
+                    }
+                }
+            });
+            s2.handle_jsonrpc_concurrent(&req).unwrap()
+        });
+
+        let resp1 = h1.join().unwrap();
+        let resp2 = h2.join().unwrap();
+
+        assert_eq!(resp1["result"]["isError"], false);
+        assert_eq!(resp2["result"]["isError"], false);
+
+        // Read final content
+        let read_req = json!({
+            "jsonrpc": "2.0",
+            "id": 303,
+            "method": "tools/call",
+            "params": {
+                "name": "headless_read",
+                "arguments": { "file_id": "default:src/math.rs" }
+            }
+        });
+        let read_resp = server.handle_jsonrpc_concurrent(&read_req).unwrap();
+        let content = read_resp["result"]["structured_data"]["content"]
+            .as_str()
+            .unwrap();
+        assert!(
+            content.contains("// Claude Header"),
+            "Claude header must be retained"
+        );
+        assert!(
+            content.contains("// GPT Footer"),
+            "GPT footer must be retained"
+        );
     }
 }

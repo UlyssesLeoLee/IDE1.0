@@ -16,17 +16,26 @@ fn main() {
     if args.iter().any(|a| a == "--tools") {
         let server = McpServer::default();
         let tools = server.list_tools();
-        println!("{}", serde_json::to_string_pretty(&tools).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&tools).unwrap_or_default()
+        );
         return;
     }
 
     if let Some(pos) = args.iter().position(|a| a == "--eval") {
         if let Some(code) = args.get(pos + 1) {
             let mut server = McpServer::default();
-            let res = ide_mcp::rust_console::RustConsoleEvaluator::eval(&mut server.workspace, code);
+            let res =
+                ide_mcp::rust_console::RustConsoleEvaluator::eval(&mut server.workspace, code);
             println!("{}", res.summary);
             for s in res.steps {
-                println!("[{}] {} => {}", if s.ok { "OK" } else { "FAIL" }, s.expr, s.output);
+                println!(
+                    "[{}] {} => {}",
+                    if s.ok { "OK" } else { "FAIL" },
+                    s.expr,
+                    s.output
+                );
             }
             if !res.ok {
                 std::process::exit(1);
