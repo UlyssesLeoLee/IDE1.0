@@ -60,17 +60,14 @@ static CACHED_LOG_DIR: OnceLock<PathBuf> = OnceLock::new();
 
 /// 记录启动或运行关键步骤追踪（仅保存在内存中，保留首段启动轨迹与最近 256 条运行事件）
 pub fn record_trace_step(msg: &str) {
-    if let Ok(mut lock) = IN_MEMORY_TRACE.lock() {
-        lock.push(msg);
-    }
+    let mut lock = IN_MEMORY_TRACE.lock().unwrap_or_else(|e| e.into_inner());
+    lock.push(msg);
 }
 
 /// 获取当前内存中缓存的追踪步骤
 pub fn get_recorded_traces() -> Vec<String> {
-    IN_MEMORY_TRACE
-        .lock()
-        .map(|l| l.snapshot())
-        .unwrap_or_default()
+    let lock = IN_MEMORY_TRACE.lock().unwrap_or_else(|e| e.into_inner());
+    lock.snapshot()
 }
 
 /// 格式化时间戳 YYYYMMDD_HHMMSS
@@ -115,12 +112,19 @@ pub fn get_log_dir() -> PathBuf {
     CACHED_LOG_DIR.get_or_init(resolve_log_dir).clone()
 }
 
+/// 确保已缓存的日志目录在写入或打开前存在（不重跑写权限探测）
+fn ensure_log_dir() -> PathBuf {
+    let dir = get_log_dir();
+    let _ = std::fs::create_dir_all(&dir);
+    dir
+}
+
 /// 注册全局 panic 钩子 (仅在崩溃/启动失败时触发写入)
 pub fn install_crash_handler() {
     let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         let timestamp = current_timestamp();
-        let log_dir = get_log_dir();
+        let log_dir = ensure_log_dir();
         let log_file = log_dir.join(format!("crash_{timestamp}.log"));
 
         let payload = if let Some(s) = info.payload().downcast_ref::<&str>() {
@@ -170,7 +174,7 @@ pub fn install_crash_handler() {
 /// 当 run_native 失败或启动阶段严重错误时记录
 pub fn log_startup_error(err: &dyn std::fmt::Display) {
     let timestamp = current_timestamp();
-    let log_dir = get_log_dir();
+    let log_dir = ensure_log_dir();
     let log_file = log_dir.join(format!("startup_error_{timestamp}.log"));
     let traces = get_recorded_traces();
 
@@ -200,7 +204,7 @@ pub fn log_startup_error(err: &dyn std::fmt::Display) {
 /// 手动触发导出诊断与性能日志 (通过菜单点击或命令行调用)
 pub fn dump_diagnostic_log(reason: &str) -> Result<PathBuf, String> {
     let timestamp = current_timestamp();
-    let log_dir = get_log_dir();
+    let log_dir = ensure_log_dir();
     let log_file = log_dir.join(format!("ide10_diag_{timestamp}.log"));
 
     let mut body = String::new();
@@ -239,7 +243,7 @@ pub fn dump_diagnostic_log(reason: &str) -> Result<PathBuf, String> {
 
 /// 在系统文件资源管理器中打开日志目录
 pub fn open_log_dir_in_explorer() {
-    let dir = get_log_dir();
+    let dir = ensure_log_dir();
     #[cfg(windows)]
     {
         let _ = std::process::Command::new("explorer.exe").arg(&dir).spawn();
@@ -261,13 +265,6 @@ mod tests {
         let traces = get_recorded_traces();
         assert!(traces.iter().any(|s| s == "test_step_1"));
         assert!(traces.iter().any(|s| s == "test_step_2"));
-    }
-
-    #[test]
-    fn test_get_log_dir_is_usable() {
-        let dir = get_log_dir();
-        assert!(!dir.as_os_str().is_empty());
-        assert!(dir.is_dir());
     }
 
     #[test]
@@ -306,13 +303,25 @@ mod tests {
     #[test]
     fn test_trace_ring_buffer_preserves_startup_and_latest() {
         let mut buf = TraceBuffer::new();
-        for i in 0..320 {
+        // 未超出 STARTUP_CAP + RECENT_CAP (288) 时应完整保留，不产生省略标记
+        for i in 0..(STARTUP_CAP + RECENT_CAP) {
+            buf.push(&format!("step_{i}"));
+        }
+        let snap_full = buf.snapshot();
+        assert_eq!(snap_full.len(), STARTUP_CAP + RECENT_CAP);
+        assert_eq!(snap_full[0], "step_0");
+        assert_eq!(snap_full[STARTUP_CAP + RECENT_CAP - 1], "step_287");
+        assert!(!snap_full.iter().any(|s| s.contains("omitted")));
+
+        // 超出容量后再推入 32 条：保留前 32 条启动事件 + 省略标记 + 最新 256 条（step_64..=step_319）
+        for i in (STARTUP_CAP + RECENT_CAP)..320 {
             buf.push(&format!("step_{i}"));
         }
         let snap = buf.snapshot();
         assert_eq!(snap[0], "step_0");
         assert_eq!(snap[STARTUP_CAP - 1], format!("step_{}", STARTUP_CAP - 1));
         assert!(snap[STARTUP_CAP].contains("32 earlier trace events omitted"));
+        assert_eq!(snap[STARTUP_CAP + 1], "step_64");
         assert_eq!(snap.last().map(String::as_str), Some("step_319"));
         assert_eq!(snap.len(), STARTUP_CAP + 1 + RECENT_CAP);
     }
@@ -321,7 +330,9 @@ mod tests {
     fn test_get_log_dir_is_cached_and_usable() {
         let d1 = get_log_dir();
         let d2 = get_log_dir();
-        assert_eq!(d1, d2);
+        assert!(!d1.as_os_str().is_empty());
         assert!(d1.is_dir());
+        assert_eq!(d1, d2);
+        assert_eq!(CACHED_LOG_DIR.get(), Some(&d1));
     }
 }
