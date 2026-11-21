@@ -150,7 +150,7 @@ export default async function handler(req, res) {
     }
     return res.status(200).json({
       server: "IDE1.0 MCP Server (Vercel Serverless)",
-      version: "0.8.7",
+      version: "0.8.8",
       status: "operational",
       protocolVersion: "2024-11-05",
       endpoints: {
@@ -202,7 +202,7 @@ export default async function handler(req, res) {
               },
               serverInfo: {
                 name: "ide1-mcp-server",
-                version: "0.8.7"
+                version: "0.8.8"
               }
             }
           });

@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.8.8 — 2026-11-21
+
+### Myers 差异内核统一收敛、NEMA 架构解耦模块化、诊断日志锁自愈与代码规范全量治理
+
+本版本聚焦于架构治理与健壮性加固：将双向行级 Myers 差异算法收敛至底层核心库 `editcore`，将 3800+ 行 NEMA 单体编解码器解耦拆分，为诊断日志系统引入锁中毒自愈与目录自愈能力，并对美漫三渲二弹窗界面实施数据泥块消除与全量短函数规范治理。
+
+#### 1. Myers 差异比对算法下沉与全仓统一 (`crates/editcore/src/diff.rs`)
+- **算法单一事实来源 (Single Source of Truth)**：将原分散在 `ide-mcp` 与 `ide-fast` 中的 Myers 双向行级 diff 算法完全收敛下沉至底层核心库 `editcore`。
+- **上层零冗余复用**：`ide-mcp` 直接复用 `editcore::diff` 导出统一接口；`ide-fast` 统一通过 `editcore::diff::diff_lines` 执行文档差异计算，消除算法冗余与维护分叉。
+
+#### 2. NEMA 编解码器架构模块化深度解耦 (`crates/nema-codec`)
+- **高内聚职责分离**：将原本 3800+ 行的单体库解耦拆分为 4 个职责单一的子模块：
+  - `export.rs`：专注于 Markdown 表格、JSON、YAML 导出。
+  - `lease.rs`：租约仲裁与协作并发控制状态机。
+  - `benchmarks.rs`：官方基准场景实测数据集及语法矩阵。
+  - `tests.rs`：模块化单元测试套件。
+- **模块可见性收敛**：在 `lib.rs` 中收敛子模块为私有 `mod`，并通过根级 `pub use *;` 导出，对外公共 API 保持 100% 向后兼容。
+
+#### 3. 诊断日志系统锁中毒自愈与目录自愈 (`ide-fast/src/diag_log.rs`)
+- **锁中毒自愈机制**：内存环形追踪缓冲区锁获取引入 `.unwrap_or_else(|e| e.into_inner())` 中毒自愈机制，彻底防止 panic hook 场景下因二次锁中毒导致进程异常中止。
+- **目录运行时自愈**：新增 `ensure_log_dir()`，运行时日志目录若被异常移除或未创建，在写入崩溃日志、启动错误或导出诊断前自动重新校验并创建。
+- **测试覆盖强化**：强化环形追踪缓冲区滚动容量与省略标记断言，确保启动追踪与最新追踪无损采集。
+
+#### 4. 美漫三渲二弹窗界面重构与代码规范治理 (`updateui.rs`, `frame.rs`)
+- **消除数据泥块与参数反模式**：引入 `UpdActions` 状态动作载荷，统一 `upd_badge()` 匹配逻辑，全面消除 `#[allow(clippy::too_many_arguments)]`。
+- **短函数规范治理**：拆分 `paint_comic_shell_chrome`、`render_upd_primary_action`、`render_upd_hero_banner`、`render_upd_body_cards`、`render_upd_notes_box`，所有函数单体严格控制在 80 行以内，符合团队最高编码规范。
+
+#### 5. 全量单元测试、集成测试与启动烟雾门禁全绿
+- `editcore` (475 UT + parity suites)、`ide-mcp` (21 tests)、`nema-codec` (26/26 tests)、`ide-fast` (667 passed) 及 `--smoke-test` 启动烟雾门禁全量通过，无警告、无编译错误。
+
+---
+
 ## 0.8.7 — 2026-11-21
 
 ### 多代理并发协同编辑引擎 OCC 高性能架构实装与实测验证

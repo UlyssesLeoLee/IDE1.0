@@ -11,7 +11,7 @@
 {
   "name": "ide10_editor",
   "display_name": "IDE1.0 Native AI Development Environment",
-  "version": "0.8.7",
+  "version": "0.8.8",
   "description": "High-performance pure safe-Rust AI-native editor and multi-agent coordination platform. Sub-500ms cold start, O(1) buffer editing, up to 100,000 concurrent agent orchestration, atomic CAS transactional patching, PowerShell-fidelity terminal, MCP server (stdio + HTTP).",
   "keywords": [
     "ide", "code-editor", "rust-ide", "ai-native-editor", "multi-agent-orchestrator",
@@ -248,7 +248,7 @@ ide::ops::collab(n_agents)                     // scale agent roster
 - **Fencing token TTL**: 60s monotonically increasing; expired or preempted commits rejected with 412
 - **Op idempotency**: `op_id` guards against duplicate network retries
 
-### Concurrent Co-Editing Performance (v0.8.7, Release build)
+### Concurrent Co-Editing Performance (v0.8.8, Release build)
 
 | Scenario | 1 Agent (Sequential) | 3 Agents Concurrent | Improvement |
 |----------|---------------------|---------------------|-------------|
@@ -279,9 +279,9 @@ cargo test --workspace
 
 # Build Windows installer (requires WiX v3)
 powershell ide-fast/packaging/build-msi.ps1
-# Output: dist-fast/IDE1.0_0.8.7_x64.msi
-#         dist-fast/IDE1.0_Setup_0.8.7_x64.exe
-#         dist-fast/IDE1.0-0.8.7-windows-x64.exe
+# Output: dist-fast/IDE1.0_0.8.8_x64.msi
+#         dist-fast/IDE1.0_Setup_0.8.8_x64.exe
+#         dist-fast/IDE1.0-0.8.8-windows-x64.exe
 #         dist-fast/SHA256SUMS.txt
 ```
 
@@ -348,9 +348,9 @@ Privacy: IDE1.0 runs locally with no telemetry. Network calls occur only when yo
 - Cross-provider concurrent editing (Claude, GPT, DeepSeek, Gemini simultaneously)
 - Auto-deploy on `git push` via Vercel Git integration
 
-**Downloads** (v0.8.7):
-- [GitHub Releases](https://github.com/UlyssesLeoLee/IDE1.0/releases/tag/v0.8.7)
-  - `IDE1.0_Setup_0.8.7_x64.exe` �?Installer with 3D wizard
-  - `IDE1.0_0.8.7_x64.msi` �?Silent enterprise MSI
-  - `IDE1.0-0.8.7-windows-x64.exe` �?Portable single-file
+**Downloads** (v0.8.8):
+- [GitHub Releases](https://github.com/UlyssesLeoLee/IDE1.0/releases/tag/v0.8.8)
+  - `IDE1.0_Setup_0.8.8_x64.exe` �?Installer with 3D wizard
+  - `IDE1.0_0.8.8_x64.msi` �?Silent enterprise MSI
+  - `IDE1.0-0.8.8-windows-x64.exe` �?Portable single-file
   - `SHA256SUMS.txt` �?Checksums
