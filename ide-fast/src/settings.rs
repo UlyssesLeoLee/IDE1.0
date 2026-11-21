@@ -2213,7 +2213,10 @@ nColumnSpace=2
         let mut back = Settings::default();
         back.apply_json(&s.to_json(), true);
         assert_eq!(back.collab_agent_models.len(), 25);
-        assert_eq!(back.collab_agent_models[24], ("agent_25".into(), "model-25".into()));
+        assert_eq!(
+            back.collab_agent_models[24],
+            ("agent_25".into(), "model-25".into())
+        );
 
         let mut huge = Settings::default();
         huge.collab_agent_models = (0..MAX_COLLAB_AGENT_MODELS + 500)

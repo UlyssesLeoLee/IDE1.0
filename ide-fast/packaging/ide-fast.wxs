@@ -8,15 +8,20 @@
     <Icon Id="ProductIcon" SourceFile="$(var.IconPath)" />
     <Property Id="ARPPRODUCTICON" Value="ProductIcon" />
     <!-- 彻底移除 WixUI_InstallDir 与任何 Windows 原生对话框，杜绝原生标题栏与 Back/Next/Cancel 按钮 -->
+    <!-- 安装开始前安全终止可能残留或被占用的 IDE1.0 实例 -->
+    <CustomAction Id="KillRunningIDE" Directory="TARGETDIR" ExeCommand="[SystemFolder]taskkill.exe /F /IM IDE1.0.exe /IM ide-fast.exe /FI &quot;STATUS eq RUNNING&quot;" Return="ignore" />
     <!-- 安装完成自动拉起旗舰真 3D 赛璐珞安装与首选配置向导 (0 原生控件残留) -->
     <CustomAction Id="Launch3DSetup" FileKey="IdeFastExe" ExeCommand="--setup" Return="asyncNoWait" />
     <InstallExecuteSequence>
+      <Custom Action="KillRunningIDE" Before="InstallValidate" />
       <Custom Action="Launch3DSetup" After="InstallFinalize">NOT Installed</Custom>
     </InstallExecuteSequence>
 
     <Directory Id="TARGETDIR" Name="SourceDir">
       <Directory Id="ProgramFiles64Folder">
-        <Directory Id="INSTALLFOLDER" Name="IDE1.0" />
+        <Directory Id="INSTALLFOLDER" Name="IDE1.0">
+          <Directory Id="LOGSFOLDER" Name="logs" />
+        </Directory>
       </Directory>
       <Directory Id="ProgramMenuFolder" />
     </Directory>
@@ -24,6 +29,15 @@
     <DirectoryRef Id="INSTALLFOLDER">
       <Component Id="MainExe" Guid="*">
         <File Id="IdeFastExe" Source="$(var.ExePath)" KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <!-- 安装路径下的 logs 日志目录组件: 允许所有本地用户向 logs 写入性能与崩溃日志 -->
+    <DirectoryRef Id="LOGSFOLDER">
+      <Component Id="LogsFolderComponent" Guid="d8a4f07e-9762-4b21-9e8c-1f5e27a69b12">
+        <CreateFolder>
+          <Permission User="Everyone" GenericAll="yes" />
+        </CreateFolder>
       </Component>
     </DirectoryRef>
 
@@ -37,6 +51,7 @@
 
     <Feature Id="Main" Title="IDE1.0" Level="1">
       <ComponentRef Id="MainExe" />
+      <ComponentRef Id="LogsFolderComponent" />
       <ComponentRef Id="StartMenuShortcut" />
     </Feature>
   </Product>

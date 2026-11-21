@@ -1,4 +1,4 @@
-param(
+﻿param(
   [string]$Target,
   [string]$Out
 )
@@ -52,6 +52,15 @@ $exe = Join-Path $Target "release\IDE1.0.exe"
 if (Test-Path $rawExe) {
     Copy-Item $rawExe $exe -Force
 }
+
+# 验证二进制可启动性门禁 (Launch Smoke Test)
+Write-Host "=== Running Launch Smoke Test ==="
+& $exe --smoke-test
+if ($LASTEXITCODE -ne 0) {
+    throw "Built IDE1.0.exe failed smoke test with exit code $LASTEXITCODE"
+}
+Write-Host "=== Launch Smoke Test PASSED ==="
+
 New-Item -ItemType Directory -Force $Out | Out-Null
 $wixobj = Join-Path $Out "ide-fast.wixobj"
 $icon = Join-Path $PSScriptRoot "ide-fast.ico"

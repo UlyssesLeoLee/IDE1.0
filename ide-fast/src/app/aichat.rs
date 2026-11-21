@@ -471,8 +471,7 @@ impl App {
     fn prune_agent_sessions(&mut self) {
         let count = self.collab.agent_count;
         self.ai.sessions.retain(|id, sess| {
-            sess.run.is_some()
-                || Self::parse_agent_index(id).is_none_or(|idx| idx < count)
+            sess.run.is_some() || Self::parse_agent_index(id).is_none_or(|idx| idx < count)
         });
         while self.ai.sessions.len() > Self::MAX_CACHED_AGENT_SESSIONS {
             let evict = self
@@ -541,11 +540,7 @@ impl App {
             return false;
         };
         (self.ai.active_agent_id == a.id && self.ai.run.is_some())
-            || self
-                .ai
-                .sessions
-                .get(&a.id)
-                .is_some_and(|s| s.run.is_some())
+            || self.ai.sessions.get(&a.id).is_some_and(|s| s.run.is_some())
             || a.is_running()
     }
 
@@ -1901,7 +1896,8 @@ impl App {
                                 ui.weak(trz("未找到匹配的 Agent"));
                             }
                             let total_agent_rows = total_matches;
-                            let display_limit = crate::app::collab::CollabState::AGENT_DISPLAY_LIMIT;
+                            let display_limit =
+                                crate::app::collab::CollabState::AGENT_DISPLAY_LIMIT;
                             for (idx, name, role, bound_model, is_busy) in
                                 agent_rows.iter().take(display_limit)
                             {
@@ -3122,6 +3118,9 @@ mod tests {
         // 全员协同模式下选择才切换全局默认模型
         app.ai.collab_mode = true;
         app.apply_model_pick("global-model".into());
-        assert_eq!(app.collab.agents[1].model_override.as_deref(), Some("agent-two-model"));
+        assert_eq!(
+            app.collab.agents[1].model_override.as_deref(),
+            Some("agent-two-model")
+        );
     }
 }

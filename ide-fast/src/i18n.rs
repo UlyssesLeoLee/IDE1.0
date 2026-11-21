@@ -757,6 +757,86 @@ pub const CMD_T: &[Row] = &[
         ],
     ),
     (
+        "导出诊断与性能日志…",
+        [
+            "导出诊断与性能日志…",
+            "診断およびパフォーマンスログを出力…",
+            "Export Diagnostic & Perf Logs…",
+        ],
+    ),
+    (
+        "打开日志文件夹 (logs)…",
+        [
+            "打开日志文件夹 (logs)…",
+            "ログフォルダを開く (logs)…",
+            "Open Logs Folder (logs)…",
+        ],
+    ),
+    (
+        "后台部署线程异常退出，请重试",
+        [
+            "后台部署线程异常退出，请重试",
+            "バックグラウンド配備スレッドが異常終了しました。再試行してください",
+            "Background deployment thread terminated unexpectedly, please retry",
+        ],
+    ),
+    (
+        "复制主程序到目标目录失败",
+        [
+            "复制主程序到目标目录失败",
+            "メインプログラムの対象ディレクトリへのコピーに失敗しました",
+            "Failed to copy main binary to target directory",
+        ],
+    ),
+    (
+        "无法写入目标程序文件（可能需要管理员权限或文件正被占用）",
+        [
+            "无法写入目标程序文件（可能需要管理员权限或文件正被占用）",
+            "対象ファイルに書き込めません（管理者権限が必要か、ファイルが使用中の可能性があります）",
+            "Cannot write target binary (may require admin privileges or file is in use)",
+        ],
+    ),
+    (
+        "无法创建安装目录（可能需要管理员权限）",
+        [
+            "无法创建安装目录（可能需要管理员权限）",
+            "インストールディレクトリを作成できません（管理者権限が必要な可能性があります）",
+            "Cannot create install directory (may require admin privileges)",
+        ],
+    ),
+    (
+        "无法启动后台部署线程",
+        [
+            "无法启动后台部署线程",
+            "バックグラウンド配備スレッドを開始できません",
+            "Cannot spawn background deployment thread",
+        ],
+    ),
+    (
+        "未能更新用户 PATH，请手动添加安装目录",
+        [
+            "未能更新用户 PATH，请手动添加安装目录",
+            "ユーザー PATH の更新に失敗しました。手動でインストール先を追加してください",
+            "Failed to update user PATH, please add installation directory manually",
+        ],
+    ),
+    (
+        "未能更新用户 PATH，请手动移除安装目录",
+        [
+            "未能更新用户 PATH，请手动移除安装目录",
+            "ユーザー PATH の更新に失敗しました。手動でインストール先を削除してください",
+            "Failed to update user PATH, please remove installation directory manually",
+        ],
+    ),
+    (
+        "部署警告",
+        [
+            "部署警告",
+            "配備警告",
+            "Deployment Warning",
+        ],
+    ),
+    (
         "显示空白符",
         ["显示空白符", "空白文字を表示", "Show Whitespace"],
     ),

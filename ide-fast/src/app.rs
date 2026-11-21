@@ -3100,9 +3100,7 @@ impl App {
                                         running_guard_id,
                                         egui::Sense::click(),
                                     );
-                                    if ui
-                                        .add(egui::Button::new("中断 (Ctrl+C)").small())
-                                        .clicked()
+                                    if ui.add(egui::Button::new("中断 (Ctrl+C)").small()).clicked()
                                     {
                                         interrupt_clicked = true;
                                     }

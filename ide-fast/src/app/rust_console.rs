@@ -107,7 +107,11 @@ impl App {
 
         for ch in inner.chars() {
             if escaped {
-                if in_first { first.push(ch); } else { second.push(ch); }
+                if in_first {
+                    first.push(ch);
+                } else {
+                    second.push(ch);
+                }
                 escaped = false;
                 continue;
             }
@@ -161,10 +165,18 @@ impl App {
         }
 
         if clean.eq_ignore_ascii_case("ide::context::status()") {
-            let active_title = self.docs.get(self.active).map(|d| d.name.as_str()).unwrap_or("(none)");
+            let active_title = self
+                .docs
+                .get(self.active)
+                .map(|d| d.name.as_str())
+                .unwrap_or("(none)");
             let total_docs = self.docs.len();
             let dirty_count = self.docs.iter().filter(|d| d.dirty).count();
-            let cur_lines = self.docs.get(self.active).map(|d| d.lines.len()).unwrap_or(0);
+            let cur_lines = self
+                .docs
+                .get(self.active)
+                .map(|d| d.lines.len())
+                .unwrap_or(0);
             return format!(
                 "ide::context: active_idx={}, active_doc=\"{}\", lines={}, open_docs={}, dirty_docs={}, collab_agents={}, theme={}",
                 self.active,
@@ -177,20 +189,35 @@ impl App {
             );
         }
 
-        if clean.eq_ignore_ascii_case("ide::data::docs()") || clean.eq_ignore_ascii_case("ide::data::files()") {
+        if clean.eq_ignore_ascii_case("ide::data::docs()")
+            || clean.eq_ignore_ascii_case("ide::data::files()")
+        {
             if self.docs.is_empty() {
                 return "ide::data: no open documents".into();
             }
             let mut list = Vec::new();
             for (i, d) in self.docs.iter().enumerate() {
-                let path_str = d.path.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|| "<untitled>".into());
+                let path_str = d
+                    .path
+                    .as_ref()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "<untitled>".into());
                 let marker = if i == self.active { "*" } else { " " };
                 list.push(format!(
                     "[{}{}] id={}, lines={}, dirty={}, path={}",
-                    marker, i, d.id, d.lines.len(), d.dirty, path_str
+                    marker,
+                    i,
+                    d.id,
+                    d.lines.len(),
+                    d.dirty,
+                    path_str
                 ));
             }
-            return format!("ide::data::docs ({}):\n{}", self.docs.len(), list.join("\n"));
+            return format!(
+                "ide::data::docs ({}):\n{}",
+                self.docs.len(),
+                list.join("\n")
+            );
         }
 
         if clean.starts_with("ide::data::read(") && clean.ends_with(')') {
@@ -204,8 +231,18 @@ impl App {
                 }
             };
             return match self.docs.get(idx) {
-                Some(d) => format!("--- [{}] {} ({} lines) ---\n{}", idx, d.name, d.lines.len(), d.text_lf()),
-                None => format!("ide::data::read: index {} out of bounds (open docs: {})", idx, self.docs.len()),
+                Some(d) => format!(
+                    "--- [{}] {} ({} lines) ---\n{}",
+                    idx,
+                    d.name,
+                    d.lines.len(),
+                    d.text_lf()
+                ),
+                None => format!(
+                    "ide::data::read: index {} out of bounds (open docs: {})",
+                    idx,
+                    self.docs.len()
+                ),
             };
         }
 
@@ -222,7 +259,11 @@ impl App {
         if clean.starts_with("ide::ops::new_doc(") && clean.ends_with(')') {
             let inner = &clean["ide::ops::new_doc(".len()..clean.len() - 1];
             let (title, content) = Self::parse_two_str_args(inner);
-            let final_title = if title.is_empty() { "Untitled".to_string() } else { title };
+            let final_title = if title.is_empty() {
+                "Untitled".to_string()
+            } else {
+                title
+            };
 
             self.new_doc();
             let cur = self.cur();
@@ -233,14 +274,18 @@ impl App {
                     cur.lines.push(String::new());
                 }
             }
-            return format!("ide::ops::new_doc: created new doc \"{}\" (active_idx={})", final_title, self.active);
+            return format!(
+                "ide::ops::new_doc: created new doc \"{}\" (active_idx={})",
+                final_title, self.active
+            );
         }
 
         if clean.starts_with("ide::ops::edit(") && clean.ends_with(')') {
             let inner = &clean["ide::ops::edit(".len()..clean.len() - 1];
             let parts: Vec<&str> = inner.splitn(3, ',').collect();
             if parts.len() < 3 {
-                return "ide::ops::edit: requires (start_line, end_line, \"replacement_text\")".into();
+                return "ide::ops::edit: requires (start_line, end_line, \"replacement_text\")"
+                    .into();
             }
             let start = match parts[0].trim().parse::<usize>() {
                 Ok(n) => n,
@@ -268,7 +313,9 @@ impl App {
             cur.dirty = true;
             return format!(
                 "ide::ops::edit: replaced lines {}..={} in active doc, total lines now {}",
-                start, end, cur.lines.len()
+                start,
+                end,
+                cur.lines.len()
             );
         }
 
@@ -293,7 +340,10 @@ impl App {
             if count > 0 {
                 cur.dirty = true;
             }
-            return format!("ide::ops::replace_all: replaced {} occurrences of \"{}\" with \"{}\"", count, from, to);
+            return format!(
+                "ide::ops::replace_all: replaced {} occurrences of \"{}\" with \"{}\"",
+                count, from, to
+            );
         }
 
         if clean.starts_with("ide::ops::diff_docs(") && clean.ends_with(')') {
@@ -311,7 +361,10 @@ impl App {
                 Err(_) => return format!("ide::ops::diff_docs: invalid idx_b: {}", parts[1]),
             };
             if a >= self.docs.len() || b >= self.docs.len() {
-                return format!("ide::ops::diff_docs: index out of range (open docs: {})", self.docs.len());
+                return format!(
+                    "ide::ops::diff_docs: index out of range (open docs: {})",
+                    self.docs.len()
+                );
             }
 
             let name_a = self.docs[a].name.clone();
@@ -319,7 +372,10 @@ impl App {
             let hunks = crate::diff::diff_lines(&self.docs[a].lines, &self.docs[b].lines);
 
             if hunks.is_empty() {
-                return format!("ide::ops::diff_docs: [{}] \"{}\" and [{}] \"{}\" are identical", a, name_a, b, name_b);
+                return format!(
+                    "ide::ops::diff_docs: [{}] \"{}\" and [{}] \"{}\" are identical",
+                    a, name_a, b, name_b
+                );
             }
 
             let mut out = format!("--- [{}] {}\n+++ [{}] {}\n", a, name_a, b, name_b);
@@ -349,9 +405,16 @@ impl App {
             };
             if idx < self.docs.len() {
                 self.active = idx;
-                return format!("ide::ops::switch_tab: switched to tab [{}] \"{}\"", idx, self.docs[idx].name);
+                return format!(
+                    "ide::ops::switch_tab: switched to tab [{}] \"{}\"",
+                    idx, self.docs[idx].name
+                );
             } else {
-                return format!("ide::ops::switch_tab: index {} out of range (open docs: {})", idx, self.docs.len());
+                return format!(
+                    "ide::ops::switch_tab: index {} out of range (open docs: {})",
+                    idx,
+                    self.docs.len()
+                );
             }
         }
 
@@ -369,7 +432,11 @@ impl App {
                 }
                 return format!("ide::ops::close_tab: closed tab [{}] \"{}\"", idx, name);
             } else {
-                return format!("ide::ops::close_tab: index {} out of range (open docs: {})", idx, self.docs.len());
+                return format!(
+                    "ide::ops::close_tab: index {} out of range (open docs: {})",
+                    idx,
+                    self.docs.len()
+                );
             }
         }
 
@@ -381,7 +448,10 @@ impl App {
             };
             self.collab.agent_count = n;
             self.collab.open = true;
-            return format!("ide::ops::collab_count: updated active collab agents to {} (collab panel opened)", n);
+            return format!(
+                "ide::ops::collab_count: updated active collab agents to {} (collab panel opened)",
+                n
+            );
         }
 
         if clean.starts_with("ide::ops::set_theme(") && clean.ends_with(')') {
@@ -396,16 +466,23 @@ impl App {
                     self.dark = false;
                     "ide::ops::set_theme: switched to Light theme".into()
                 }
-                other => format!("ide::ops::set_theme: unknown theme: {} (expected \"dark\" or \"light\")", other),
+                other => format!(
+                    "ide::ops::set_theme: unknown theme: {} (expected \"dark\" or \"light\")",
+                    other
+                ),
             };
         }
 
-        if clean.eq_ignore_ascii_case("ide::ops::clear()") || clean.eq_ignore_ascii_case("clear()") {
+        if clean.eq_ignore_ascii_case("ide::ops::clear()") || clean.eq_ignore_ascii_case("clear()")
+        {
             self.sys.rust_con.log.clear();
             return "ide::ops::clear: console cleared".into();
         }
 
-        format!("Unrecognized Rust statement: \"{}\". Type ide::context::help() for reference.", stmt)
+        format!(
+            "Unrecognized Rust statement: \"{}\". Type ide::context::help() for reference.",
+            stmt
+        )
     }
 
     /// 底部面板: Rust 控制台 UI
@@ -457,24 +534,25 @@ impl App {
             .max_height(log_h)
             .show(ui, |ui| {
                 if self.sys.rust_con.log.is_empty() {
-                    ui.weak("Rust Console is ready. Type ide::context::help() or any ide::* statement.");
+                    ui.weak(
+                        "Rust Console is ready. Type ide::context::help() or any ide::* statement.",
+                    );
                 }
                 for entry in &self.sys.rust_con.log {
                     ui.horizontal(|ui| {
-                        ui.label(
-                            egui::RichText::new("rust>")
-                                .monospace()
-                                .color(if self.tc.comic {
-                                    Color32::from_rgb(255, 204, 0)
-                                } else {
-                                    Color32::from_rgb(100, 180, 255)
-                                }),
+                        ui.label(egui::RichText::new("rust>").monospace().color(
+                            if self.tc.comic {
+                                Color32::from_rgb(255, 204, 0)
+                            } else {
+                                Color32::from_rgb(100, 180, 255)
+                            },
+                        ));
+                        ui.add(
+                            egui::Label::new(
+                                egui::RichText::new(&entry.command).monospace().strong(),
+                            )
+                            .selectable(true),
                         );
-                        ui.add(egui::Label::new(
-                            egui::RichText::new(&entry.command)
-                                .monospace()
-                                .strong(),
-                        ).selectable(true));
                     });
 
                     let out_col = if entry.ok {
@@ -487,11 +565,14 @@ impl App {
                         Color32::from_rgb(255, 100, 100)
                     };
 
-                    ui.add(egui::Label::new(
-                        egui::RichText::new(&entry.output)
-                            .monospace()
-                            .color(out_col),
-                    ).selectable(true));
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(&entry.output)
+                                .monospace()
+                                .color(out_col),
+                        )
+                        .selectable(true),
+                    );
                     ui.add_space(2.0);
                 }
             });
@@ -534,7 +615,9 @@ impl App {
                 self.sys.rust_con.history.push(cmd.clone());
                 self.sys.rust_con.history_idx = self.sys.rust_con.history.len();
                 let output = self.eval_rust_console_str(&cmd);
-                let ok = !output.starts_with("Unrecognized") && !output.contains("out of bounds") && !output.contains("invalid");
+                let ok = !output.starts_with("Unrecognized")
+                    && !output.contains("out of bounds")
+                    && !output.contains("invalid");
                 self.sys.rust_con.log.push(RustConsoleEntry {
                     command: cmd,
                     output,
@@ -577,7 +660,9 @@ mod tests {
     fn test_rust_console_ops_lifecycle() {
         let mut app = test_app();
         // create new doc
-        let res = app.eval_rust_console_str("ide::ops::new_doc(\"sample.rs\", \"fn main() { println!(\\\"hi\\\"); }\")");
+        let res = app.eval_rust_console_str(
+            "ide::ops::new_doc(\"sample.rs\", \"fn main() { println!(\\\"hi\\\"); }\")",
+        );
         assert!(res.contains("created new doc"));
 
         // read data

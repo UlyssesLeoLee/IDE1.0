@@ -32,6 +32,7 @@ mod cmds;
 mod cmdui;
 mod complete;
 mod curlx;
+mod diag_log;
 mod diff;
 mod doc;
 mod find;
@@ -113,14 +114,15 @@ impl Default for Trace {
 }
 impl Trace {
     pub fn mark(&self, what: &str) {
-        if !self.on {
-            return;
-        }
         // 微秒精度: 取整到毫秒会把 <1ms 的阶段吞掉
         let line = format!(
             "[fast +{:.1}ms] {what}",
             self.t0.elapsed().as_secs_f64() * 1000.0
         );
+        crate::diag_log::record_trace_step(&line);
+        if !self.on {
+            return;
+        }
         match &self.file {
             Some(p) => {
                 use std::io::Write;
@@ -188,14 +190,53 @@ fn split_installer_flag(
 }
 
 fn main() -> eframe::Result<()> {
+    crate::diag_log::install_crash_handler();
     let trace = Trace::new();
     trace.mark("main enter");
+
+    let raw_args: Vec<String> = std::env::args().skip(1).collect();
+
+    // 1. CI/CD 端到端启动烟雾门禁: 校验环境、加载设置、探测日志路径并安全退出
+    if raw_args
+        .iter()
+        .any(|a| a == "--smoke-test" || a == "--health")
+    {
+        trace.mark("smoke test: validating settings & environment");
+        let _st = settings::Settings::load();
+        trace.mark("smoke test: settings loaded");
+        let log_dir = crate::diag_log::get_log_dir();
+        trace.mark(&format!("smoke test: log dir accessible at {:?}", log_dir));
+        println!(
+            "IDE1.0_SMOKE_TEST_OK: version={}, log_dir={}",
+            env!("CARGO_PKG_VERSION"),
+            log_dir.display()
+        );
+        return Ok(());
+    }
+
+    // 2. 命令行手动触发导出诊断与性能日志
+    if raw_args
+        .iter()
+        .any(|a| a == "--dump-log" || a == "--export-log")
+    {
+        match crate::diag_log::dump_diagnostic_log("CLI manual trigger (--dump-log)") {
+            Ok(p) => {
+                println!("IDE1.0 Diagnostic Log Exported: {}", p.display());
+                return Ok(());
+            }
+            Err(e) => {
+                eprintln!("Failed to export diagnostic log: {e}");
+                std::process::exit(1);
+            }
+        }
+    }
+
     // 便携版自更新的帮手模式: 本进程是校验过的 `<exe>.new`, 只负责覆盖旧 exe 并启动新版 (不开窗口、不碰单实例)
     if std::env::args().nth(1).as_deref() == Some(updapply::APPLY_FLAG) {
         updapply::run_apply();
         return Ok(());
     }
-    let (force_new, args) = split_new_flag(std::env::args().skip(1).collect());
+    let (force_new, args) = split_new_flag(raw_args);
     let (open_installer, args) = split_installer_flag(args);
     // `--relaunch` = 「立即重启」拉起来的新进程: 旧进程这时正在退出, 不能把文件转交给它
     let (relaunched, args) = relaunch::take_flag(args);
@@ -300,6 +341,10 @@ fn main() -> eframe::Result<()> {
             Ok(Box::new(app))
         }),
     );
+    if let Err(ref e) = result {
+        crate::diag_log::log_startup_error(e);
+        eprintln!("[fast error] run_native failed: {e:?}");
+    }
     // 「安装并重启」(自更新): 窗口已经关完、设置已经落盘; msi 交给 msiexec, 便携版运行 `<exe>.new` 完成替换
     if let Some(a) = updapply::take() {
         let _ = updapply::launch(&a);

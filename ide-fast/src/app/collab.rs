@@ -504,14 +504,20 @@ fn contains_ascii_ci(haystack: &str, needle_lower: &[u8]) -> bool {
     if needle_lower.is_empty() {
         return true;
     }
-    haystack
-        .as_bytes()
-        .windows(needle_lower.len())
-        .any(|w| w.iter().zip(needle_lower).all(|(a, b)| a.to_ascii_lowercase() == *b))
+    haystack.as_bytes().windows(needle_lower.len()).any(|w| {
+        w.iter()
+            .zip(needle_lower)
+            .all(|(a, b)| a.to_ascii_lowercase() == *b)
+    })
 }
 
 #[inline]
-fn agent_matches_query(a: &SubAgent, q_trim: &str, ascii_lower: Option<&[u8]>, unicode_lower: Option<&str>) -> bool {
+fn agent_matches_query(
+    a: &SubAgent,
+    q_trim: &str,
+    ascii_lower: Option<&[u8]>,
+    unicode_lower: Option<&str>,
+) -> bool {
     if let Some(nb) = ascii_lower {
         contains_ascii_ci(&a.name, nb)
             || contains_ascii_ci(&a.id, nb)
@@ -534,15 +540,22 @@ fn agent_matches_query(a: &SubAgent, q_trim: &str, ascii_lower: Option<&[u8]>, u
 
 /// 按名称、ID、职责或绑定模型过滤前 `limit` 个匹配 Agent 下标，并返回 `(匹配前 limit 项下标, 匹配总数)`。
 /// 空查询时仅切片前 `limit` 个，保持 `O(1)` 复杂度，支持 100,000+ 编队 60 FPS 零掉帧渲染。
-pub fn filter_agents_limited(agents: &[SubAgent], query: &str, limit: usize) -> (Vec<usize>, usize) {
+pub fn filter_agents_limited(
+    agents: &[SubAgent],
+    query: &str,
+    limit: usize,
+) -> (Vec<usize>, usize) {
     let q_trim = query.trim();
     if q_trim.is_empty() {
         let take = agents.len().min(limit);
         return ((0..take).collect(), agents.len());
     }
-    let ascii_bytes = q_trim
-        .is_ascii()
-        .then(|| q_trim.bytes().map(|b| b.to_ascii_lowercase()).collect::<Vec<u8>>());
+    let ascii_bytes = q_trim.is_ascii().then(|| {
+        q_trim
+            .bytes()
+            .map(|b| b.to_ascii_lowercase())
+            .collect::<Vec<u8>>()
+    });
     let uni_lower = ascii_bytes.is_none().then(|| q_trim.to_lowercase());
     let mut out = Vec::with_capacity(limit.min(64));
     let mut total = 0usize;
@@ -1496,7 +1509,8 @@ impl App {
                 )
                 .clicked()
             {
-                self.collab.set_agent_count(self.collab.agent_count.saturating_sub(1));
+                self.collab
+                    .set_agent_count(self.collab.agent_count.saturating_sub(1));
             }
             let mut count_val = self.collab.agent_count;
             let dv = egui::DragValue::new(&mut count_val)
@@ -1512,7 +1526,8 @@ impl App {
                 )
                 .clicked()
             {
-                self.collab.set_agent_count(self.collab.agent_count.saturating_add(1));
+                self.collab
+                    .set_agent_count(self.collab.agent_count.saturating_add(1));
             }
             if self.collab.agent_count > 8 {
                 let badge = format!("数额: {}", format_number_commas(self.collab.agent_count));

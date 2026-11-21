@@ -449,12 +449,13 @@ impl App {
                 let plan = DeployPlan::from_state(&self.installer);
                 let (tx, rx) = std::sync::mpsc::channel();
                 let ctx = ui.ctx().clone();
-                let spawned = std::thread::Builder::new()
-                    .name("ide-deploy".into())
-                    .spawn(move || {
-                        let _ = tx.send(run_deploy_job(mode, &plan));
-                        ctx.request_repaint();
-                    });
+                let spawned =
+                    std::thread::Builder::new()
+                        .name("ide-deploy".into())
+                        .spawn(move || {
+                            let _ = tx.send(run_deploy_job(mode, &plan));
+                            ctx.request_repaint();
+                        });
                 match spawned {
                     Ok(_) => self.installer.deploy_rx = Some(rx),
                     Err(e) => {
@@ -1297,8 +1298,24 @@ fn create_shortcut(lnk: &Path, dest: &str, dir: &str) {
     );
 }
 
+#[cfg(windows)]
+fn grant_logs_dir_permissions(dir: &Path) {
+    use std::os::windows::process::CommandExt;
+    let _ = std::process::Command::new("icacls")
+        .arg(dir.as_os_str())
+        .arg("/grant")
+        .arg("*S-1-5-32-545:(OI)(CI)M")
+        .arg("/T")
+        .arg("/Q")
+        .creation_flags(0x08000000)
+        .output();
+}
+
 /// 执行真正的系统物理部署与快捷方式/PATH/注册表配置 (install 与 repair 共用)
 fn execute_physical_deployment(plan: &DeployPlan, out: &mut DeployOutcome) {
+    #[cfg(windows)]
+    stop_other_ide_instances_in_dir(&plan.target_dir);
+
     let target = Path::new(&plan.target_dir);
     if let Err(e) = std::fs::create_dir_all(target) {
         out.status_msg = Some(format!(
@@ -1307,6 +1324,14 @@ fn execute_physical_deployment(plan: &DeployPlan, out: &mut DeployOutcome) {
         ));
         return;
     }
+
+    let logs_dir = target.join("logs");
+    let _ = std::fs::create_dir_all(&logs_dir);
+    #[cfg(windows)]
+    {
+        grant_logs_dir_permissions(&logs_dir);
+    }
+
     let dest_exe = target.join("IDE1.0.exe");
     if let Ok(cur_exe) = std::env::current_exe() {
         if !paths_equal_ci(&cur_exe, &dest_exe) {

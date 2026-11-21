@@ -492,7 +492,10 @@ impl App {
                                     (super::sysopts::BottomTab::Terminal, "底部: 终端 (TERMINAL)"),
                                     (super::sysopts::BottomTab::Output, "底部: 输出 (OUTPUT)"),
                                     (super::sysopts::BottomTab::Problems, "底部: 问题 (PROBLEMS)"),
-                                    (super::sysopts::BottomTab::RustConsole, "底部: Rust 控制台 (RUST CONSOLE)"),
+                                    (
+                                        super::sysopts::BottomTab::RustConsole,
+                                        "底部: Rust 控制台 (RUST CONSOLE)",
+                                    ),
                                 ] {
                                     let on = self.term.open
                                         && !self.cfg.view.bottom_collapsed
@@ -1017,6 +1020,18 @@ impl App {
                                 false,
                             );
                         }
+                        ui.separator();
+                        if ui.button(trz("导出诊断与性能日志…")).clicked() {
+                            ui.close();
+                            if crate::diag_log::dump_diagnostic_log("Help Menu Export").is_ok() {
+                                crate::diag_log::open_log_dir_in_explorer();
+                            }
+                        }
+                        if ui.button(trz("打开日志文件夹 (logs)…")).clicked() {
+                            ui.close();
+                            crate::diag_log::open_log_dir_in_explorer();
+                        }
+                        ui.separator();
                         if menuui::mbtn(ui, lk("c.check-update", "")).clicked() {
                             ui.close();
                             self.upd_open();

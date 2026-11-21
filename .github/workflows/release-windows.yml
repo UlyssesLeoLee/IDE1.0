@@ -51,6 +51,15 @@ jobs:
         shell: powershell
         run: powershell -ExecutionPolicy Bypass -File ide-fast/packaging/build-msi.ps1
 
+      - name: Verify Release Artifacts Can Launch (Smoke Test Gate)
+        shell: powershell
+        run: |
+          Write-Host "Verifying built portable binary can launch..."
+          $portable = Get-Item "dist-fast/IDE1.0-*-windows-x64.exe" | Select-Object -First 1
+          & $portable.FullName --smoke-test
+          if ($LASTEXITCODE -ne 0) { throw "Release portable exe failed smoke test launch check!" }
+          Write-Host "Release launch smoke test PASSED!"
+
       - name: Upload Release Bundle to Action Artifacts
         id: upload
         uses: actions/upload-artifact@v4

@@ -33,6 +33,18 @@ fn port_file() -> Option<PathBuf> {
     Some(base.join("IDE1.0 Fast").join("instance.port"))
 }
 
+fn parse_port_info(content: &str) -> Option<(u16, Option<u32>)> {
+    let s = content.trim();
+    if let Some((port_s, pid_s)) = s.split_once(':') {
+        let port = port_s.trim().parse::<u16>().ok()?;
+        let pid = pid_s.trim().parse::<u32>().ok();
+        Some((port, pid))
+    } else {
+        let port = s.parse::<u16>().ok()?;
+        Some((port, None))
+    }
+}
+
 fn bypass_ipc() -> bool {
     const KEYS: &[&str] = &[
         "IDE10_MULTI",
@@ -51,23 +63,28 @@ pub fn forward_to_running(args: &[String]) -> bool {
         return false; // 调试 / 测试 / 纯离线记事本模式: 允许跳过网络 IPC
     }
     let Some(pf) = port_file() else { return false };
-    let Ok(port) = std::fs::read_to_string(&pf).map(|s| s.trim().parse::<u16>().unwrap_or(0))
-    else {
+    let content = match std::fs::read_to_string(&pf) {
+        Ok(s) => s,
+        Err(_) => return false,
+    };
+    let Some((port, _pid)) = parse_port_info(&content) else {
+        let _ = std::fs::remove_file(&pf);
         return false;
     };
     if port == 0 {
+        let _ = std::fs::remove_file(&pf);
         return false;
     }
     let Ok(mut s) = TcpStream::connect_timeout(
         &std::net::SocketAddr::from(([127, 0, 0, 1], port)),
-        std::time::Duration::from_millis(200),
+        std::time::Duration::from_millis(250),
     ) else {
         // 连不上 = 上一次异常退出留下的死端口文件，立即清理，避免后续启动产生 TCP 握手超时
         let _ = std::fs::remove_file(&pf);
         return false;
     };
-    let _ = s.set_read_timeout(Some(std::time::Duration::from_millis(500)));
-    let _ = s.set_write_timeout(Some(std::time::Duration::from_millis(500)));
+    let _ = s.set_read_timeout(Some(std::time::Duration::from_millis(600)));
+    let _ = s.set_write_timeout(Some(std::time::Duration::from_millis(600)));
     let mut msg = String::from("IDE1.0-OPEN\n");
     for a in args {
         // 相对路径按「调用者」的当前目录解析成绝对路径再发
@@ -84,8 +101,8 @@ pub fn forward_to_running(args: &[String]) -> bool {
     }
     let mut resp = String::new();
     let mut reader = BufReader::new(s);
-    if reader.read_line(&mut resp).is_err() || resp.trim() != "OK" {
-        // 对方没有应答 OK (可能是占用该端口的其他服务): 判定转发失败，删除死端口
+    if reader.read_line(&mut resp).is_err() || !resp.trim().starts_with("OK") {
+        // 对方没有应答 OK (可能是占用该端口的其他服务或已僵死): 判定转发失败，删除死端口
         let _ = std::fs::remove_file(&pf);
         return false;
     }
@@ -110,17 +127,19 @@ pub fn listen() -> Option<Receiver<Vec<String>>> {
     if let Some(d) = pf.parent() {
         let _ = std::fs::create_dir_all(d);
     }
-    let tmp_pf = pf.with_extension(format!("tmp.{}", std::process::id()));
-    if std::fs::write(&tmp_pf, port.to_string()).is_ok() {
+    let my_pid = std::process::id();
+    let payload = format!("{port}:{my_pid}");
+    let tmp_pf = pf.with_extension(format!("tmp.{my_pid}"));
+    if std::fs::write(&tmp_pf, &payload).is_ok() {
         if std::fs::rename(&tmp_pf, &pf).is_err() {
             let _ = std::fs::remove_file(&pf);
             if std::fs::rename(&tmp_pf, &pf).is_err() {
-                let _ = std::fs::write(&pf, port.to_string());
+                let _ = std::fs::write(&pf, &payload);
                 let _ = std::fs::remove_file(&tmp_pf);
             }
         }
     } else {
-        std::fs::write(&pf, port.to_string()).ok()?;
+        std::fs::write(&pf, &payload).ok()?;
     }
     let (tx, rx) = channel();
     std::thread::spawn(move || {
@@ -146,7 +165,8 @@ pub fn listen() -> Option<Receiver<Vec<String>>> {
                     paths.push(t);
                 }
             }
-            let _ = r.get_mut().write_all(b"OK\n");
+            let resp = format!("OK:{my_pid}\n");
+            let _ = r.get_mut().write_all(resp.as_bytes());
             if tx.send(paths).is_err() {
                 break; // 主线程接收端已释放，停止监听线程
             }
