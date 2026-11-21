@@ -3855,10 +3855,13 @@ pub fn toggle_table_header_in_source(source: &str, target_domain_id: Option<&str
     out
 }
 
-pub mod export;
+mod benchmarks;
+pub use benchmarks::*;
+
+mod export;
 pub use export::*;
 
-pub mod lease;
+mod lease;
 pub use lease::*;
 
 #[cfg(test)]

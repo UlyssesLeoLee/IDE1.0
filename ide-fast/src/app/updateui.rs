@@ -205,6 +205,36 @@ impl App {
             Phase::Failed(msg)
         };
     }
+}
+
+#[derive(Default)]
+struct UpdActions {
+    check: bool,
+    download: Option<Box<Candidate>>,
+    install: Option<Staged>,
+    page: bool,
+    close: bool,
+}
+
+impl App {
+    fn upd_badge(&self) -> (Color32, &'static str) {
+        match &self.upd.phase {
+            Phase::Available(_) => (
+                Color32::from_rgb(16, 185, 129),
+                crate::i18n::trz("发现新版本"),
+            ),
+            Phase::Downloading(_) => (
+                Color32::from_rgb(16, 185, 129),
+                crate::i18n::trz("正在下载"),
+            ),
+            Phase::Ready(_, _) => (
+                Color32::from_rgb(16, 185, 129),
+                crate::i18n::trz("更新就绪"),
+            ),
+            Phase::Failed(_) => (Color32::from_rgb(239, 68, 68), crate::i18n::trz("更新异常")),
+            _ => (Color32::from_rgb(2, 132, 199), crate::i18n::trz("检查更新")),
+        }
+    }
 
     pub(super) fn upd_window(&mut self, ctx: &egui::Context) {
         self.upd_frame(ctx);
@@ -217,31 +247,14 @@ impl App {
 
         let busy = self.upd.rx.is_some();
         let ch = Channel::from_code(&self.cfg.update_channel).unwrap_or_default();
-        let (mut check, mut download, mut install, mut page, mut close_requested) =
-            (false, None, None, false, false);
-
-        let badge_bg = match &self.upd.phase {
-            Phase::Available(_) | Phase::Downloading(_) | Phase::Ready(_, _) => {
-                Color32::from_rgb(16, 185, 129)
-            }
-            Phase::Failed(_) => Color32::from_rgb(239, 68, 68),
-            _ => Color32::from_rgb(2, 132, 199),
-        };
-        let badge_label = match &self.upd.phase {
-            Phase::Available(_) => crate::i18n::trz("发现新版本"),
-            Phase::Downloading(_) => crate::i18n::trz("正在下载"),
-            Phase::Ready(_, _) => crate::i18n::trz("更新就绪"),
-            Phase::Failed(_) => crate::i18n::trz("更新异常"),
-            _ => crate::i18n::trz("检查更新"),
-        };
-
-        let win_size = Vec2::new(880.0, 580.0);
+        let mut actions = UpdActions::default();
+        let (badge_bg, badge_label) = self.upd_badge();
 
         egui::Window::new("update_comic_modal")
             .id(egui::Id::new("update_comic_modal_window"))
             .title_bar(false)
             .frame(egui::Frame::NONE)
-            .fixed_size(win_size)
+            .fixed_size(Vec2::new(880.0, 580.0))
             .resizable(false)
             .collapsible(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
@@ -269,39 +282,30 @@ impl App {
                         );
 
                         ui.scope_builder(egui::UiBuilder::new().max_rect(content_rect), |ui| {
-                            app.render_upd_right_content(
-                                ui,
-                                ch,
-                                busy,
-                                &mut check,
-                                &mut download,
-                                &mut install,
-                                &mut page,
-                                &mut close_requested,
-                            );
+                            actions = app.render_upd_right_content(ui, ch, busy);
                         });
                     },
                 );
                 if res.close_clicked {
-                    close_requested = true;
+                    actions.close = true;
                 }
             });
 
-        if close_requested || ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
+        if actions.close || ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
             self.upd.open = false;
         }
-        if page {
+        if actions.page {
             if let Err(e) = crate::md_view::open_url(&self.upd.page) {
                 self.cur().tip = e;
             }
         }
-        if check {
+        if actions.check {
             self.upd_check(false, Some(ctx.clone()));
         }
-        if let Some(c) = download {
+        if let Some(c) = actions.download {
             self.upd_download(c, Some(ctx.clone()));
         }
-        if let Some(s) = install {
+        if let Some(s) = actions.install {
             // 和「立即重启」同一套: 登记请求, 走正常关闭流程 (有未保存修改照常先问; 取消关闭 = 请求作废), 关完由 main 执行
             updapply::request(if s.kind == InstallKind::Msi {
                 Apply::Msi(s.path)
@@ -312,98 +316,63 @@ impl App {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn render_upd_right_content(
         &mut self,
         ui: &mut egui::Ui,
         ch: Channel,
         busy: bool,
-        check: &mut bool,
-        download: &mut Option<Box<Candidate>>,
-        install: &mut Option<Staged>,
-        page: &mut bool,
-        close_requested: &mut bool,
-    ) {
+    ) -> UpdActions {
         ui.spacing_mut().item_spacing = vec2(0.0, 8.0);
-
-        // Hero Banner
-        match &self.upd.phase {
-            Phase::Idle => {
-                paint_step_hero_banner(
-                    ui,
-                    Color32::from_rgb(2, 132, 199),
-                    crate::i18n::trz("版本更新与升级 (UPDATES)"),
-                    crate::i18n::trz("检查官方渠道发布的最新稳定版与增量补丁"),
-                );
-            }
-            Phase::Checking => {
-                paint_step_hero_banner(
-                    ui,
-                    Color32::from_rgb(2, 132, 199),
-                    crate::i18n::trz("正在连接校验新版本 (CHECKING)..."),
-                    crate::i18n::trz("正在连接官方发行源校验最新版本号与数字签名..."),
-                );
-            }
-            Phase::UpToDate => {
-                paint_step_hero_banner(
-                    ui,
-                    Color32::from_rgb(16, 185, 129),
-                    crate::i18n::trz("当前已是最新版本 (UP TO DATE)"),
-                    crate::i18n::trz("您当前运行的是最新版，无需更新；可随时重新检查"),
-                );
-            }
-            Phase::Available(c) => {
-                let title = format!(
-                    "{}  (v{})",
-                    crate::i18n::trz("发现新版本就绪"),
-                    c.release.tag
-                );
-                paint_step_hero_banner(
-                    ui,
-                    Color32::from_rgb(2, 132, 199),
-                    &title,
-                    crate::i18n::trz("官方已有新版本发布，建议升级以获得最新特性与缺陷修复"),
-                );
-            }
-            Phase::Downloading(c) => {
-                let title = format!(
-                    "{}  (v{})",
-                    crate::i18n::trz("正在高速下载更新包"),
-                    c.release.tag
-                );
-                paint_step_hero_banner(
-                    ui,
-                    Color32::from_rgb(14, 165, 233),
-                    &title,
-                    crate::i18n::trz("正在拉取发行包资产并同步校验哈希完整性..."),
-                );
-            }
-            Phase::Ready(c, _s) => {
-                let title = format!(
-                    "{}  (v{})",
-                    crate::i18n::trz("更新包就绪，校验全量通过"),
-                    c.release.tag
-                );
-                paint_step_hero_banner(
-                    ui,
-                    Color32::from_rgb(16, 185, 129),
-                    &title,
-                    crate::i18n::trz("签名校验与 SHA-256 验证无误，随时可应用更新并极速重启"),
-                );
-            }
-            Phase::Failed(msg) => {
-                paint_step_hero_banner(
-                    ui,
-                    Color32::from_rgb(239, 68, 68),
-                    crate::i18n::trz("检查更新异常 (UPDATE ERROR)"),
-                    msg,
-                );
-            }
-        }
-
+        self.render_upd_hero_banner(ui);
         ui.add_space(2.0);
+        self.render_upd_body_cards(ui, ch);
+        ui.add_space(4.0);
+        self.render_upd_action_bar(ui, busy)
+    }
 
-        // 信息卡片: 当前版本与发布通道
+    fn render_upd_hero_banner(&self, ui: &mut egui::Ui) {
+        let tag_title = |prefix: &'static str, tag: &str| format!("{prefix}  (v{tag})");
+        let (accent, owned_title, subtitle) = match &self.upd.phase {
+            Phase::Idle => (
+                Color32::from_rgb(2, 132, 199),
+                crate::i18n::trz("版本更新与升级 (UPDATES)").to_string(),
+                crate::i18n::trz("检查官方渠道发布的最新稳定版与增量补丁"),
+            ),
+            Phase::Checking => (
+                Color32::from_rgb(2, 132, 199),
+                crate::i18n::trz("正在连接校验新版本 (CHECKING)...").to_string(),
+                crate::i18n::trz("正在连接官方发行源校验最新版本号与数字签名..."),
+            ),
+            Phase::UpToDate => (
+                Color32::from_rgb(16, 185, 129),
+                crate::i18n::trz("当前已是最新版本 (UP TO DATE)").to_string(),
+                crate::i18n::trz("您当前运行的是最新版，无需更新；可随时重新检查"),
+            ),
+            Phase::Available(c) => (
+                Color32::from_rgb(2, 132, 199),
+                tag_title(crate::i18n::trz("发现新版本就绪"), &c.release.tag),
+                crate::i18n::trz("官方已有新版本发布，建议升级以获得最新特性与缺陷修复"),
+            ),
+            Phase::Downloading(c) => (
+                Color32::from_rgb(14, 165, 233),
+                tag_title(crate::i18n::trz("正在高速下载更新包"), &c.release.tag),
+                crate::i18n::trz("正在拉取发行包资产并同步校验哈希完整性..."),
+            ),
+            Phase::Ready(c, _s) => (
+                Color32::from_rgb(16, 185, 129),
+                tag_title(crate::i18n::trz("更新包就绪，校验全量通过"), &c.release.tag),
+                crate::i18n::trz("签名校验与 SHA-256 验证无误，随时可应用更新并极速重启"),
+            ),
+            Phase::Failed(msg) => (
+                Color32::from_rgb(239, 68, 68),
+                crate::i18n::trz("检查更新异常 (UPDATE ERROR)").to_string(),
+                msg.as_str(),
+            ),
+        };
+        paint_step_hero_banner(ui, accent, &owned_title, subtitle);
+    }
+
+    fn render_upd_body_cards(&self, ui: &mut egui::Ui, ch: Channel) {
         let cur_ver_desc = format!(
             "v{}  |  {}: {}  |  {}",
             env!("CARGO_PKG_VERSION"),
@@ -419,27 +388,20 @@ impl App {
             Color32::from_rgb(56, 189, 248),
         );
 
-        // 若发现新版本或正在下载/就绪，展示目标版本信息卡片
         match &self.upd.phase {
             Phase::Available(c) | Phase::Downloading(c) | Phase::Ready(c, _) => {
                 let signed = crate::updkey::is_configured(&crate::updkey::UPDATE_PUBKEY);
                 let asset_desc = match &c.asset {
-                    Some(a) if signed => {
-                        format!(
-                            "{} ({:.1} MB) · {}",
-                            a.name,
-                            a.size as f64 / 1_048_576.0,
+                    Some(a) => format!(
+                        "{} ({:.1} MB) · {}",
+                        a.name,
+                        a.size as f64 / 1_048_576.0,
+                        if signed {
                             crate::i18n::trz("已签名")
-                        )
-                    }
-                    Some(a) => {
-                        format!(
-                            "{} ({:.1} MB) · {}",
-                            a.name,
-                            a.size as f64 / 1_048_576.0,
+                        } else {
                             crate::i18n::trz("未配置公钥")
-                        )
-                    }
+                        }
+                    ),
                     None => crate::i18n::trz("无直接可执行资产 (请访问发布主页下载)").to_string(),
                 };
                 comic_info_card(
@@ -449,45 +411,12 @@ impl App {
                     UiIcon::CheckCircle,
                     Color32::from_rgb(16, 185, 129),
                 );
-
-                // 更新日志区域
                 let notes = update::truncate_notes(&c.release.notes, update::NOTES_MAX_CHARS);
                 if !notes.is_empty() {
-                    let (notes_rect, _) = ui.allocate_exact_size(
-                        vec2(ui.available_width(), 160.0),
-                        egui::Sense::hover(),
-                    );
-                    paint_comic_hard_shadow_rect(
-                        ui.painter(),
-                        notes_rect,
-                        Color32::from_rgb(18, 22, 34),
-                        2.0,
-                        vec2(2.5, 2.5),
-                    );
-                    ui.painter().rect_stroke(
-                        notes_rect,
-                        0.0,
-                        Stroke::new(1.8, Color32::from_rgb(45, 55, 75)),
-                        StrokeKind::Inside,
-                    );
-                    let inner = notes_rect.shrink2(vec2(10.0, 8.0));
-                    ui.scope_builder(egui::UiBuilder::new().max_rect(inner), |ui| {
-                        egui::ScrollArea::vertical()
-                            .id_salt("upd_notes_comic_scroll")
-                            .auto_shrink([false, false])
-                            .show(ui, |ui| {
-                                ui.spacing_mut().item_spacing.y = 2.0;
-                                ui.label(
-                                    egui::RichText::new(&notes)
-                                        .size(11.0)
-                                        .color(Color32::from_rgb(203, 213, 225)),
-                                );
-                            });
-                    });
+                    Self::render_upd_notes_box(ui, &notes);
                 }
             }
             _ => {
-                // 空白提示或说明卡片
                 comic_info_card(
                     ui,
                     crate::i18n::trz("更新安全策略"),
@@ -499,10 +428,117 @@ impl App {
                 );
             }
         }
+    }
 
-        ui.add_space(4.0);
+    fn render_upd_notes_box(ui: &mut egui::Ui, notes: &str) {
+        let (notes_rect, _) =
+            ui.allocate_exact_size(vec2(ui.available_width(), 160.0), egui::Sense::hover());
+        paint_comic_hard_shadow_rect(
+            ui.painter(),
+            notes_rect,
+            Color32::from_rgb(18, 22, 34),
+            2.0,
+            vec2(2.5, 2.5),
+        );
+        ui.painter().rect_stroke(
+            notes_rect,
+            0.0,
+            Stroke::new(1.8, Color32::from_rgb(45, 55, 75)),
+            StrokeKind::Inside,
+        );
+        let inner = notes_rect.shrink2(vec2(10.0, 8.0));
+        ui.scope_builder(egui::UiBuilder::new().max_rect(inner), |ui| {
+            egui::ScrollArea::vertical()
+                .id_salt("upd_notes_comic_scroll")
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    ui.spacing_mut().item_spacing.y = 2.0;
+                    ui.label(
+                        egui::RichText::new(notes)
+                            .size(11.0)
+                            .color(Color32::from_rgb(203, 213, 225)),
+                    );
+                });
+        });
+    }
 
-        // 底部行动条
+    fn render_upd_primary_action(
+        &self,
+        ui: &mut egui::Ui,
+        primary_w: f32,
+        busy: bool,
+        actions: &mut UpdActions,
+    ) {
+        match &self.upd.phase {
+            Phase::Available(c) => {
+                let signed = crate::updkey::is_configured(&crate::updkey::UPDATE_PUBKEY);
+                if signed && c.asset.is_some() {
+                    if comic_action_button_with_icon(
+                        ui,
+                        Some(UiIcon::Bolt),
+                        crate::i18n::trz("立即下载更新 (DOWNLOAD NOW)"),
+                        vec2(primary_w, 46.0),
+                        !busy,
+                        Color32::from_rgb(2, 132, 199),
+                    )
+                    .clicked()
+                    {
+                        actions.download = Some(c.clone());
+                    }
+                } else if comic_action_button(
+                    ui,
+                    crate::i18n::trz("前往发布主页手动下载"),
+                    vec2(primary_w, 46.0),
+                    true,
+                    Color32::from_rgb(2, 132, 199),
+                )
+                .clicked()
+                {
+                    actions.page = true;
+                }
+            }
+            Phase::Downloading(_) => {
+                comic_action_button(
+                    ui,
+                    crate::i18n::trz("正在后台高速下载中..."),
+                    vec2(primary_w, 46.0),
+                    false,
+                    Color32::from_rgb(30, 41, 59),
+                );
+            }
+            Phase::Ready(_, s) => {
+                if comic_action_button_with_icon(
+                    ui,
+                    Some(UiIcon::Play),
+                    crate::i18n::trz("立即安装并重启 (INSTALL NOW)"),
+                    vec2(primary_w, 46.0),
+                    true,
+                    Color32::from_rgb(16, 185, 129),
+                )
+                .clicked()
+                {
+                    actions.install = Some(s.clone());
+                }
+            }
+            _ => {
+                if comic_action_button_with_icon(
+                    ui,
+                    Some(UiIcon::Bolt),
+                    crate::i18n::trz("重新检查更新 (CHECK AGAIN)"),
+                    vec2(primary_w, 46.0),
+                    !busy,
+                    Color32::from_rgb(2, 132, 199),
+                )
+                .clicked()
+                {
+                    actions.check = true;
+                }
+            }
+        }
+    }
+
+    fn render_upd_action_bar(&self, ui: &mut egui::Ui, busy: bool) -> UpdActions {
+        let mut actions = UpdActions::default();
         let total_w = ui.available_width();
         let close_w = 80.0;
         let page_w = 130.0;
@@ -510,73 +546,7 @@ impl App {
 
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 14.0;
-
-            match &self.upd.phase {
-                Phase::Available(c) => {
-                    let signed = crate::updkey::is_configured(&crate::updkey::UPDATE_PUBKEY);
-                    if signed && c.asset.is_some() {
-                        if comic_action_button_with_icon(
-                            ui,
-                            Some(UiIcon::Bolt),
-                            crate::i18n::trz("立即下载更新 (DOWNLOAD NOW)"),
-                            vec2(primary_w, 46.0),
-                            !busy,
-                            Color32::from_rgb(2, 132, 199),
-                        )
-                        .clicked()
-                        {
-                            *download = Some(c.clone());
-                        }
-                    } else if comic_action_button(
-                        ui,
-                        crate::i18n::trz("前往发布主页手动下载"),
-                        vec2(primary_w, 46.0),
-                        true,
-                        Color32::from_rgb(2, 132, 199),
-                    )
-                    .clicked()
-                    {
-                        *page = true;
-                    }
-                }
-                Phase::Downloading(_) => {
-                    comic_action_button(
-                        ui,
-                        crate::i18n::trz("正在后台高速下载中..."),
-                        vec2(primary_w, 46.0),
-                        false,
-                        Color32::from_rgb(30, 41, 59),
-                    );
-                }
-                Phase::Ready(_, s) => {
-                    if comic_action_button_with_icon(
-                        ui,
-                        Some(UiIcon::Play),
-                        crate::i18n::trz("立即安装并重启 (INSTALL NOW)"),
-                        vec2(primary_w, 46.0),
-                        true,
-                        Color32::from_rgb(16, 185, 129),
-                    )
-                    .clicked()
-                    {
-                        *install = Some(s.clone());
-                    }
-                }
-                _ => {
-                    if comic_action_button_with_icon(
-                        ui,
-                        Some(UiIcon::Bolt),
-                        crate::i18n::trz("重新检查更新 (CHECK AGAIN)"),
-                        vec2(primary_w, 46.0),
-                        !busy,
-                        Color32::from_rgb(2, 132, 199),
-                    )
-                    .clicked()
-                    {
-                        *check = true;
-                    }
-                }
-            }
+            self.render_upd_primary_action(ui, primary_w, busy, &mut actions);
 
             if comic_action_button(
                 ui,
@@ -587,7 +557,7 @@ impl App {
             )
             .clicked()
             {
-                *page = true;
+                actions.page = true;
             }
 
             if comic_action_button(
@@ -599,8 +569,9 @@ impl App {
             )
             .clicked()
             {
-                *close_requested = true;
+                actions.close = true;
             }
         });
+        actions
     }
 }

@@ -1,3 +1,5 @@
+//! NEMA 编解码器、语法矩阵与租约仲裁单元测试
+
 use super::*;
 
 fn doc(s: &str) -> String {

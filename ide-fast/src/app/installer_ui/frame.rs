@@ -24,6 +24,90 @@ pub(crate) struct ComicFrameResult {
     pub close_clicked: bool,
 }
 
+/// 绘制美漫三渲二窗口底板、硬阴影及标题栏静态图元（不含交互按钮）
+fn paint_comic_shell_chrome(
+    p: &egui::Painter,
+    win_rect: Rect,
+    header_rect: Rect,
+    wiz_rect: Rect,
+    logo_tex: Option<&egui::TextureHandle>,
+    spec: &ComicFrameSpec<'_>,
+) {
+    let title_x = header_rect.left() + 56.0;
+    p.rect_filled(win_rect.translate(vec2(6.0, 6.0)), 0.0, Color32::BLACK);
+    p.rect_filled(win_rect, 0.0, Color32::from_rgb(14, 18, 26));
+    p.rect_stroke(
+        win_rect,
+        0.0,
+        Stroke::new(2.0, Color32::from_rgb(30, 41, 59)),
+        StrokeKind::Inside,
+    );
+
+    p.rect_filled(header_rect, 0.0, Color32::from_rgb(20, 25, 36));
+    p.line_segment(
+        [header_rect.left_bottom(), header_rect.right_bottom()],
+        Stroke::new(1.8, spec.badge_bg),
+    );
+
+    let logo_center = pos2(header_rect.left() + 28.0, header_rect.center().y);
+    paint_authentic_logo(p, logo_tex, logo_center, 26.0, vec2(2.0, 2.0));
+
+    p.text(
+        pos2(title_x + 1.5, header_rect.center().y + 1.5),
+        egui::Align2::LEFT_CENTER,
+        "IDE 1.0",
+        egui::FontId::proportional(17.0),
+        Color32::BLACK,
+    );
+    p.text(
+        pos2(title_x, header_rect.center().y),
+        egui::Align2::LEFT_CENTER,
+        "IDE 1.0",
+        egui::FontId::proportional(17.0),
+        Color32::from_rgb(241, 245, 249),
+    );
+
+    paint_comic_hard_shadow_rect(p, wiz_rect, spec.badge_bg, 1.5, vec2(1.5, 1.5));
+    p.with_clip_rect(wiz_rect.shrink2(vec2(3.0, 1.0))).text(
+        wiz_rect.center(),
+        egui::Align2::CENTER_CENTER,
+        spec.badge_label,
+        egui::FontId::proportional(10.5),
+        Color32::WHITE,
+    );
+
+    let ver_x = header_rect.right()
+        - if spec.min_btn_id.is_some() {
+            86.0
+        } else {
+            78.0
+        };
+    let ver_rect = Rect::from_center_size(pos2(ver_x, header_rect.center().y), vec2(76.0, 22.0));
+    paint_comic_hard_shadow_rect(
+        p,
+        ver_rect,
+        Color32::from_rgb(30, 41, 59),
+        1.5,
+        vec2(1.5, 1.5),
+    );
+    crate::ui_icons::paint(
+        p,
+        Rect::from_center_size(
+            pos2(ver_rect.left() + 14.0, ver_rect.center().y),
+            vec2(10.0, 10.0),
+        ),
+        crate::ui_icons::UiIcon::Spark,
+        Color32::from_rgb(56, 189, 248),
+    );
+    p.text(
+        pos2(ver_rect.center().x + 6.0, ver_rect.center().y),
+        egui::Align2::CENTER_CENTER,
+        concat!("v", env!("CARGO_PKG_VERSION")),
+        egui::FontId::proportional(10.5),
+        Color32::from_rgb(203, 213, 225),
+    );
+}
+
 impl App {
     /// 绘制模态半透明漫画墨水暗化背景遮罩
     pub(crate) fn render_comic_backdrop(ctx: &egui::Context, backdrop_id: &str) {
@@ -52,99 +136,15 @@ impl App {
             vec2(88.0, 22.0),
         );
 
-        // 1-4. 绘制底板与标题栏静态图元 (黑曜钛金底板 + 纯黑硬阴影 + 粗墨线边框)
-        {
-            let p = ui.painter();
+        paint_comic_shell_chrome(
+            ui.painter(),
+            win_rect,
+            header_rect,
+            wiz_rect,
+            self.installer.logo_tex.as_ref(),
+            &spec,
+        );
 
-            // 美漫纯黑实心硬阴影
-            p.rect_filled(win_rect.translate(vec2(6.0, 6.0)), 0.0, Color32::BLACK);
-
-            // 主画板底色与外框
-            p.rect_filled(win_rect, 0.0, Color32::from_rgb(14, 18, 26));
-            p.rect_stroke(
-                win_rect,
-                0.0,
-                Stroke::new(2.0, Color32::from_rgb(30, 41, 59)),
-                StrokeKind::Inside,
-            );
-
-            // 顶部 Header 栏与主题强调分割线
-            p.rect_filled(header_rect, 0.0, Color32::from_rgb(20, 25, 36));
-            p.line_segment(
-                [header_rect.left_bottom(), header_rect.right_bottom()],
-                Stroke::new(1.8, spec.badge_bg),
-            );
-
-            // 左上角正版原生 Crystal Logo 纹理徽章
-            let logo_center = pos2(header_rect.left() + 28.0, header_rect.center().y);
-            paint_authentic_logo(
-                p,
-                self.installer.logo_tex.as_ref(),
-                logo_center,
-                26.0,
-                vec2(2.0, 2.0),
-            );
-
-            // 品牌标题文字 "IDE 1.0"
-            p.text(
-                pos2(title_x + 1.5, header_rect.center().y + 1.5),
-                egui::Align2::LEFT_CENTER,
-                "IDE 1.0",
-                egui::FontId::proportional(17.0),
-                Color32::BLACK,
-            );
-            p.text(
-                pos2(title_x, header_rect.center().y),
-                egui::Align2::LEFT_CENTER,
-                "IDE 1.0",
-                egui::FontId::proportional(17.0),
-                Color32::from_rgb(241, 245, 249),
-            );
-
-            // 模式胶囊
-            paint_comic_hard_shadow_rect(p, wiz_rect, spec.badge_bg, 1.5, vec2(1.5, 1.5));
-            p.with_clip_rect(wiz_rect.shrink2(vec2(3.0, 1.0))).text(
-                wiz_rect.center(),
-                egui::Align2::CENTER_CENTER,
-                spec.badge_label,
-                egui::FontId::proportional(10.5),
-                Color32::WHITE,
-            );
-
-            // 右侧版本胶囊 (纯矢量菱形火花 + ASCII 版本号)
-            let ver_x = if spec.min_btn_id.is_some() {
-                header_rect.right() - 86.0
-            } else {
-                header_rect.right() - 78.0
-            };
-            let ver_rect =
-                Rect::from_center_size(pos2(ver_x, header_rect.center().y), vec2(76.0, 22.0));
-            paint_comic_hard_shadow_rect(
-                p,
-                ver_rect,
-                Color32::from_rgb(30, 41, 59),
-                1.5,
-                vec2(1.5, 1.5),
-            );
-            crate::ui_icons::paint(
-                p,
-                Rect::from_center_size(
-                    pos2(ver_rect.left() + 14.0, ver_rect.center().y),
-                    vec2(10.0, 10.0),
-                ),
-                crate::ui_icons::UiIcon::Spark,
-                Color32::from_rgb(56, 189, 248),
-            );
-            p.text(
-                pos2(ver_rect.center().x + 6.0, ver_rect.center().y),
-                egui::Align2::CENTER_CENTER,
-                concat!("v", env!("CARGO_PKG_VERSION")),
-                egui::FontId::proportional(10.5),
-                Color32::from_rgb(203, 213, 225),
-            );
-        }
-
-        // 顶部窗口拖动把手
         let drag_right = header_rect.right()
             - if spec.min_btn_id.is_some() {
                 126.0
@@ -163,19 +163,14 @@ impl App {
             ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
         }
 
-        // 可选美漫最小化控制按钮
-        let minimize_clicked = if let Some(min_id) = spec.min_btn_id {
+        let minimize_clicked = spec.min_btn_id.is_some_and(|min_id| {
             paint_comic_window_btn(
                 ui,
                 pos2(header_rect.right() - 50.0, header_rect.center().y),
                 min_id,
                 false,
             )
-        } else {
-            false
-        };
-
-        // 美漫关闭控制按钮
+        });
         let close_clicked = paint_comic_window_btn(
             ui,
             pos2(header_rect.right() - 20.0, header_rect.center().y),
@@ -183,12 +178,10 @@ impl App {
             true,
         );
 
-        // 内容主体分镜：左侧 3D 赛璐珞水晶展台 + 右侧内容面板
         let body_rect = Rect::from_min_max(
             pos2(win_rect.left() + 16.0, header_rect.bottom() + 14.0),
             pos2(win_rect.right() - 16.0, win_rect.bottom() - 12.0),
         );
-
         let left_w = 330.0;
         let left_panel_rect = Rect::from_min_size(body_rect.min, vec2(left_w, body_rect.height()));
         let right_panel_rect = Rect::from_min_max(
