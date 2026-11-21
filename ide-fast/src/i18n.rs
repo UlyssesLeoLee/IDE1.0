@@ -3963,6 +3963,22 @@ pub const CMD_T: &[Row] = &[
         ],
     ),
     (
+        "官方已有新版本发布，建议升级以获得最新特性与缺陷修复",
+        [
+            "官方已有新版本发布，建议升级以获得最新特性与缺陷修复",
+            "新しい公式リリースが利用可能です。最新機能と修正を取得するため更新をおすすめします",
+            "A new official release is available. Upgrading is recommended for the latest features and fixes",
+        ],
+    ),
+    (
+        "签名校验与 SHA-256 验证无误，随时可应用更新并极速重启",
+        [
+            "签名校验与 SHA-256 验证无误，随时可应用更新并极速重启",
+            "署名と SHA-256 の検証に成功しました。今すぐ更新を適用して再起動できます",
+            "Signature and SHA-256 verified. Ready to apply update and restart",
+        ],
+    ),
+    (
         "维护模式",
         [
             "维护模式",

@@ -6,17 +6,62 @@
 //!   1. 软件发生 panic / 启动失败 (run_native 报错) 时自动输出；
 //!   2. 用户手动触发 (命令行 `--log` / `--dump-log` 或界面菜单点击“导出调试日志”) 时输出。
 
+use std::collections::VecDeque;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 
-static IN_MEMORY_TRACE: Mutex<Vec<String>> = Mutex::new(Vec::new());
+const STARTUP_CAP: usize = 32;
+const RECENT_CAP: usize = 256;
 
-/// 记录启动或运行关键步骤追踪（仅保存在内存中，发生故障或手动导出时才落盘）
+struct TraceBuffer {
+    startup: Vec<String>,
+    recent: VecDeque<String>,
+    dropped: usize,
+}
+
+impl TraceBuffer {
+    const fn new() -> Self {
+        Self {
+            startup: Vec::new(),
+            recent: VecDeque::new(),
+            dropped: 0,
+        }
+    }
+
+    fn push(&mut self, msg: &str) {
+        if self.startup.len() < STARTUP_CAP {
+            self.startup.push(msg.to_string());
+        } else {
+            if self.recent.len() == RECENT_CAP {
+                self.recent.pop_front();
+                self.dropped += 1;
+            }
+            self.recent.push_back(msg.to_string());
+        }
+    }
+
+    fn snapshot(&self) -> Vec<String> {
+        let extra = usize::from(self.dropped > 0);
+        let mut out = Vec::with_capacity(self.startup.len() + self.recent.len() + extra);
+        out.extend(self.startup.iter().cloned());
+        if self.dropped > 0 {
+            out.push(format!(
+                "... ({} earlier trace events omitted) ...",
+                self.dropped
+            ));
+        }
+        out.extend(self.recent.iter().cloned());
+        out
+    }
+}
+
+static IN_MEMORY_TRACE: Mutex<TraceBuffer> = Mutex::new(TraceBuffer::new());
+static CACHED_LOG_DIR: OnceLock<PathBuf> = OnceLock::new();
+
+/// 记录启动或运行关键步骤追踪（仅保存在内存中，保留首段启动轨迹与最近 256 条运行事件）
 pub fn record_trace_step(msg: &str) {
     if let Ok(mut lock) = IN_MEMORY_TRACE.lock() {
-        if lock.len() < 256 {
-            lock.push(msg.to_string());
-        }
+        lock.push(msg);
     }
 }
 
@@ -24,7 +69,7 @@ pub fn record_trace_step(msg: &str) {
 pub fn get_recorded_traces() -> Vec<String> {
     IN_MEMORY_TRACE
         .lock()
-        .map(|l| l.clone())
+        .map(|l| l.snapshot())
         .unwrap_or_default()
 }
 
@@ -34,10 +79,10 @@ fn current_timestamp() -> String {
     now.format("%Y%m%d_%H%M%S").to_string()
 }
 
-/// 获取或解析日志输出目录
+/// 解析并校验日志输出目录 (仅执行一次磁盘写探测)
 /// 优先选择 `<exe_parent_dir>/logs` (如 `C:\Program Files\IDE1.0\logs`)；
 /// 若安装路径受系统权限限制无法写入，自动优雅降级到 `%LOCALAPPDATA%\IDE1.0\logs`
-pub fn get_log_dir() -> PathBuf {
+fn resolve_log_dir() -> PathBuf {
     // 1. 尝试当前 exe 所在目录下的 logs 文件夹
     if let Ok(exe_path) = std::env::current_exe() {
         if let Some(parent) = exe_path.parent() {
@@ -63,6 +108,11 @@ pub fn get_log_dir() -> PathBuf {
     };
     let _ = std::fs::create_dir_all(&fallback);
     fallback
+}
+
+/// 获取日志输出目录 (进程内通过 OnceLock 缓存，避免重复创建/删除探测文件)
+pub fn get_log_dir() -> PathBuf {
+    CACHED_LOG_DIR.get_or_init(resolve_log_dir).clone()
 }
 
 /// 注册全局 panic 钩子 (仅在崩溃/启动失败时触发写入)
@@ -251,5 +301,27 @@ mod tests {
             }
         }
         assert!(found, "startup_error log file should have been written");
+    }
+
+    #[test]
+    fn test_trace_ring_buffer_preserves_startup_and_latest() {
+        let mut buf = TraceBuffer::new();
+        for i in 0..320 {
+            buf.push(&format!("step_{i}"));
+        }
+        let snap = buf.snapshot();
+        assert_eq!(snap[0], "step_0");
+        assert_eq!(snap[STARTUP_CAP - 1], format!("step_{}", STARTUP_CAP - 1));
+        assert!(snap[STARTUP_CAP].contains("32 earlier trace events omitted"));
+        assert_eq!(snap.last().map(String::as_str), Some("step_319"));
+        assert_eq!(snap.len(), STARTUP_CAP + 1 + RECENT_CAP);
+    }
+
+    #[test]
+    fn test_get_log_dir_is_cached_and_usable() {
+        let d1 = get_log_dir();
+        let d2 = get_log_dir();
+        assert_eq!(d1, d2);
+        assert!(d1.is_dir());
     }
 }

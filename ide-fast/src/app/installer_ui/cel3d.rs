@@ -374,20 +374,15 @@ fn collect_mesh_polys(
     let light_cam = view_rot.transform_dir(light_dir);
     let view_dir = Vec3::new(0.0, 0.0, -1.0);
 
-    let world_verts: Vec<Vec3> = if let Some(m) = model_mat {
-        mesh.vertices
-            .iter()
-            .map(|v| m.transform_point(*v))
-            .collect()
-    } else {
-        mesh.vertices.clone()
-    };
-
-    let cam_verts: Vec<Vec3> = world_verts
+    let cam_verts: Vec<Vec3> = mesh
+        .vertices
         .iter()
-        .map(|w| {
-            let rel = *w - cam.target;
-            let rot = view_rot.transform_point(rel);
+        .map(|v| {
+            let w = match model_mat {
+                Some(m) => m.transform_point(*v),
+                None => *v,
+            };
+            let rot = view_rot.transform_point(w - cam.target);
             Vec3::new(rot.x, rot.y, rot.z + cam.dist)
         })
         .collect();
@@ -473,11 +468,7 @@ pub fn render_cel3d_scene(
     );
 
     // 画师算法深度排序
-    render_list.sort_by(|a, b| {
-        b.depth
-            .partial_cmp(&a.depth)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
+    render_list.sort_by(|a, b| b.depth.total_cmp(&a.depth));
 
     // 绘制多边形与美漫粗黑外轮廓
     for poly in render_list {
@@ -521,11 +512,7 @@ pub fn render_cel3d_crystal_scene(
     );
 
     // 4. 画师算法深度排序 (Painter's Algorithm Depth Sort)
-    render_list.sort_by(|a, b| {
-        b.depth
-            .partial_cmp(&a.depth)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
+    render_list.sort_by(|a, b| b.depth.total_cmp(&a.depth));
 
     // 5. 绘制赛璐珞多边形切面与美漫纯黑粗墨线外边框 (1.8px)
     for poly in render_list {

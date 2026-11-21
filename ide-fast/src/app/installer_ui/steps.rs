@@ -8,6 +8,37 @@ use crate::app::App;
 use crate::ui_icons::{self, UiIcon};
 use eframe::egui;
 use egui::{pos2, vec2, Color32, Rect, Stroke, StrokeKind};
+use std::sync::OnceLock;
+
+enum EulaLine {
+    Heading(&'static str),
+    Subheading(&'static str),
+    Quote(&'static str),
+    Blank,
+    Body(&'static str),
+}
+
+fn parsed_eula_lines() -> &'static [EulaLine] {
+    static LINES: OnceLock<Vec<EulaLine>> = OnceLock::new();
+    LINES.get_or_init(|| {
+        super::USER_AGREEMENT_TEXT
+            .lines()
+            .map(|line| {
+                if let Some(rest) = line.strip_prefix("# ") {
+                    EulaLine::Heading(rest)
+                } else if let Some(rest) = line.strip_prefix("## ") {
+                    EulaLine::Subheading(rest)
+                } else if let Some(rest) = line.strip_prefix("> ") {
+                    EulaLine::Quote(rest)
+                } else if line.trim().is_empty() {
+                    EulaLine::Blank
+                } else {
+                    EulaLine::Body(line)
+                }
+            })
+            .collect()
+    })
+}
 
 impl App {
     /// 渲染右侧多步骤向导分镜
@@ -219,36 +250,42 @@ impl App {
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     ui.spacing_mut().item_spacing.y = 3.0;
-                    for line in super::USER_AGREEMENT_TEXT.lines() {
-                        if let Some(rest) = line.strip_prefix("# ") {
-                            ui.heading(
-                                egui::RichText::new(rest)
-                                    .strong()
-                                    .color(Color32::WHITE)
-                                    .size(13.5),
-                            );
-                        } else if let Some(rest) = line.strip_prefix("## ") {
-                            ui.add_space(3.0);
-                            ui.label(
-                                egui::RichText::new(rest)
-                                    .strong()
-                                    .color(Color32::from_rgb(56, 189, 248))
-                                    .size(12.0),
-                            );
-                        } else if let Some(rest) = line.strip_prefix("> ") {
-                            ui.label(
-                                egui::RichText::new(rest)
-                                    .color(Color32::from_rgb(251, 191, 36))
-                                    .size(10.5),
-                            );
-                        } else if line.trim().is_empty() {
-                            ui.add_space(2.0);
-                        } else {
-                            ui.label(
-                                egui::RichText::new(line)
-                                    .color(Color32::from_rgb(226, 232, 240))
-                                    .size(10.5),
-                            );
+                    for line in parsed_eula_lines() {
+                        match *line {
+                            EulaLine::Heading(rest) => {
+                                ui.heading(
+                                    egui::RichText::new(rest)
+                                        .strong()
+                                        .color(Color32::WHITE)
+                                        .size(13.5),
+                                );
+                            }
+                            EulaLine::Subheading(rest) => {
+                                ui.add_space(3.0);
+                                ui.label(
+                                    egui::RichText::new(rest)
+                                        .strong()
+                                        .color(Color32::from_rgb(56, 189, 248))
+                                        .size(12.0),
+                                );
+                            }
+                            EulaLine::Quote(rest) => {
+                                ui.label(
+                                    egui::RichText::new(rest)
+                                        .color(Color32::from_rgb(251, 191, 36))
+                                        .size(10.5),
+                                );
+                            }
+                            EulaLine::Blank => {
+                                ui.add_space(2.0);
+                            }
+                            EulaLine::Body(text) => {
+                                ui.label(
+                                    egui::RichText::new(text)
+                                        .color(Color32::from_rgb(226, 232, 240))
+                                        .size(10.5),
+                                );
+                            }
                         }
                     }
 
