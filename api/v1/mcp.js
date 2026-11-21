@@ -143,6 +143,11 @@ export default async function handler(req, res) {
 
   // GET: Discovery & Status
   if (req.method === "GET") {
+    const accept = req.headers["accept"] || "";
+    if (accept.includes("text/html") && !accept.includes("application/json")) {
+      res.setHeader("Location", "/");
+      return res.status(302).end();
+    }
     return res.status(200).json({
       server: "IDE1.0 MCP Server (Vercel Serverless)",
       version: "0.8.6",

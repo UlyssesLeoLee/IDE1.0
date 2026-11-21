@@ -1,0 +1,894 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IDE1.0 MCP Server &bull; Cel-Shaded Crystal Stage</title>
+  <link rel="icon" type="image/png" href="/assets/logo/IDE1.0_Crystal_A_32x32.png">
+  <style>
+    :root {
+      --bg-dark: #070a12;
+      --bg-panel: rgba(14, 20, 34, 0.75);
+      --border-panel: rgba(56, 189, 248, 0.25);
+      --border-accent: #38bdf8;
+      --cyan-bright: #38bdf8;
+      --cyan-glow: rgba(56, 189, 248, 0.35);
+      --ice-white: #f0fdfa;
+      --text-muted: #94a3b8;
+      --text-bright: #f8fafc;
+      --code-bg: #0b1120;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-bright);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      overflow-x: hidden;
+      background-image: 
+        radial-gradient(circle at 50% 260px, rgba(14, 165, 233, 0.15) 0%, rgba(3, 105, 161, 0.05) 45%, transparent 75%),
+        linear-gradient(to bottom, #070a12 0%, #0b1222 50%, #070a12 100%);
+      background-attachment: fixed;
+    }
+
+    /* Hero Diamond Stage */
+    .stage-container {
+      width: 100%;
+      max-width: 900px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding-top: 28px;
+      position: relative;
+    }
+
+    .brand-title {
+      font-size: 1.45rem;
+      font-weight: 800;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      background: linear-gradient(135deg, #f0fdfa 0%, #38bdf8 60%, #0284c7 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .brand-tagline {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      letter-spacing: 0.08em;
+      margin-bottom: 12px;
+    }
+
+    .canvas-wrapper {
+      position: relative;
+      width: 440px;
+      height: 400px;
+      max-width: 95vw;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      cursor: grab;
+      touch-action: none;
+    }
+
+    .canvas-wrapper:active {
+      cursor: grabbing;
+    }
+
+    #diamond-canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      filter: drop-shadow(0 0 24px rgba(56, 189, 248, 0.28));
+    }
+
+    .hint-pill {
+      margin-top: 4px;
+      margin-bottom: 24px;
+      font-size: 0.72rem;
+      font-family: monospace;
+      color: #64748b;
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid rgba(56, 189, 248, 0.15);
+      border-radius: 9999px;
+      padding: 4px 14px;
+      letter-spacing: 0.05em;
+    }
+
+    /* AI MCP Documentation Section */
+    .ai-guide-container {
+      width: 100%;
+      max-width: 820px;
+      padding: 0 16px 60px 16px;
+    }
+
+    .ai-guide-card {
+      background: var(--bg-panel);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--border-panel);
+      border-radius: 12px;
+      padding: 24px 28px;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 18px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: #34d399;
+      background: rgba(16, 185, 129, 0.12);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      padding: 3px 10px;
+      border-radius: 9999px;
+      letter-spacing: 0.05em;
+    }
+
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      background-color: #10b981;
+      border-radius: 50%;
+      box-shadow: 0 0 8px #10b981;
+      animation: pulse 2s infinite ease-in-out;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(0.85); }
+    }
+
+    .protocol-tag {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.75rem;
+      color: #7dd3fc;
+    }
+
+    .card-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: #f8fafc;
+      margin-bottom: 8px;
+    }
+
+    .card-description {
+      font-size: 0.88rem;
+      color: var(--text-muted);
+      line-height: 1.55;
+      margin-bottom: 20px;
+    }
+
+    .spec-table {
+      width: 100%;
+      margin-bottom: 20px;
+      font-size: 0.84rem;
+      border-collapse: collapse;
+    }
+
+    .spec-table tr {
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .spec-table td {
+      padding: 9px 0;
+    }
+
+    .spec-table td:first-child {
+      width: 150px;
+      color: #94a3b8;
+      font-weight: 600;
+    }
+
+    .spec-table code {
+      background: var(--code-bg);
+      border: 1px solid rgba(56, 189, 248, 0.2);
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.82rem;
+      color: #38bdf8;
+    }
+
+    .code-box {
+      background: var(--code-bg);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      margin-bottom: 20px;
+      overflow: hidden;
+    }
+
+    .code-header {
+      background: rgba(255, 255, 255, 0.03);
+      padding: 8px 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      font-size: 0.78rem;
+      color: #cbd5e1;
+      font-family: monospace;
+    }
+
+    .copy-btn {
+      background: rgba(56, 189, 248, 0.15);
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      color: #38bdf8;
+      padding: 3px 9px;
+      border-radius: 4px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .copy-btn:hover {
+      background: rgba(56, 189, 248, 0.3);
+      color: #ffffff;
+    }
+
+    pre {
+      padding: 14px;
+      overflow-x: auto;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.82rem;
+      color: #e2e8f0;
+      line-height: 1.45;
+    }
+
+    .tool-list {
+      margin-top: 14px;
+      list-style-type: none;
+    }
+
+    .tool-list li {
+      padding: 8px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      font-size: 0.84rem;
+      line-height: 1.4;
+      color: #cbd5e1;
+    }
+
+    .tool-list li:last-child {
+      border-bottom: none;
+    }
+
+    .tool-name {
+      font-family: monospace;
+      font-weight: 700;
+      color: #7dd3fc;
+      margin-right: 6px;
+    }
+
+    footer {
+      margin-top: auto;
+      padding: 20px;
+      font-size: 0.75rem;
+      color: #64748b;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 3D Cel-Shaded Diamond Stage -->
+  <section class="stage-container">
+    <h1 class="brand-title">IDE1.0 MCP Engine</h1>
+    <p class="brand-tagline">Autonomous Multi-Agent Collaborative Microkernel &bull; v0.8.6</p>
+
+    <div class="canvas-wrapper" id="canvas-wrapper">
+      <canvas id="diamond-canvas" width="880" height="800"></canvas>
+    </div>
+    <div class="hint-pill">&bull; Move mouse or drag to rotate 3D crystal &bull;</div>
+  </section>
+
+  <!-- AI Instruction Block -->
+  <main class="ai-guide-container">
+    <div class="ai-guide-card">
+      <div class="card-header">
+        <span class="status-badge"><span class="status-dot"></span> OPERATIONAL</span>
+        <span class="protocol-tag">MCP JSON-RPC 2.0 (2024-11-05)</span>
+      </div>
+
+      <h2 class="card-title">AI Agent Integration Specification</h2>
+      <p class="card-description">
+        This serverless MCP endpoint allows autonomous AI agents (Claude, GPT, Gemini, DeepSeek, Antigravity) to perform headless collaborative file operations, Myers line diffing, and CAS dual-mode (Git &amp; NEMA) concurrent merging.
+      </p>
+
+      <table class="spec-table">
+        <tbody>
+          <tr>
+            <td>MCP Endpoint</td>
+            <td><code>POST https://ide1d0.vercel.app/mcp</code></td>
+          </tr>
+          <tr>
+            <td>Transport Protocol</td>
+            <td><code>Streamable HTTP POST / JSON-RPC 2.0</code></td>
+          </tr>
+          <tr>
+            <td>Collab Modes</td>
+            <td><code>"git"</code> (3-way text merge) &bull; <code>"nema"</code> (NEMA v1.5 syntax-closed semantic merge)</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <!-- MCP Client Config -->
+      <div class="code-box">
+        <div class="code-header">
+          <span>Agent Configuration (Claude Desktop / Antigravity / Cursor)</span>
+          <button class="copy-btn" onclick="copyCode('cfg-content', this)">Copy JSON</button>
+        </div>
+        <pre><code id="cfg-content">{
+  "mcpServers": {
+    "ide1d0": {
+      "url": "https://ide1d0.vercel.app/mcp"
+    }
+  }
+}</code></pre>
+      </div>
+
+      <!-- Tools Directory -->
+      <h3 style="font-size: 0.95rem; margin-top: 18px; color: #f8fafc; font-weight: 700;">Exposed MCP Tools</h3>
+      <ul class="tool-list">
+        <li>
+          <span class="tool-name">headless_coedit</span>
+          Multi-agent concurrent document edit with auto-merge. Parameters: <code>file_id</code>, <code>author</code>, <code>base_revision</code>, <code>new_text</code>, <code>mode: "git" | "nema"</code>.
+        </li>
+        <li>
+          <span class="tool-name">headless_read</span>
+          Retrieve document content. Parameters: <code>file_id</code>, <code>revision?</code> (omit for latest).
+        </li>
+        <li>
+          <span class="tool-name">headless_history</span>
+          Inspect document revision tree, timestamps, line counts, and author attributions. Parameters: <code>file_id</code>.
+        </li>
+        <li>
+          <span class="tool-name">headless_list_files</span>
+          Enumerate active tracked documents in memory.
+        </li>
+        <li>
+          <span class="tool-name">diff_unified</span>
+          Compute Myers unified diff between two text payloads. Parameters: <code>text_a</code>, <code>text_b</code>.
+        </li>
+        <li>
+          <span class="tool-name">diff_revisions</span>
+          Compute unified diff between two tracked revisions. Parameters: <code>file_id</code>, <code>rev_a</code>, <code>rev_b</code>.
+        </li>
+        <li>
+          <span class="tool-name">ide_rust_eval</span>
+          Execute sandboxed Blender bpy-style Rust console automation DSL. Parameters: <code>script</code>.
+        </li>
+      </ul>
+
+      <!-- Quick Curl Example -->
+      <div class="code-box" style="margin-top: 20px;">
+        <div class="code-header">
+          <span>Direct JSON-RPC Call (curl)</span>
+          <button class="copy-btn" onclick="copyCode('curl-content', this)">Copy curl</button>
+        </div>
+        <pre><code id="curl-content">curl -X POST https://ide1d0.vercel.app/mcp \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "tools/call",
+    "params": {
+      "name": "headless_coedit",
+      "arguments": {
+        "file_id": "default:src/main.rs",
+        "author": "claude-3-7-sonnet",
+        "base_revision": 0,
+        "new_text": "fn main() {\n    println!(\"Hello IDE1.0\");\n}\n",
+        "mode": "git"
+      }
+    }
+  }'</code></pre>
+      </div>
+
+    </div>
+  </main>
+
+  <footer>
+    IDE1.0 &bull; Dual Collab Kernel (Git 3-Way &amp; NEMA v1.5 Semantic) &bull; Built with Rust &amp; Modern Web
+  </footer>
+
+  <script>
+    // Copy helper
+    function copyCode(id, btn) {
+      const code = document.getElementById(id).innerText;
+      navigator.clipboard.writeText(code).then(() => {
+        const orig = btn.innerText;
+        btn.innerText = "Copied!";
+        setTimeout(() => { btn.innerText = orig; }, 2000);
+      });
+    }
+
+    // =========================================================================
+    // Authentic 3D Cel-Shaded IDE1.0 Faceted Diamond Crystal Engine
+    // Faithfully ported from Rust crates/ide-fast/src/app/installer_ui/cel3d_models.rs
+    // =========================================================================
+    (function init3DDiamond() {
+      const canvas = document.getElementById("diamond-canvas");
+      const wrapper = document.getElementById("canvas-wrapper");
+      const ctx = canvas.getContext("2d");
+
+      // High-DPI canvas resolution
+      const dpr = window.devicePixelRatio || 1;
+      const w = 440;
+      const h = 400;
+      canvas.width = w * dpr;
+      canvas.height = h * dpr;
+      ctx.scale(dpr, dpr);
+
+      // 3D Vector Math
+      class Vec3 {
+        constructor(x, y, z) {
+          this.x = x;
+          this.y = y;
+          this.z = z;
+        }
+        add(v) { return new Vec3(this.x + v.x, this.y + v.y, this.z + v.z); }
+        sub(v) { return new Vec3(this.x - v.x, this.y - v.y, this.z - v.z); }
+        mul(s) { return new Vec3(this.x * s, this.y * s, this.z * s); }
+        dot(v) { return this.x * v.x + this.y * v.y + this.z * v.z; }
+        cross(v) {
+          return new Vec3(
+            this.y * v.z - this.z * v.y,
+            this.z * v.x - this.x * v.z,
+            this.x * v.y - this.y * v.x
+          );
+        }
+        norm() {
+          const len = Math.hypot(this.x, this.y, this.z);
+          return len > 1e-6 ? new Vec3(this.x / len, this.y / len, this.z / len) : new Vec3(0, 0, 0);
+        }
+      }
+
+      // Build Faceted Diamond Geometry (Scale = 96)
+      const S = 96.0;
+      const topApex = new Vec3(0.0, 1.40 * S, 0.0);
+      const botApex = new Vec3(0.0, -1.40 * S, 0.0);
+
+      // Equator Girdle Ring (y = 0.0, 8 vertices)
+      const g = [
+        new Vec3(0.0, 0.0, 0.72 * S),
+        new Vec3(0.56 * S, 0.0, 0.42 * S),
+        new Vec3(1.08 * S, 0.0, 0.0),
+        new Vec3(0.56 * S, 0.0, -0.42 * S),
+        new Vec3(0.0, 0.0, -0.72 * S),
+        new Vec3(-0.56 * S, 0.0, -0.42 * S),
+        new Vec3(-1.08 * S, 0.0, 0.0),
+        new Vec3(-0.56 * S, 0.0, 0.42 * S)
+      ];
+
+      // Crown Ring (y = +0.68 * S, 4 vertices)
+      const c = [
+        new Vec3(0.0, 0.68 * S, 0.46 * S),
+        new Vec3(0.70 * S, 0.68 * S, 0.0),
+        new Vec3(0.0, 0.68 * S, -0.46 * S),
+        new Vec3(-0.70 * S, 0.68 * S, 0.0)
+      ];
+
+      // Pavilion Ring (y = -0.68 * S, 4 vertices)
+      const p = [
+        new Vec3(0.0, -0.68 * S, 0.46 * S),
+        new Vec3(0.70 * S, -0.68 * S, 0.0),
+        new Vec3(0.0, -0.68 * S, -0.46 * S),
+        new Vec3(-0.70 * S, -0.68 * S, 0.0)
+      ];
+
+      const faces = [];
+
+      // 1. Crown Facets (Top Apex -> Crown Ring)
+      faces.push({ pts: [topApex, c[0], c[1]], mat: "light" });
+      faces.push({ pts: [topApex, c[1], c[2]], mat: "light" });
+      faces.push({ pts: [topApex, c[2], c[3]], mat: "light" });
+      faces.push({ pts: [topApex, c[3], c[0]], mat: "light" });
+
+      // 2. Crown to Girdle Facets (Crown Ring -> Girdle Ring)
+      // Front-Right
+      faces.push({ pts: [c[0], g[1], g[0]], mat: "mid" });
+      faces.push({ pts: [c[0], c[1], g[1]], mat: "light" });
+      faces.push({ pts: [c[1], g[2], g[1]], mat: "mid" });
+      // Back-Right
+      faces.push({ pts: [c[1], g[3], g[2]], mat: "mid" });
+      faces.push({ pts: [c[1], c[2], g[3]], mat: "light" });
+      faces.push({ pts: [c[2], g[4], g[3]], mat: "mid" });
+      // Back-Left
+      faces.push({ pts: [c[2], g[5], g[4]], mat: "mid" });
+      faces.push({ pts: [c[2], c[3], g[5]], mat: "light" });
+      faces.push({ pts: [c[3], g[6], g[5]], mat: "mid" });
+      // Front-Left
+      faces.push({ pts: [c[3], g[7], g[6]], mat: "mid" });
+      faces.push({ pts: [c[3], c[0], g[7]], mat: "light" });
+      faces.push({ pts: [c[0], g[0], g[7]], mat: "mid" });
+
+      // 3. Girdle to Pavilion Facets (Girdle Ring -> Pavilion Ring)
+      // Front-Right
+      faces.push({ pts: [p[0], g[0], g[1]], mat: "dark" });
+      faces.push({ pts: [p[0], g[1], p[1]], mat: "mid" });
+      faces.push({ pts: [p[1], g[1], g[2]], mat: "dark" });
+      // Back-Right
+      faces.push({ pts: [p[1], g[2], g[3]], mat: "dark" });
+      faces.push({ pts: [p[1], g[3], p[2]], mat: "mid" });
+      faces.push({ pts: [p[2], g[3], g[4]], mat: "dark" });
+      // Back-Left
+      faces.push({ pts: [p[2], g[4], g[5]], mat: "dark" });
+      faces.push({ pts: [p[2], g[5], p[3]], mat: "mid" });
+      faces.push({ pts: [p[3], g[5], g[6]], mat: "dark" });
+      // Front-Left
+      faces.push({ pts: [p[3], g[6], g[7]], mat: "dark" });
+      faces.push({ pts: [p[3], g[7], p[0]], mat: "mid" });
+      faces.push({ pts: [p[0], g[7], g[0]], mat: "dark" });
+
+      // 4. Pavilion to Bottom Apex Facets (Pavilion Ring -> Bot Apex)
+      faces.push({ pts: [botApex, p[1], p[0]], mat: "dark" });
+      faces.push({ pts: [botApex, p[2], p[1]], mat: "dark" });
+      faces.push({ pts: [botApex, p[3], p[2]], mat: "dark" });
+      faces.push({ pts: [botApex, p[0], p[3]], mat: "dark" });
+
+      // 5. Internal Floating Code Glyph `< I >` (Front and Back plates)
+      const zF = 0.12 * S;
+      const zB = -0.12 * S;
+      [zF, zB].forEach(z => {
+        const flip = z < 0 ? -1 : 1;
+        // Left `<` bracket
+        faces.push({
+          pts: [
+            new Vec3(-0.22 * S * flip, 0.30 * S, z),
+            new Vec3(-0.16 * S * flip, 0.30 * S, z),
+            new Vec3(-0.36 * S * flip, 0.0, z),
+            new Vec3(-0.43 * S * flip, 0.0, z)
+          ],
+          mat: "glyph"
+        });
+        faces.push({
+          pts: [
+            new Vec3(-0.43 * S * flip, 0.0, z),
+            new Vec3(-0.36 * S * flip, 0.0, z),
+            new Vec3(-0.16 * S * flip, -0.30 * S, z),
+            new Vec3(-0.22 * S * flip, -0.30 * S, z)
+          ],
+          mat: "glyph"
+        });
+
+        // Center `I` pillar (top serif, stem, bot serif)
+        faces.push({
+          pts: [
+            new Vec3(-0.10 * S, 0.30 * S, z),
+            new Vec3(0.10 * S, 0.30 * S, z),
+            new Vec3(0.10 * S, 0.24 * S, z),
+            new Vec3(-0.10 * S, 0.24 * S, z)
+          ],
+          mat: "glyph"
+        });
+        faces.push({
+          pts: [
+            new Vec3(-0.04 * S, 0.24 * S, z),
+            new Vec3(0.04 * S, 0.24 * S, z),
+            new Vec3(0.04 * S, -0.24 * S, z),
+            new Vec3(-0.04 * S, -0.24 * S, z)
+          ],
+          mat: "glyph"
+        });
+        faces.push({
+          pts: [
+            new Vec3(-0.10 * S, -0.24 * S, z),
+            new Vec3(0.10 * S, -0.24 * S, z),
+            new Vec3(0.10 * S, -0.30 * S, z),
+            new Vec3(-0.10 * S, -0.30 * S, z)
+          ],
+          mat: "glyph"
+        });
+
+        // Right `>` bracket
+        faces.push({
+          pts: [
+            new Vec3(0.22 * S * flip, 0.30 * S, z),
+            new Vec3(0.16 * S * flip, 0.30 * S, z),
+            new Vec3(0.36 * S * flip, 0.0, z),
+            new Vec3(0.43 * S * flip, 0.0, z)
+          ],
+          mat: "glyph"
+        });
+        faces.push({
+          pts: [
+            new Vec3(0.43 * S * flip, 0.0, z),
+            new Vec3(0.36 * S * flip, 0.0, z),
+            new Vec3(0.16 * S * flip, -0.30 * S, z),
+            new Vec3(0.22 * S * flip, -0.30 * S, z)
+          ],
+          mat: "glyph"
+        });
+      });
+
+      // Lighting & Shading
+      const lightDir = new Vec3(-0.45, 0.85, 0.65).norm();
+      const viewDir = new Vec3(0, 0, 1);
+      const halfVec = lightDir.add(viewDir).norm();
+
+      function shadeFacet(normal, matType) {
+        if (matType === "glyph") {
+          const dot = normal.dot(lightDir);
+          return dot > 0 ? "#f8fafc" : "#a5f3fc";
+        }
+        const dot = normal.dot(lightDir);
+        const spec = Math.pow(Math.max(0, normal.dot(halfVec)), 16);
+
+        if (matType === "light") {
+          if (spec > 0.80) return "#f5fdff";
+          if (dot > 0.40) return "#a5f3fc";
+          if (dot > 0.08) return "#38bdf8";
+          return "#0284c7";
+        } else if (matType === "mid") {
+          if (spec > 0.85) return "#e0f2fe";
+          if (dot > 0.38) return "#38bdf8";
+          if (dot > 0.02) return "#0284c7";
+          return "#0369a1";
+        } else { // "dark"
+          if (spec > 0.88) return "#bae6fd";
+          if (dot > 0.35) return "#0284c7";
+          if (dot > -0.10) return "#0369a1";
+          return "#0d2242";
+        }
+      }
+
+      // Camera & Mouse Interaction State
+      let camYaw = 0.35;
+      let camPitch = 0.12;
+      let targetYaw = 0.35;
+      let targetPitch = 0.12;
+      let idleYaw = 0.0;
+      let isDragging = false;
+      let lastX = 0;
+      let lastY = 0;
+
+      // Mouse tracking across whole window
+      window.addEventListener("mousemove", (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const mouseX = e.clientX - (rect.left + rect.width / 2);
+        const mouseY = e.clientY - (rect.top + rect.height / 2);
+
+        // Responsive yaw and pitch offset based on cursor
+        const offsetYaw = (mouseX / (window.innerWidth / 2)) * 0.95;
+        const offsetPitch = (-mouseY / (window.innerHeight / 2)) * 0.42;
+
+        targetYaw = idleYaw + offsetYaw;
+        targetPitch = Math.max(-0.45, Math.min(0.45, offsetPitch));
+      });
+
+      // Drag to rotate interaction on canvas
+      wrapper.addEventListener("mousedown", (e) => {
+        isDragging = true;
+        lastX = e.clientX;
+        lastY = e.clientY;
+      });
+
+      window.addEventListener("mouseup", () => { isDragging = false; });
+      window.addEventListener("mouseleave", () => { isDragging = false; });
+
+      window.addEventListener("mousemove", (e) => {
+        if (!isDragging) return;
+        const dx = e.clientX - lastX;
+        const dy = e.clientY - lastY;
+        lastX = e.clientX;
+        lastY = e.clientY;
+        idleYaw += dx * 0.01;
+        targetPitch = Math.max(-0.6, Math.min(0.6, targetPitch - dy * 0.008));
+      });
+
+      // Touch drag for mobile
+      wrapper.addEventListener("touchstart", (e) => {
+        if (e.touches.length === 1) {
+          isDragging = true;
+          lastX = e.touches[0].clientX;
+          lastY = e.touches[0].clientY;
+        }
+      });
+      window.addEventListener("touchend", () => { isDragging = false; });
+      window.addEventListener("touchmove", (e) => {
+        if (!isDragging || e.touches.length !== 1) return;
+        const dx = e.touches[0].clientX - lastX;
+        const dy = e.touches[0].clientY - lastY;
+        lastX = e.touches[0].clientX;
+        lastY = e.touches[0].clientY;
+        idleYaw += dx * 0.012;
+        targetPitch = Math.max(-0.6, Math.min(0.6, targetPitch - dy * 0.01));
+      });
+
+      // Animation Loop
+      let startTime = performance.now();
+      let lastTime = startTime;
+
+      function renderFrame(now) {
+        const dt = Math.min(0.05, (now - lastTime) / 1000);
+        lastTime = now;
+        const t = (now - startTime) / 1000;
+
+        // Auto-spin idle motion
+        idleYaw += dt * 0.32;
+        targetYaw += dt * 0.32;
+
+        // Smooth damping interpolation (heavy luxury jewel feel)
+        const damping = Math.min(0.18, dt * 2.8);
+        camYaw += (targetYaw - camYaw) * damping;
+        camPitch += (targetPitch - camPitch) * damping;
+
+        // Vertical bobbing
+        const bobY = Math.sin(t * 1.6) * 7.5;
+
+        // Clear canvas
+        ctx.clearRect(0, 0, w, h);
+
+        const cx = w / 2;
+        const cy = h / 2 - 8;
+        const camDist = 440;
+        const focal = 380;
+
+        // 1. Soft Floor Contact Shadow
+        const shadowY = cy + 148;
+        const shadowScale = 1.0 - (bobY / 40);
+        const shadowGrad = ctx.createRadialGradient(
+          cx, shadowY, 5,
+          cx, shadowY, 95 * shadowScale
+        );
+        shadowGrad.addColorStop(0, "rgba(2, 6, 23, 0.65)");
+        shadowGrad.addColorStop(0.5, "rgba(3, 105, 161, 0.15)");
+        shadowGrad.addColorStop(1, "rgba(7, 10, 18, 0)");
+
+        ctx.save();
+        ctx.fillStyle = shadowGrad;
+        ctx.beginPath();
+        ctx.ellipse(cx, shadowY, 85 * shadowScale, 20 * shadowScale, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        // 2. 3D Rotation Matrix Calculation
+        const cosY = Math.cos(camYaw), sinY = Math.sin(camYaw);
+        const cosP = Math.cos(camPitch), sinP = Math.sin(camPitch);
+
+        function project(vec) {
+          // Y-axis rotation
+          const x1 = vec.x * cosY + vec.z * sinY;
+          const y1 = vec.y;
+          const z1 = -vec.x * sinY + vec.z * cosY;
+
+          // X-axis rotation
+          const x2 = x1;
+          const y2 = y1 * cosP - z1 * sinP;
+          const z2 = y1 * sinP + z1 * cosP;
+
+          // Translation (bobbing & camera distance)
+          const camX = x2;
+          const camY = y2 + bobY;
+          const camZ = z2 + camDist;
+
+          return {
+            sx: cx + (camX * focal) / camZ,
+            sy: cy - (camY * focal) / camZ,
+            z: camZ,
+            world: new Vec3(camX, camY, camZ)
+          };
+        }
+
+        // 3. Project and Collect Faces
+        const renderList = [];
+
+        for (let i = 0; i < faces.length; i++) {
+          const face = faces[i];
+          const proj = face.pts.map(project);
+
+          // Normal in camera space
+          const p0 = proj[0].world;
+          const p1 = proj[1].world;
+          const p2 = proj[2].world;
+          const v0 = p1.sub(p0);
+          const v1 = p2.sub(p0);
+          const norm = v0.cross(v1).norm();
+
+          // Backface culling: skip faces pointing away from camera
+          // (except glyph internal insignia to keep it always crisp)
+          if (face.mat !== "glyph" && norm.z <= 0.005) {
+            continue;
+          }
+
+          let zSum = 0;
+          for (let k = 0; k < proj.length; k++) zSum += proj[k].z;
+          const avgZ = zSum / proj.length;
+
+          const color = shadeFacet(norm, face.mat);
+
+          renderList.push({
+            poly: proj,
+            depth: avgZ,
+            color: color,
+            mat: face.mat
+          });
+        }
+
+        // 4. Painter's Algorithm: Sort Back to Front
+        renderList.sort((a, b) => b.depth - a.depth);
+
+        // 5. Draw Cel-Shaded Facets with Comic-Book Black Ink Outlines
+        for (let i = 0; i < renderList.length; i++) {
+          const item = renderList[i];
+          ctx.beginPath();
+          ctx.moveTo(item.poly[0].sx, item.poly[0].sy);
+          for (let k = 1; k < item.poly.length; k++) {
+            ctx.lineTo(item.poly[k].sx, item.poly[k].sy);
+          }
+          ctx.closePath();
+
+          ctx.fillStyle = item.color;
+          ctx.fill();
+
+          // Black comic outline (slightly thinner for core glyph)
+          ctx.strokeStyle = item.mat === "glyph" ? "#070b14" : "#070c18";
+          ctx.lineWidth = item.mat === "glyph" ? 1.4 : 1.8;
+          ctx.lineJoin = "round";
+          ctx.stroke();
+        }
+
+        // 6. Specular Starburst Twinkles
+        const sparkleTime = t * 2.5;
+        const sparkles = [
+          { x: topApex, phase: 0 },
+          { x: c[0], phase: 1.5 },
+          { x: g[1], phase: 3.0 }
+        ];
+
+        for (let s of sparkles) {
+          const pt = project(s.x);
+          const intensity = Math.pow(Math.sin(sparkleTime + s.phase) * 0.5 + 0.5, 4);
+          if (intensity > 0.45) {
+            const size = intensity * 7;
+            ctx.save();
+            ctx.translate(pt.sx, pt.sy);
+            ctx.fillStyle = "#ffffff";
+            ctx.shadowColor = "#38bdf8";
+            ctx.shadowBlur = 8;
+            ctx.beginPath();
+            ctx.arc(0, 0, size * 0.35, 0, Math.PI * 2);
+            ctx.fill();
+            // 4-point star spike
+            ctx.strokeStyle = "rgba(240, 253, 250, 0.9)";
+            ctx.lineWidth = 1.2;
+            ctx.beginPath();
+            ctx.moveTo(-size, 0); ctx.lineTo(size, 0);
+            ctx.moveTo(0, -size); ctx.lineTo(0, size);
+            ctx.stroke();
+            ctx.restore();
+          }
+        }
+
+        requestAnimationFrame(renderFrame);
+      }
+
+      requestAnimationFrame(renderFrame);
+    })();
+  </script>
+</body>
+</html>

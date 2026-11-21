@@ -1,0 +1,15 @@
+IDE1.0 Crystal A transparent PNG sizes included:
+- 16x16
+- 24x24
+- 32x32
+- 48x48
+- 64x64
+- 72x72
+- 96x96
+- 128x128
+- 180x180
+- 192x192
+- 256x256
+- 512x512
+- 1024x1024
+- Original 1254x1254

@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "outputDirectory": "crates/ide-shell-desktop/dist",
+  "outputDirectory": "public",
   "cleanUrls": true,
   "rewrites": [
     {
