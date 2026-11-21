@@ -1,0 +1,92 @@
+﻿{
+    "GeneratedAt":  "2026-11-20T16:03:28-08:00",
+    "Suite":  "IDE1.0 Dedicated Mock-Project E2E Test Suite",
+    "MockProjectDir":  "E:\\IDE1.0\\tests\\mock-project",
+    "TotalTests":  10,
+    "PassedTests":  10,
+    "FailedTests":  0,
+    "PassRatePercent":  100,
+    "ElapsedSec":  44.16,
+    "Tests":  [
+                  {
+                      "Id":  "MOCK-01",
+                      "Name":  "Mock Project Asset Verification",
+                      "Category":  "Workspace Lifecycle",
+                      "Status":  "Passed",
+                      "DurationSec":  0.15,
+                      "Error":  ""
+                  },
+                  {
+                      "Id":  "MOCK-02",
+                      "Name":  "Myers Diff Engine \u0026 Lossless Reconstruction",
+                      "Category":  "Math Testing",
+                      "Status":  "Passed",
+                      "DurationSec":  2.26,
+                      "Error":  ""
+                  },
+                  {
+                      "Id":  "MOCK-03",
+                      "Name":  "Git-mode Concurrent Co-Editing \u0026 Commutativity",
+                      "Category":  "Math Testing",
+                      "Status":  "Passed",
+                      "DurationSec":  1.92,
+                      "Error":  ""
+                  },
+                  {
+                      "Id":  "MOCK-04",
+                      "Name":  "Git-mode Conflict Marker Generation",
+                      "Category":  "Red Testing",
+                      "Status":  "Passed",
+                      "DurationSec":  1.46,
+                      "Error":  ""
+                  },
+                  {
+                      "Id":  "MOCK-05",
+                      "Name":  "NEMA-mode Syntax Closure \u0026 Adversarial Guard",
+                      "Category":  "Red-Green Testing",
+                      "Status":  "Passed",
+                      "DurationSec":  0.9,
+                      "Error":  ""
+                  },
+                  {
+                      "Id":  "MOCK-06",
+                      "Name":  "State Machine Idempotency \u0026 Monotonicity",
+                      "Category":  "Math Testing",
+                      "Status":  "Passed",
+                      "DurationSec":  2.4,
+                      "Error":  ""
+                  },
+                  {
+                      "Id":  "MOCK-07",
+                      "Name":  "Blender bpy-style Rust Console DSL Execution",
+                      "Category":  "Console API",
+                      "Status":  "Passed",
+                      "DurationSec":  16.89,
+                      "Error":  ""
+                  },
+                  {
+                      "Id":  "MOCK-08",
+                      "Name":  "Terminal ANSI TrueColor \u0026 PowerShell CLIXML Parser",
+                      "Category":  "Terminal Subsystem",
+                      "Status":  "Passed",
+                      "DurationSec":  16.62,
+                      "Error":  ""
+                  },
+                  {
+                      "Id":  "MOCK-09",
+                      "Name":  "100k Multi-Agent Roster Scale \u0026 Viewport Virtualization",
+                      "Category":  "Agent Orchestration",
+                      "Status":  "Passed",
+                      "DurationSec":  0.19,
+                      "Error":  ""
+                  },
+                  {
+                      "Id":  "MOCK-10",
+                      "Name":  "Headless Startup \u0026 CREATE_NO_WINDOW Invariant",
+                      "Category":  "Operability",
+                      "Status":  "Passed",
+                      "DurationSec":  0.69,
+                      "Error":  ""
+                  }
+              ]
+}

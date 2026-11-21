@@ -1,0 +1,7 @@
+[package]
+name = "mock-project"
+version = "0.1.0"
+edition = "2021"
+description = "IDE1.0 Dedicated E2E Mock Project for Multi-Agent Collaboration and Invariant Testing"
+
+[dependencies]

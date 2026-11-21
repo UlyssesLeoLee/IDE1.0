@@ -1,0 +1,30 @@
+{
+  "theme": "crystal",
+  "font_size": 14,
+  "collab": {
+    "default_mode": "git",
+    "fencing_ttl_seconds": 60,
+    "roster_capacity": 100000,
+    "max_active_agents_visible": 8
+  },
+  "providers": [
+    {
+      "id": "claude-3-7-sonnet",
+      "name": "Anthropic Claude 3.7",
+      "model": "claude-3-7-sonnet",
+      "base_url": "https://api.anthropic.com/v1"
+    },
+    {
+      "id": "gpt-4o",
+      "name": "OpenAI GPT-4o",
+      "model": "gpt-4o",
+      "base_url": "https://api.openai.com/v1"
+    },
+    {
+      "id": "deepseek-v3",
+      "name": "DeepSeek V3",
+      "model": "deepseek-chat",
+      "base_url": "https://api.deepseek.com/v1"
+    }
+  ]
+}
