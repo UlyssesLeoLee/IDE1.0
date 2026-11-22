@@ -257,7 +257,7 @@ async function callMcpTool(store, principal, name, args = {}) {
       const target = resolveFileTarget(args.file_id, principal);
       const openMode = args.mode || "create_if_absent";
       const requiredScope = openMode === "force_overwrite" ? "force_overwrite" : openMode === "open_existing" ? "read" : "write";
-      authorizeScope(principal, target.workspaceId, requiredScope);
+      authorizeScope(principal, target.workspaceId, requiredScope, target.filePath);
       const actor = String(args.agent_id || args.author || principal.actorId).trim();
       return await store.openFile({
         ...target,
@@ -270,7 +270,7 @@ async function callMcpTool(store, principal, name, args = {}) {
 
     case "headless_read": {
       const target = resolveFileTarget(args.file_id, principal);
-      authorizeScope(principal, target.workspaceId, "read");
+      authorizeScope(principal, target.workspaceId, "read", target.filePath);
       return await store.readFile({
         ...target,
         revision: args.revision,
@@ -281,7 +281,7 @@ async function callMcpTool(store, principal, name, args = {}) {
 
     case "headless_coedit": {
       const target = resolveFileTarget(args.file_id, principal);
-      authorizeScope(principal, target.workspaceId, "write");
+      authorizeScope(principal, target.workspaceId, "write", target.filePath);
       const actorId = reqActor(args, principal);
       if (typeof args.new_text !== "string") {
         throw new StoreError(400, "MISSING_NEW_TEXT", "new_text string is required");
@@ -301,7 +301,7 @@ async function callMcpTool(store, principal, name, args = {}) {
     case "headless_edit":
     case "ide_edit_lines": {
       const target = resolveFileTarget(args.file_id, principal);
-      authorizeScope(principal, target.workspaceId, "write");
+      authorizeScope(principal, target.workspaceId, "write", target.filePath);
       const actorId = reqActor(args, principal);
       return await store.editLines({
         ...target,
@@ -318,7 +318,7 @@ async function callMcpTool(store, principal, name, args = {}) {
 
     case "ide_replace_all": {
       const target = resolveFileTarget(args.file_id, principal);
-      authorizeScope(principal, target.workspaceId, "write");
+      authorizeScope(principal, target.workspaceId, "write", target.filePath);
       const actorId = reqActor(args, principal);
       return await store.replaceAll({
         ...target,
@@ -339,7 +339,7 @@ async function callMcpTool(store, principal, name, args = {}) {
 
     case "headless_history": {
       const target = resolveFileTarget(args.file_id, principal);
-      authorizeScope(principal, target.workspaceId, "read");
+      authorizeScope(principal, target.workspaceId, "read", target.filePath);
       return await store.fileHistory(target);
     }
 
@@ -354,11 +354,28 @@ async function callMcpTool(store, principal, name, args = {}) {
       let fId = null;
       if (args.file_id) {
         const t = resolveFileTarget(args.file_id, principal);
-        authorizeScope(principal, t.workspaceId, "read");
+        authorizeScope(principal, t.workspaceId, "read", t.filePath);
         wsId = t.workspaceId;
         fId = t.fileId;
+      } else {
+        const hasReadScope =
+          principal.scopes.includes("*") ||
+          principal.scopes.includes("admin") ||
+          principal.scopes.includes("read");
+        if (!hasReadScope) {
+          throw new AuthError(
+            403,
+            "INSUFFICIENT_SCOPE",
+            `Required scope 'read' missing for actor '${principal.actorId}'`
+          );
+        }
       }
-      const proposals = await store.listProposals({ tenantId: principal.tenantId, workspaceId: wsId, fileId: fId });
+      const proposals = await store.listProposals({
+        tenantId: principal.tenantId,
+        principal,
+        workspaceId: wsId,
+        fileId: fId,
+      });
       return { proposals };
     }
 
@@ -369,6 +386,7 @@ async function callMcpTool(store, principal, name, args = {}) {
       }
       return await store.resolveProposal({
         tenantId: principal.tenantId,
+        principal,
         actorId,
         proposalId: args.proposal_id,
         resolvedContent: args.resolved_content,
@@ -379,7 +397,7 @@ async function callMcpTool(store, principal, name, args = {}) {
 
     case "headless_acquire_lease": {
       const target = resolveFileTarget(args.file_id, principal);
-      authorizeScope(principal, target.workspaceId, "write");
+      authorizeScope(principal, target.workspaceId, "write", target.filePath);
       const actorId = reqActor(args, principal);
       return await store.acquireLease({
         ...target,
@@ -403,7 +421,7 @@ async function callMcpTool(store, principal, name, args = {}) {
 
     case "diff_revisions": {
       const target = resolveFileTarget(args.file_id, principal);
-      authorizeScope(principal, target.workspaceId, "read");
+      authorizeScope(principal, target.workspaceId, "read", target.filePath);
       const revA = args.from_revision !== undefined ? args.from_revision : args.rev_a;
       const revB = args.to_revision !== undefined ? args.to_revision : args.rev_b;
       return await store.diffRevisions({ ...target, revA, revB });
@@ -563,7 +581,7 @@ export async function handleMcpRequest(req, res, deps = {}) {
         ? uri.slice("ide10://file/".length)
         : uri.replace(/^file:\/\/\/workspace\//, "");
       const target = resolveFileTarget(rawId, principal);
-      authorizeScope(principal, target.workspaceId, "read");
+      authorizeScope(principal, target.workspaceId, "read", target.filePath);
       const doc = await store.readFile(target);
       return res.status(200).json({
         jsonrpc: "2.0",

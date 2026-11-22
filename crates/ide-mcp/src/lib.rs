@@ -109,13 +109,14 @@ impl McpServer {
                 } else {
                     serde_json::to_string_pretty(&val).unwrap_or_default()
                 };
+                let is_err = val.get("ok").and_then(Value::as_bool) == Some(false);
                 json!({
                     "jsonrpc": "2.0",
                     "id": resp_id,
                     "result": {
                         "content": [{ "type": "text", "text": text }],
                         "structured_data": val,
-                        "isError": false
+                        "isError": is_err
                     }
                 })
             }
@@ -408,5 +409,74 @@ mod tests {
         let content = read["content"].as_str().unwrap();
         assert!(content.contains("// Claude Header"));
         assert!(content.contains("// GPT Footer"));
+    }
+
+    #[test]
+    fn test_mcp_is_error_on_conflict_and_force_overwrite_guard() {
+        let mut server = McpServer::default();
+        let fid = "default:src/math.rs";
+
+        // Overlapping edits -> ok: false, CONFLICT -> JSON-RPC isError MUST be true (P1-05)
+        let r1 = server
+            .handle_jsonrpc(&json!({
+                "jsonrpc": "2.0",
+                "id": 501,
+                "method": "tools/call",
+                "params": {
+                    "name": "headless_coedit",
+                    "arguments": {
+                        "file_id": fid,
+                        "author": "alice",
+                        "base_revision": 1,
+                        "op_id": "err-a",
+                        "new_text": "pub fn add(a: i32, b: i32) -> i32 {\n    a + b + 10\n}\n\npub fn multiply(a: i32, b: i32) -> i32 {\n    a * b\n}\n"
+                    }
+                }
+            }))
+            .unwrap();
+        assert_eq!(r1["result"]["isError"], false);
+
+        let r2 = server
+            .handle_jsonrpc(&json!({
+                "jsonrpc": "2.0",
+                "id": 502,
+                "method": "tools/call",
+                "params": {
+                    "name": "headless_coedit",
+                    "arguments": {
+                        "file_id": fid,
+                        "author": "bob",
+                        "base_revision": 1,
+                        "op_id": "err-b",
+                        "new_text": "pub fn add(a: i32, b: i32) -> i32 {\n    a + b + 99\n}\n\npub fn multiply(a: i32, b: i32) -> i32 {\n    a * b\n}\n"
+                    }
+                }
+            }))
+            .unwrap();
+        assert_eq!(r2["result"]["structured_data"]["status"], "CONFLICT");
+        assert_eq!(r2["result"]["structured_data"]["ok"], false);
+        assert_eq!(r2["result"]["isError"], true);
+
+        // force_overwrite without confirm_force_overwrite must be rejected (P0-04)
+        let denied = server.call_tool(
+            "headless_open",
+            &json!({ "file_id": fid, "content": "reset", "mode": "force_overwrite" }),
+        );
+        assert!(denied.is_err());
+        assert!(denied.unwrap_err().contains("UNAUTHORIZED_FORCE_OVERWRITE"));
+
+        let allowed = server
+            .call_tool(
+                "headless_open",
+                &json!({
+                    "file_id": fid,
+                    "content": "pub fn reset() {}\n",
+                    "mode": "force_overwrite",
+                    "confirm_force_overwrite": true
+                }),
+            )
+            .unwrap();
+        assert_eq!(allowed["status"], "OVERWRITTEN");
+        assert_eq!(allowed["current_revision"], 3);
     }
 }

@@ -345,6 +345,15 @@ fn test_p1_04_real_disk_sync_external_mod_and_git_diff() {
 
     let sync_ok = store.sync_to_disk(fid, None, false).unwrap();
     assert_eq!(sync_ok["status"], "SYNCED_TO_DISK");
+    let backup_dir = temp.join(".ide10-backup");
+    assert!(backup_dir.exists(), "Pre-save backup dir must be created");
+    assert!(
+        std::fs::read_dir(&backup_dir).unwrap().count() >= 1,
+        "Pre-save backup file must exist before overwrite"
+    );
+
+    assert!(disk::validate_disk_path(std::path::Path::new("../escape.rs")).is_err());
+    assert!(disk::validate_disk_path(std::path::Path::new("bad\0name.rs")).is_err());
 
     let diff_res = git_diff_workspace(&temp, Some("sample.rs")).unwrap();
     assert_eq!(diff_res["has_changes"], true);

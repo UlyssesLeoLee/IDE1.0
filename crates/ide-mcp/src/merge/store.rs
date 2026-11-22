@@ -297,7 +297,7 @@ impl DocumentStore {
     }
 
     pub fn get_doc_ref(&self, file_id: &str) -> Result<Arc<RwLock<HeadlessDoc>>, String> {
-        let docs = self.docs.read().unwrap();
+        let docs = read_lock(&self.docs);
         docs.get(file_id)
             .cloned()
             .ok_or_else(|| format!("Document not found: {file_id}"))
@@ -305,7 +305,7 @@ impl DocumentStore {
 
     pub fn get_doc_snapshot_struct(&self, file_id: &str) -> Option<HeadlessDoc> {
         let lock = self.get_doc_ref(file_id).ok()?;
-        let doc = lock.read().unwrap().clone();
+        let doc = read_lock(&lock).clone();
         Some(doc)
     }
 
@@ -318,7 +318,7 @@ impl DocumentStore {
     ) -> Value {
         match mode {
             OpenMode::CreateIfAbsent | OpenMode::OpenExisting => {
-                let doc = existing_lock.read().unwrap();
+                let doc = read_lock(existing_lock);
                 json!({
                     "ok": true,
                     "status": "ALREADY_EXISTS",
@@ -331,7 +331,7 @@ impl DocumentStore {
                 })
             }
             OpenMode::ForceOverwrite => {
-                let mut doc = existing_lock.write().unwrap();
+                let mut doc = write_lock(existing_lock);
                 let new_rev = doc.current_revision + 1;
                 let new_hash = content_hash(content);
                 let rev_rec = RevisionRecord {
@@ -377,7 +377,7 @@ impl DocumentStore {
         agent_id: &str,
         mode: OpenMode,
     ) -> Result<Value, String> {
-        let mut docs = self.docs.write().unwrap();
+        let mut docs = write_lock(&self.docs);
         if let Some(existing_lock) = docs.get(file_id).cloned() {
             drop(docs);
             return Ok(Self::handle_existing_doc_open(
@@ -471,7 +471,7 @@ impl DocumentStore {
         end_line: Option<usize>,
     ) -> Result<Value, String> {
         let doc_lock = self.get_doc_ref(file_id)?;
-        let doc = doc_lock.read().unwrap();
+        let doc = read_lock(&doc_lock);
         let lines = split_lines(&doc.content);
         let s = start_line.unwrap_or(1).saturating_sub(1).min(lines.len());
         let e = end_line.unwrap_or(lines.len()).min(lines.len());
@@ -495,15 +495,32 @@ impl DocumentStore {
         }))
     }
 
+    pub fn read_doc_revision(&self, file_id: &str, rev: u64) -> Result<Value, String> {
+        let doc_lock = self.get_doc_ref(file_id)?;
+        let doc = read_lock(&doc_lock);
+        let rec = doc
+            .revisions
+            .iter()
+            .find(|r| r.revision == rev)
+            .ok_or_else(|| format!("Revision {rev} not found"))?;
+        Ok(json!({
+            "file_id": doc.file_id,
+            "revision": rec.revision,
+            "current_revision": doc.current_revision,
+            "content_hash": rec.content_hash,
+            "content": rec.content
+        }))
+    }
+
     pub fn snapshot_doc(&self, file_id: &str) -> Result<(u64, String), String> {
         let doc_lock = self.get_doc_ref(file_id)?;
-        let doc = doc_lock.read().unwrap();
+        let doc = read_lock(&doc_lock);
         Ok((doc.current_revision, doc.content.clone()))
     }
 
     pub fn snapshot_doc_with_hash(&self, file_id: &str) -> Result<(u64, String, String), String> {
         let doc_lock = self.get_doc_ref(file_id)?;
-        let doc = doc_lock.read().unwrap();
+        let doc = read_lock(&doc_lock);
         Ok((
             doc.current_revision,
             doc.content.clone(),
@@ -512,11 +529,11 @@ impl DocumentStore {
     }
 
     pub fn list_docs(&self) -> Value {
-        let docs = self.docs.read().unwrap();
+        let docs = read_lock(&self.docs);
         let list: Vec<Value> = docs
             .values()
             .map(|dl| {
-                let d = dl.read().unwrap();
+                let d = read_lock(dl);
                 json!({
                     "file_id": d.file_id,
                     "language": d.language,
@@ -532,7 +549,7 @@ impl DocumentStore {
 
     pub fn doc_history(&self, file_id: &str) -> Result<Value, String> {
         let doc_lock = self.get_doc_ref(file_id)?;
-        let doc = doc_lock.read().unwrap();
+        let doc = read_lock(&doc_lock);
         let history: Vec<Value> = doc
             .revisions
             .iter()
@@ -565,7 +582,7 @@ impl DocumentStore {
         context: usize,
     ) -> Result<Value, String> {
         let doc_lock = self.get_doc_ref(file_id)?;
-        let doc = doc_lock.read().unwrap();
+        let doc = read_lock(&doc_lock);
         let r1 = doc
             .revisions
             .iter()
@@ -599,7 +616,7 @@ impl DocumentStore {
         ttl_ms: u64,
     ) -> Result<Value, String> {
         let doc_lock = self.get_doc_ref(file_id)?;
-        let mut doc = doc_lock.write().unwrap();
+        let mut doc = write_lock(&doc_lock);
         doc.next_fencing_token += 1;
         let token = doc.next_fencing_token;
         let expires = now_epoch_ms() + ttl_ms.max(100);
@@ -620,14 +637,14 @@ impl DocumentStore {
     }
 
     pub fn has_pending_proposals(&self, file_id: &str) -> bool {
-        let props = self.proposals.read().unwrap();
+        let props = read_lock(&self.proposals);
         props
             .values()
             .any(|p| p.file_id == file_id && p.status == "PENDING_REVIEW")
     }
 
     pub fn list_proposals(&self, file_id: Option<&str>) -> Value {
-        let props = self.proposals.read().unwrap();
+        let props = read_lock(&self.proposals);
         let list: Vec<&ConflictProposal> = props
             .values()
             .filter(|p| file_id.map_or(true, |f| p.file_id == f))
@@ -645,7 +662,7 @@ impl DocumentStore {
         op_id: &str,
     ) -> Result<Value, String> {
         let prop = {
-            let props = self.proposals.read().unwrap();
+            let props = read_lock(&self.proposals);
             props
                 .get(proposal_id)
                 .cloned()
@@ -670,7 +687,7 @@ impl DocumentStore {
         })?;
 
         if res["ok"] == true {
-            let mut props = self.proposals.write().unwrap();
+            let mut props = write_lock(&self.proposals);
             if let Some(p) = props.get_mut(proposal_id) {
                 p.status = "RESOLVED".into();
             }
@@ -679,11 +696,11 @@ impl DocumentStore {
     }
 
     pub fn outbox_events(&self) -> Vec<OutboxEvent> {
-        self.outbox.lock().unwrap().iter().cloned().collect()
+        mutex_lock(&self.outbox).iter().cloned().collect()
     }
 
     fn push_outbox(&self, event_type: &str, file_id: &str, revision: u64, payload: &Value) {
-        let mut outbox = self.outbox.lock().unwrap();
+        let mut outbox = mutex_lock(&self.outbox);
         if outbox.len() >= MAX_OUTBOX_EVENTS {
             outbox.pop_front();
         }
@@ -735,7 +752,7 @@ impl DocumentStore {
         };
 
         {
-            let mut props = self.proposals.write().unwrap();
+            let mut props = write_lock(&self.proposals);
             if props.len() >= MAX_PROPOSALS {
                 if let Some(first_key) = props.keys().next().cloned() {
                     props.remove(&first_key);
@@ -823,7 +840,7 @@ impl DocumentStore {
     pub fn edit_doc(&self, req: EditRequest) -> Result<Value, String> {
         let doc_lock = self.get_doc_ref(&req.file_id)?;
         let (base_rev, base_content, base_hash) = {
-            let doc = doc_lock.read().unwrap();
+            let doc = read_lock(&doc_lock);
             let b_rev = req.base_revision.unwrap_or(doc.current_revision);
             let snap = doc
                 .revisions
@@ -878,7 +895,7 @@ impl DocumentStore {
         }
         let doc_lock = self.get_doc_ref(&req.file_id)?;
         let (base_rev, base_content, base_hash) = {
-            let doc = doc_lock.read().unwrap();
+            let doc = read_lock(&doc_lock);
             let b_rev = req.base_revision.unwrap_or(doc.current_revision);
             let snap = doc
                 .revisions
@@ -898,7 +915,7 @@ impl DocumentStore {
             req.file_id, req.agent_id, req.find, req.replace
         ));
         {
-            let doc = doc_lock.read().unwrap();
+            let doc = read_lock(&doc_lock);
             if let Some(replay) =
                 check_idempotency_in_doc(&doc, req.op_id.as_deref(), &intent_hash)?
             {
@@ -908,7 +925,7 @@ impl DocumentStore {
 
         let matches_count = base_content.matches(&req.find).count();
         if matches_count == 0 {
-            let mut doc = doc_lock.write().unwrap();
+            let mut doc = write_lock(&doc_lock);
             validate_cas_preconditions(
                 &doc,
                 Some(base_rev),
@@ -1062,7 +1079,7 @@ impl DocumentStore {
         payload_hash: &str,
     ) -> Result<Option<Value>, String> {
         let (head_rev, head_hash, head_content, base_rev, base_content, lang) = {
-            let doc = doc_ref.read().unwrap();
+            let doc = read_lock(doc_ref);
             if let Some(replay) =
                 check_idempotency_in_doc(&doc, req.op_id.as_deref(), payload_hash)?
             {
@@ -1095,7 +1112,7 @@ impl DocumentStore {
             &req.new_text,
         )?;
 
-        let mut doc = doc_ref.write().unwrap();
+        let mut doc = write_lock(doc_ref);
         if let Some(replay) = check_idempotency_in_doc(&doc, req.op_id.as_deref(), payload_hash)? {
             return Ok(Some(replay));
         }
@@ -1143,7 +1160,7 @@ impl DocumentStore {
         cas_attempt: usize,
         payload_hash: &str,
     ) -> Result<Value, String> {
-        let mut doc = doc_ref.write().unwrap();
+        let mut doc = write_lock(doc_ref);
         if let Some(replay) = check_idempotency_in_doc(&doc, req.op_id.as_deref(), payload_hash)? {
             return Ok(replay);
         }

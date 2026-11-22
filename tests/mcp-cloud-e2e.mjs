@@ -58,8 +58,15 @@ function logLine(msg) {
   console.log(clean);
 }
 
-function agentJwt(agentId, tenantId = "audit_tenant", workspaces = [AUDIT_WS], scopes = ["read", "write"], ttl = 300) {
-  return signJwt({ sub: agentId, tenant_id: tenantId, workspaces, scopes }, jwtSecret, ttl);
+function agentJwt(
+  agentId,
+  tenantId = "audit_tenant",
+  workspaces = [AUDIT_WS],
+  scopes = ["read", "write"],
+  ttl = 300,
+  extra = {}
+) {
+  return signJwt({ sub: agentId, tenant_id: tenantId, workspaces, scopes, ...extra }, jwtSecret, ttl);
 }
 
 let rpcSeq = 1;
@@ -323,6 +330,33 @@ async function main() {
     assert.equal(crossTenant.isError, true);
     assert.equal(crossTenant.data.code, "FILE_NOT_FOUND");
 
+    // P0-03 Proposal ACL & file-level ACL assertions
+    const roResolve = await callTool(
+      "headless_resolve_proposal",
+      { proposal_id: persistedProposalId, resolved_content: "hijack", base_revision: 2, agent_id: "ro", op_id: "ro-res-1" },
+      RO_TOKEN
+    );
+    assert.equal(roResolve.httpStatus, 403);
+
+    const wrongWsJwt = agentJwt("other", "audit_tenant", ["unrelated_ws"], ["read", "write"]);
+    const wrongWsResolve = await callTool(
+      "headless_resolve_proposal",
+      { proposal_id: persistedProposalId, resolved_content: "hijack", base_revision: 2, agent_id: "other", op_id: "ws-res-1" },
+      wrongWsJwt
+    );
+    assert.equal(wrongWsResolve.httpStatus, 403);
+
+    const wrongWsListProps = await callTool("headless_list_proposals", {}, wrongWsJwt);
+    assert.ok(!wrongWsListProps.data.proposals.some((p) => p.proposal_id === persistedProposalId));
+
+    const fileScopedJwt = agentJwt("file-only", "audit_tenant", [AUDIT_WS], ["read"], 300, {
+      files: ["src/tri.rs"],
+    });
+    const allowedFileRead = await callTool("headless_read", { file_id: triFile }, fileScopedJwt);
+    assert.equal(allowedFileRead.isError, false);
+    const forbiddenFileRead = await callTool("headless_read", { file_id: anchorFile }, fileScopedJwt);
+    assert.equal(forbiddenFileRead.httpStatus, 403);
+
     // Fencing token validation
     const jwt = agentJwt("lease-holder");
     const lease = await callTool("headless_acquire_lease", { file_id: anchorFile, agent_id: "lease-holder", ttl_ms: 60000 }, jwt);
@@ -340,7 +374,17 @@ async function main() {
     );
     assert.equal(badFencing.isError, true);
     assert.equal(badFencing.data.code, "FENCING_TOKEN_STALE");
-    return { noAuth: 401, expired: 401, roWrite: 403, wrongWs: 403, crossTenant: crossTenant.data.code, badFencing: badFencing.data.code };
+    return {
+      noAuth: 401,
+      expired: 401,
+      roWrite: 403,
+      wrongWs: 403,
+      roResolve: roResolve.httpStatus,
+      wrongWsResolve: wrongWsResolve.httpStatus,
+      forbiddenFile: forbiddenFileRead.httpStatus,
+      crossTenant: crossTenant.data.code,
+      badFencing: badFencing.data.code,
+    };
   });
 
   // Case 8: multiple_serverless_instances (parallel concurrent HTTP requests)
@@ -388,8 +432,12 @@ async function main() {
     let redeployUrl = null;
     if (REDEPLOY) {
       logLine("Triggering live `vercel deploy --prod --yes` mid-test to destroy & respawn all serverless containers...");
-      const out = execFileSync("vercel", ["deploy", "--prod", "--yes"], { shell: true, encoding: "utf8" });
-      redeployUrl = out.trim().split(/\r?\n/).pop();
+      const resDeploy = spawnSync("vercel", ["deploy", "--prod", "--yes"], { shell: true, encoding: "utf8" });
+      assert.equal(resDeploy.status, 0, `vercel deploy failed: ${resDeploy.stderr}`);
+      const combined = `${resDeploy.stdout || ""}\n${resDeploy.stderr || ""}`;
+      const urls = combined.match(/https:\/\/[a-z0-9-]+\.vercel\.app/gi) || [];
+      redeployUrl = urls[0] || TARGET_MCP.replace(/\/mcp$/, "");
+      assert.ok(redeployUrl.startsWith("https://"), `Invalid redeployUrl extracted: ${redeployUrl}`);
       logLine(`Fresh production deployment ready: ${redeployUrl}`);
     }
     const afterRead = await callTool("headless_read", { file_id: anchorFile }, AUDIT_TOKEN);

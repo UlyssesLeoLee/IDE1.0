@@ -89,6 +89,31 @@ fn handle_open(store: &DocumentStore, args: &Value) -> Result<Value, String> {
         .and_then(Value::as_str)
         .unwrap_or("worker");
     let mode = parse_open_mode(args)?;
+    if mode == OpenMode::ForceOverwrite {
+        let confirmed = args
+            .get("confirm_force_overwrite")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        if !confirmed {
+            return Err(
+                "UNAUTHORIZED_FORCE_OVERWRITE: mode='force_overwrite' requires confirm_force_overwrite=true"
+                    .to_string(),
+            );
+        }
+        if let Ok(expected_token) = std::env::var("IDE_MCP_FORCE_TOKEN") {
+            if !expected_token.is_empty() {
+                let provided = args
+                    .get("force_token")
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                if provided != expected_token {
+                    return Err(
+                        "UNAUTHORIZED_FORCE_OVERWRITE: invalid or missing force_token".to_string(),
+                    );
+                }
+            }
+        }
+    }
     if let Some(disk_path) = args.get("disk_path").and_then(Value::as_str) {
         return store.open_disk_file(file_id, Path::new(disk_path), language, provider, agent_id);
     }
@@ -106,22 +131,7 @@ fn handle_read(store: &DocumentStore, args: &Value) -> Result<Value, String> {
         .and_then(Value::as_u64)
         .map(|v| v as usize);
     if let Some(rev) = args.get("revision").and_then(Value::as_u64) {
-        let hist = store.doc_history(file_id)?;
-        let _ = hist;
-        let doc_ref = store.get_doc_ref(file_id)?;
-        let doc = doc_ref.read().unwrap();
-        let rec = doc
-            .revisions
-            .iter()
-            .find(|r| r.revision == rev)
-            .ok_or_else(|| format!("Revision {rev} not found"))?;
-        return Ok(json!({
-            "file_id": doc.file_id,
-            "revision": rec.revision,
-            "current_revision": doc.current_revision,
-            "content_hash": rec.content_hash,
-            "content": rec.content
-        }));
+        return store.read_doc_revision(file_id, rev);
     }
     store.read_doc(file_id, s, e)
 }
@@ -382,16 +392,27 @@ fn handle_launch_browser(web_url: &str, args: &Value) -> Result<Value, String> {
         web_url.to_string()
     };
 
+    if !(target_url.starts_with("https://") || target_url.starts_with("http://"))
+        || target_url.bytes().any(|b| b < 0x20 || b == 0x7f)
+    {
+        return Err(
+            "INVALID_ARGUMENT: web_url must be a valid http(s) URL without control characters"
+                .to_string(),
+        );
+    }
+
     if open_local {
         #[cfg(windows)]
         {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
             let _ = std::process::Command::new("powershell")
+                .creation_flags(CREATE_NO_WINDOW)
+                .env("IDE_LAUNCH_URL", &target_url)
                 .args([
                     "-NoProfile",
-                    "-WindowStyle",
-                    "Hidden",
                     "-Command",
-                    &format!("Start-Process '{}'", target_url.replace('\'', "''")),
+                    "Start-Process $env:IDE_LAUNCH_URL",
                 ])
                 .spawn();
         }

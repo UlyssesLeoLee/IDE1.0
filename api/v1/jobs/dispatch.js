@@ -1,28 +1,13 @@
 // Vercel Serverless Function: POST /api/v1/jobs/dispatch (Durable Postgres + Auth)
-import {
-  authenticateRequest,
-  authorizeScope,
-  AuthError,
-  enforcePayloadSize,
-  resolveFileTarget,
-} from "../_auth.js";
-import { getStore } from "../_store.js";
+import { authorizeScope, resolveFileTarget } from "../_auth.js";
+import { withProtectedApi } from "../_http.js";
 import { dispatchJobDurable } from "../_tasks.js";
 
-export default async function handler(req, res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Idempotency-Key");
-
-  if (req.method === "OPTIONS") return res.status(200).end();
-  if (req.method !== "POST") return res.status(405).json({ code: "METHOD_NOT_ALLOWED" });
-
-  try {
-    enforcePayloadSize(req);
-    const principal = authenticateRequest(req);
-    const store = getStore();
-    await store.enforceRateLimit(principal.tenantId);
-
+export default withProtectedApi({
+  methods: ["POST"],
+  headers: "Content-Type, Authorization, Idempotency-Key",
+  checkPayload: true,
+  handler: async (req, res, { principal, store }) => {
     const { workspace_id, goal, target_files, priority } = req.body || {};
     if (!workspace_id || !goal) {
       return res.status(400).json({ code: "BAD_REQUEST", message: "workspace_id and goal are required" });
@@ -38,7 +23,7 @@ export default async function handler(req, res) {
       priority: priority || 100,
       resolveTargetFn: (rawId) => {
         const t = resolveFileTarget(rawId, { ...principal, defaultWorkspace: workspace_id });
-        authorizeScope(principal, t.workspaceId, "write");
+        authorizeScope(principal, t.workspaceId, "write", t.filePath);
         return t;
       },
     });
@@ -49,10 +34,5 @@ export default async function handler(req, res) {
       task_count: result.taskIds.length,
       status: result.status,
     });
-  } catch (err) {
-    if (err instanceof AuthError) {
-      return res.status(err.statusCode).json({ code: err.code, message: err.message });
-    }
-    return res.status(err.statusCode || 500).json({ code: err.code || "INTERNAL_ERROR", message: err.message });
-  }
-}
+  },
+});

@@ -1,7 +1,9 @@
 // Durable Postgres Transaction Store for IDE1.0 Vercel MCP (P0-01..P0-05, P1-02, P1-03, P1-06)
 
 import crypto from "crypto";
+import fs from "fs";
 import pg from "pg";
+import { authorizeScope, isFileAllowed, isWorkspaceAllowed } from "./_auth.js";
 import {
   checkSyntaxIntegrity,
   formatUnifiedDiff,
@@ -25,135 +27,10 @@ export function sha256Hex(text) {
   return crypto.createHash("sha256").update(String(text || ""), "utf8").digest("hex");
 }
 
-const SCHEMA_SQL = `
-CREATE TABLE IF NOT EXISTS mcp_documents (
-  tenant_id TEXT NOT NULL,
-  workspace_id TEXT NOT NULL,
-  file_path TEXT NOT NULL,
-  file_id TEXT NOT NULL,
-  language TEXT NOT NULL DEFAULT 'plain',
-  current_revision BIGINT NOT NULL,
-  content TEXT NOT NULL,
-  content_hash TEXT NOT NULL,
-  next_fencing_token BIGINT NOT NULL DEFAULT 0,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  PRIMARY KEY (tenant_id, workspace_id, file_path)
+const SCHEMA_SQL = fs.readFileSync(
+  new URL("../../db/migrations/001_mcp_durable_state.sql", import.meta.url),
+  "utf8"
 );
-CREATE TABLE IF NOT EXISTS mcp_revisions (
-  tenant_id TEXT NOT NULL,
-  workspace_id TEXT NOT NULL,
-  file_path TEXT NOT NULL,
-  revision BIGINT NOT NULL,
-  content TEXT NOT NULL,
-  content_hash TEXT NOT NULL,
-  agent_id TEXT NOT NULL,
-  provider TEXT NOT NULL DEFAULT 'mcp',
-  op_id TEXT,
-  auto_merged BOOLEAN NOT NULL DEFAULT FALSE,
-  summary TEXT NOT NULL DEFAULT '',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  PRIMARY KEY (tenant_id, workspace_id, file_path, revision),
-  FOREIGN KEY (tenant_id, workspace_id, file_path)
-    REFERENCES mcp_documents (tenant_id, workspace_id, file_path) ON DELETE CASCADE
-);
-CREATE TABLE IF NOT EXISTS mcp_proposals (
-  proposal_id TEXT PRIMARY KEY,
-  tenant_id TEXT NOT NULL,
-  workspace_id TEXT NOT NULL,
-  file_path TEXT NOT NULL,
-  file_id TEXT NOT NULL,
-  base_revision BIGINT NOT NULL,
-  head_revision BIGINT NOT NULL,
-  head_content_hash TEXT NOT NULL,
-  agent_id TEXT NOT NULL,
-  op_id TEXT,
-  proposed_content TEXT NOT NULL,
-  proposed_hash TEXT NOT NULL,
-  conflict_preview TEXT NOT NULL,
-  conflict_diff TEXT NOT NULL,
-  conflicts_json JSONB NOT NULL,
-  status TEXT NOT NULL DEFAULT 'PENDING_REVIEW',
-  resolved_by TEXT,
-  resolved_revision BIGINT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  resolved_at TIMESTAMPTZ
-);
-CREATE TABLE IF NOT EXISTS mcp_idempotency (
-  tenant_id TEXT NOT NULL,
-  workspace_id TEXT NOT NULL,
-  file_path TEXT NOT NULL,
-  op_id TEXT NOT NULL,
-  payload_hash TEXT NOT NULL,
-  response_json JSONB NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  PRIMARY KEY (tenant_id, workspace_id, file_path, op_id)
-);
-CREATE TABLE IF NOT EXISTS mcp_leases (
-  tenant_id TEXT NOT NULL,
-  workspace_id TEXT NOT NULL,
-  file_path TEXT NOT NULL,
-  agent_id TEXT NOT NULL,
-  fencing_token BIGINT NOT NULL,
-  expires_at TIMESTAMPTZ NOT NULL,
-  PRIMARY KEY (tenant_id, workspace_id, file_path)
-);
-CREATE TABLE IF NOT EXISTS mcp_jobs (
-  job_id TEXT PRIMARY KEY,
-  tenant_id TEXT NOT NULL,
-  workspace_id TEXT NOT NULL,
-  goal TEXT NOT NULL,
-  priority INTEGER NOT NULL DEFAULT 100,
-  status TEXT NOT NULL DEFAULT 'DISPATCHED',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE TABLE IF NOT EXISTS mcp_tasks (
-  task_id TEXT PRIMARY KEY,
-  job_id TEXT NOT NULL REFERENCES mcp_jobs (job_id) ON DELETE CASCADE,
-  tenant_id TEXT NOT NULL,
-  workspace_id TEXT NOT NULL,
-  file_path TEXT NOT NULL,
-  file_id TEXT NOT NULL,
-  symbol_path TEXT NOT NULL,
-  base_revision BIGINT NOT NULL,
-  fencing_token BIGINT NOT NULL DEFAULT 0,
-  status TEXT NOT NULL DEFAULT 'READY',
-  worker_id TEXT,
-  lease_expires_at TIMESTAMPTZ,
-  expected_fingerprint TEXT,
-  priority INTEGER NOT NULL DEFAULT 100,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE TABLE IF NOT EXISTS mcp_outbox (
-  event_id BIGSERIAL PRIMARY KEY,
-  tenant_id TEXT NOT NULL,
-  workspace_id TEXT NOT NULL,
-  file_path TEXT NOT NULL,
-  file_id TEXT NOT NULL,
-  event_type TEXT NOT NULL,
-  revision BIGINT NOT NULL,
-  payload_json JSONB NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE TABLE IF NOT EXISTS mcp_audit_log (
-  audit_id BIGSERIAL PRIMARY KEY,
-  tenant_id TEXT NOT NULL,
-  actor_id TEXT NOT NULL,
-  workspace_id TEXT NOT NULL,
-  file_path TEXT NOT NULL,
-  action TEXT NOT NULL,
-  outcome TEXT NOT NULL,
-  op_id TEXT,
-  status_code INTEGER NOT NULL,
-  detail JSONB,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE TABLE IF NOT EXISTS mcp_rate_limits (
-  bucket_key TEXT PRIMARY KEY,
-  window_start TIMESTAMPTZ NOT NULL,
-  req_count INTEGER NOT NULL
-);
-`;
 
 export class PgDurableStore {
   constructor(options = {}) {
@@ -436,9 +313,8 @@ export class PgDurableStore {
     );
     const allowed = res.rows.filter(
       (r) =>
-        principal.workspaces.includes("*") ||
-        principal.workspaces.includes(r.workspace_id) ||
-        principal.workspaces.some((p) => p.endsWith("*") && r.workspace_id.startsWith(p.slice(0, -1)))
+        isWorkspaceAllowed(principal, r.workspace_id) &&
+        isFileAllowed(principal, r.workspace_id, r.file_path)
     );
     return allowed.map((r) => ({
       fileId: r.file_id,
@@ -918,7 +794,7 @@ export class PgDurableStore {
     );
   }
 
-  async listProposals({ tenantId, workspaceId = null, fileId = null }) {
+  async listProposals({ tenantId, principal = null, workspaceId = null, fileId = null }) {
     await this.ensureSchema();
     const res = await this.getPool().query(
       `SELECT proposal_id, file_id, workspace_id, file_path, base_revision, head_revision,
@@ -931,10 +807,15 @@ export class PgDurableStore {
        ORDER BY created_at DESC LIMIT 100`,
       [tenantId, workspaceId, fileId]
     );
-    return res.rows;
+    if (!principal) return res.rows;
+    return res.rows.filter(
+      (r) =>
+        isWorkspaceAllowed(principal, r.workspace_id) &&
+        isFileAllowed(principal, r.workspace_id, r.file_path)
+    );
   }
 
-  async resolveProposal({ tenantId, actorId, proposalId, resolvedContent, baseRevision, opId }) {
+  async resolveProposal({ tenantId, principal = null, actorId, proposalId, resolvedContent, baseRevision, opId }) {
     return this.withTransaction(async (client) => {
       const propRes = await client.query(
         `SELECT * FROM mcp_proposals WHERE proposal_id = $1 AND tenant_id = $2 FOR UPDATE`,
@@ -944,6 +825,9 @@ export class PgDurableStore {
         throw new StoreError(404, "PROPOSAL_NOT_FOUND", `Proposal '${proposalId}' not found`);
       }
       const prop = propRes.rows[0];
+      if (principal) {
+        authorizeScope(principal, prop.workspace_id, "write", prop.file_path);
+      }
       if (prop.status !== "PENDING_REVIEW") {
         throw new StoreError(409, "PROPOSAL_ALREADY_RESOLVED", `Proposal '${proposalId}' is already ${prop.status}`);
       }

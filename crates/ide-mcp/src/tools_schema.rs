@@ -75,7 +75,9 @@ fn core_edit_tools() -> Vec<Value> {
                     "language": { "type": "string" },
                     "provider": { "type": "string" },
                     "agent_id": { "type": "string" },
-                    "mode": { "type": "string", "enum": ["create_if_absent", "open_existing", "force_overwrite"] }
+                    "mode": { "type": "string", "enum": ["create_if_absent", "open_existing", "force_overwrite"] },
+                    "confirm_force_overwrite": { "type": "boolean", "description": "Required explicit true confirmation when mode='force_overwrite'" },
+                    "force_token": { "type": "string", "description": "Authorization token when IDE_MCP_FORCE_TOKEN is configured" }
                 },
                 "required": ["file_id"]
             }),
@@ -90,7 +92,9 @@ fn core_edit_tools() -> Vec<Value> {
                     "content": { "type": "string" },
                     "language": { "type": "string" },
                     "agent_id": { "type": "string" },
-                    "mode": { "type": "string", "enum": ["create_if_absent", "open_existing", "force_overwrite"] }
+                    "mode": { "type": "string", "enum": ["create_if_absent", "open_existing", "force_overwrite"] },
+                    "confirm_force_overwrite": { "type": "boolean", "description": "Required explicit true confirmation when mode='force_overwrite'" },
+                    "force_token": { "type": "string", "description": "Authorization token when IDE_MCP_FORCE_TOKEN is configured" }
                 },
                 "required": ["file_id"]
             }),

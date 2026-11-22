@@ -112,6 +112,114 @@ test("P0-03: JWT & static token auth, expiration, workspace ACL, and path safety
   assert.throws(() => enforcePayloadSize({ headers: { "content-length": String(5 * 1024 * 1024) } }), {
     statusCode: 413,
   });
+  // Parsed req.body exceeding 2 MiB without content-length must also fail closed with 413
+  assert.throws(
+    () =>
+      enforcePayloadSize({
+        headers: {},
+        body: { jsonrpc: "2.0", params: { content: "x".repeat(2 * 1024 * 1024 + 512) } },
+      }),
+    { statusCode: 413, code: "PAYLOAD_TOO_LARGE" }
+  );
+
+  // File-level ACL check (P0-03)
+  const fileJwt = signJwt(
+    {
+      sub: "file-scoped",
+      tenant_id: "t1",
+      workspaces: ["ws_a"],
+      files: ["src/allowed.rs"],
+      scopes: ["read", "write"],
+    },
+    secret,
+    120
+  );
+  const fp = authenticateRequest({ headers: { authorization: `Bearer ${fileJwt}` } }, env);
+  authorizeScope(fp, "ws_a", "write", "src/allowed.rs");
+  assert.throws(() => authorizeScope(fp, "ws_a", "read", "src/secret.rs"), {
+    statusCode: 403,
+    code: "FORBIDDEN_FILE",
+  });
+});
+
+test("P0-03: PgDurableStore listProposals filters by workspace/file ACL and resolveProposal enforces write auth", async () => {
+  const { PgDurableStore } = await import("../api/v1/_store.js");
+  const rows = [
+    { proposal_id: "p1", workspace_id: "ws_ok", file_path: "src/a.rs", file_id: "ws_ok:src/a.rs", status: "PENDING_REVIEW" },
+    { proposal_id: "p2", workspace_id: "ws_other", file_path: "src/b.rs", file_id: "ws_other:src/b.rs", status: "PENDING_REVIEW" },
+    { proposal_id: "p3", workspace_id: "ws_ok", file_path: "src/secret.rs", file_id: "ws_ok:src/secret.rs", status: "PENDING_REVIEW" },
+  ];
+  const mockPool = {
+    async query(sql) {
+      if (String(sql).includes("FROM mcp_proposals")) return { rows };
+      return { rows: [] };
+    },
+    async connect() {
+      return {
+        async query(sql) {
+          if (String(sql).includes("FROM mcp_proposals")) {
+            return {
+              rows: [
+                {
+                  proposal_id: "p2",
+                  tenant_id: "t1",
+                  workspace_id: "ws_other",
+                  file_path: "src/b.rs",
+                  file_id: "ws_other:src/b.rs",
+                  status: "PENDING_REVIEW",
+                },
+              ],
+            };
+          }
+          return { rows: [] };
+        },
+        release() {},
+      };
+    },
+  };
+  const store = new PgDurableStore({ pool: mockPool });
+  store.schemaPromise = Promise.resolve();
+
+  const principal = {
+    actorId: "a1",
+    tenantId: "t1",
+    workspaces: ["ws_ok"],
+    files: ["src/a.rs"],
+    scopes: ["read", "write"],
+  };
+  const visible = await store.listProposals({ tenantId: "t1", principal });
+  assert.deepEqual(visible.map((r) => r.proposal_id), ["p1"]);
+
+  // Wrong-workspace resolveProposal MUST be rejected with 403
+  await assert.rejects(
+    () =>
+      store.resolveProposal({
+        tenantId: "t1",
+        principal,
+        actorId: "a1",
+        proposalId: "p2",
+        resolvedContent: "x",
+        baseRevision: 1,
+        opId: "res-x",
+      }),
+    { statusCode: 403, code: "FORBIDDEN_WORKSPACE" }
+  );
+
+  // Read-only principal resolving own workspace proposal MUST be rejected with 403
+  const roPrincipal = { actorId: "ro", tenantId: "t1", workspaces: ["ws_other"], files: ["*"], scopes: ["read"] };
+  await assert.rejects(
+    () =>
+      store.resolveProposal({
+        tenantId: "t1",
+        principal: roPrincipal,
+        actorId: "ro",
+        proposalId: "p2",
+        resolvedContent: "x",
+        baseRevision: 1,
+        opId: "res-ro",
+      }),
+    { statusCode: 403, code: "INSUFFICIENT_SCOPE" }
+  );
 });
 
 test("P1-05 & P0-03: handleMcpRequest Streamable HTTP lifecycle & fail-closed auth", async () => {

@@ -87,6 +87,9 @@ export function verifyJwt(token, secret) {
     actorId: String(payload.sub),
     tenantId: String(payload.tenant_id),
     workspaces: Array.isArray(payload.workspaces) ? payload.workspaces.map(String) : ["*"],
+    files: Array.isArray(payload.files ?? payload.allowed_files)
+      ? (payload.files ?? payload.allowed_files).map(String)
+      : ["*"],
     scopes: Array.isArray(payload.scopes) ? payload.scopes.map(String) : ["read", "write"],
     defaultWorkspace: payload.default_workspace ? String(payload.default_workspace) : null,
     authMethod: "jwt",
@@ -139,6 +142,9 @@ export function authenticateRequest(req, env = process.env) {
         actorId: String(entry.actor_id || entry.sub || "service-agent"),
         tenantId: String(entry.tenant_id || "default"),
         workspaces: Array.isArray(entry.workspaces) ? entry.workspaces.map(String) : ["*"],
+        files: Array.isArray(entry.files ?? entry.allowed_files)
+          ? (entry.files ?? entry.allowed_files).map(String)
+          : ["*"],
         scopes: Array.isArray(entry.scopes) ? entry.scopes.map(String) : ["read", "write"],
         defaultWorkspace: entry.default_workspace ? String(entry.default_workspace) : null,
         authMethod: "bearer_token",
@@ -149,17 +155,38 @@ export function authenticateRequest(req, env = process.env) {
   throw new AuthError(401, "UNAUTHORIZED", "Invalid Bearer token");
 }
 
-export function authorizeScope(principal, workspaceId, requiredScope = "read") {
+function matchAclPattern(patterns, candidates) {
+  if (!Array.isArray(patterns) || patterns.length === 0) return false;
+  for (const raw of patterns) {
+    const pattern = String(raw || "");
+    if (pattern === "*") return true;
+    for (const candidate of candidates) {
+      if (pattern === candidate) return true;
+      if (pattern.endsWith("*") && candidate.startsWith(pattern.slice(0, -1))) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+export function isWorkspaceAllowed(principal, workspaceId) {
+  if (!principal || !Array.isArray(principal.workspaces)) return false;
+  return matchAclPattern(principal.workspaces, [String(workspaceId)]);
+}
+
+export function isFileAllowed(principal, workspaceId, filePath) {
+  if (!principal) return false;
+  const patterns = Array.isArray(principal.files) ? principal.files : ["*"];
+  const fullId = `${workspaceId}:${filePath}`;
+  return matchAclPattern(patterns, [String(filePath), fullId]);
+}
+
+export function authorizeScope(principal, workspaceId, requiredScope = "read", filePath = null) {
   if (!principal) {
     throw new AuthError(401, "UNAUTHORIZED", "Authentication required");
   }
-  const wsAllowed =
-    principal.workspaces.includes("*") ||
-    principal.workspaces.includes(workspaceId) ||
-    principal.workspaces.some(
-      (prefix) => prefix.endsWith("*") && workspaceId.startsWith(prefix.slice(0, -1))
-    );
-  if (!wsAllowed) {
+  if (!isWorkspaceAllowed(principal, workspaceId)) {
     throw new AuthError(
       403,
       "FORBIDDEN_WORKSPACE",
@@ -176,6 +203,14 @@ export function authorizeScope(principal, workspaceId, requiredScope = "read") {
       403,
       "INSUFFICIENT_SCOPE",
       `Required scope '${requiredScope}' missing for actor '${principal.actorId}'`
+    );
+  }
+
+  if (filePath && !isFileAllowed(principal, workspaceId, filePath)) {
+    throw new AuthError(
+      403,
+      "FORBIDDEN_FILE",
+      `Access denied to file '${workspaceId}:${filePath}' for actor '${principal.actorId}'`
     );
   }
 }
@@ -232,5 +267,22 @@ export function enforcePayloadSize(req) {
       "PAYLOAD_TOO_LARGE",
       `Request body exceeds ${MAX_PAYLOAD_BYTES} bytes limit`
     );
+  }
+  if (Buffer.isBuffer(req.body) && req.body.length > MAX_PAYLOAD_BYTES) {
+    throw new AuthError(
+      413,
+      "PAYLOAD_TOO_LARGE",
+      `Request body exceeds ${MAX_PAYLOAD_BYTES} bytes limit`
+    );
+  }
+  if (req.body && typeof req.body === "object" && !Buffer.isBuffer(req.body)) {
+    const serializedBytes = Buffer.byteLength(JSON.stringify(req.body), "utf8");
+    if (serializedBytes > MAX_PAYLOAD_BYTES) {
+      throw new AuthError(
+        413,
+        "PAYLOAD_TOO_LARGE",
+        `Request body exceeds ${MAX_PAYLOAD_BYTES} bytes limit`
+      );
+    }
   }
 }
