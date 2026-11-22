@@ -2698,12 +2698,17 @@ impl App {
             );
             return;
         }
-        let Some(row) = plugins::rows()
-            .into_iter()
-            .find(|r| r.id == plugin && r.enabled)
-        else {
-            self.cur().tip = trf("dlg.plugin-off", &[plugin]);
-            return;
+        let row_opt = plugins::rows().into_iter().find(|r| r.id == plugin);
+        let row = match row_opt {
+            Some(r) if r.enabled => r,
+            Some(r) => {
+                let _ = plugins::set_enabled(plugin, true);
+                r
+            }
+            None => {
+                self.cur().tip = trf("dlg.plugin-off", &[plugin]);
+                return;
+            }
         };
         let a = self.active;
         self.plug
@@ -6890,6 +6895,7 @@ impl App {
                             r.response.rect.width().round().min(max_w),
                         );
                     }
+                    app.paint_dock_inner_waist_button(root, r.response.rect, Dock::Side);
                 }
                 Mode::Strip => {}
                 Mode::Hidden => {}
@@ -6925,6 +6931,7 @@ impl App {
                                 r.response.rect.width().round(),
                             );
                         }
+                        app.paint_dock_inner_waist_button(root, r.response.rect, Dock::Right);
                     }
                     if app.md_preview
                         && is_md

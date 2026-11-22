@@ -51,27 +51,35 @@ pub fn apply_theme_button_style(ui: &mut Ui, tc: &crate::view::ThemeColors) {
         v.widgets.inactive.weak_bg_fill = Color32::TRANSPARENT;
         v.widgets.inactive.bg_stroke = Stroke::new(1.5, Color32::BLACK);
         v.widgets.inactive.corner_radius = 4.0.into();
+        v.widgets.inactive.fg_stroke.color = tc.fg;
         v.widgets.hovered.weak_bg_fill = Color32::from_rgb(255, 230, 0);
         v.widgets.hovered.bg_stroke = Stroke::new(1.8, Color32::BLACK);
         v.widgets.hovered.corner_radius = 4.0.into();
+        v.widgets.hovered.fg_stroke.color = Color32::BLACK;
         v.widgets.active.weak_bg_fill = Color32::from_rgb(255, 204, 0);
         v.widgets.active.bg_stroke = Stroke::new(2.0, Color32::BLACK);
+        v.widgets.active.fg_stroke.color = Color32::BLACK;
     } else if tc.retro16 {
         v.widgets.inactive.corner_radius = 0.0.into();
         v.widgets.inactive.bg_stroke = Stroke::new(1.0, tc.border_strong);
+        v.widgets.inactive.fg_stroke.color = tc.fg;
         v.widgets.hovered.weak_bg_fill = Color32::from_rgb(34, 20, 60);
         v.widgets.hovered.corner_radius = 0.0.into();
         v.widgets.hovered.bg_stroke = Stroke::new(1.0, Color32::from_rgb(0, 240, 255));
+        v.widgets.hovered.fg_stroke.color = Color32::from_rgb(255, 215, 0);
         v.widgets.active.weak_bg_fill = Color32::from_rgb(48, 30, 80);
+        v.widgets.active.fg_stroke.color = Color32::from_rgb(255, 215, 0);
     } else if tc.crystal || tc.clear {
         v.widgets.inactive.weak_bg_fill = Color32::from_rgba_unmultiplied(255, 255, 255, 18);
         v.widgets.inactive.bg_stroke =
             Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 45));
         v.widgets.inactive.corner_radius = 6.0.into();
+        v.widgets.inactive.fg_stroke.color = tc.fg;
         v.widgets.hovered.weak_bg_fill = Color32::from_rgba_unmultiplied(255, 255, 255, 45);
         v.widgets.hovered.bg_stroke =
             Stroke::new(1.0, Color32::from_rgba_unmultiplied(100, 230, 255, 140));
         v.widgets.hovered.corner_radius = 6.0.into();
+        v.widgets.hovered.fg_stroke.color = Color32::WHITE;
     } else {
         let (inact_bg, inact_strk) = if tc.dark {
             (Color32::from_white_alpha(10), Color32::from_white_alpha(22))
@@ -86,9 +94,15 @@ pub fn apply_theme_button_style(ui: &mut Ui, tc: &crate::view::ThemeColors) {
         v.widgets.inactive.weak_bg_fill = inact_bg;
         v.widgets.inactive.bg_stroke = Stroke::new(1.0, inact_strk);
         v.widgets.inactive.corner_radius = 5.0.into();
+        v.widgets.inactive.fg_stroke.color = tc.fg;
         v.widgets.hovered.weak_bg_fill = hov_bg;
         v.widgets.hovered.bg_stroke = Stroke::new(1.0, hov_strk);
         v.widgets.hovered.corner_radius = 5.0.into();
+        v.widgets.hovered.fg_stroke.color = if tc.dark {
+            Color32::WHITE
+        } else {
+            Color32::BLACK
+        };
     }
 }
 
@@ -677,7 +691,9 @@ pub fn dropdown_button(
     tc: &crate::view::ThemeColors,
 ) -> egui::Response {
     let font = egui::FontId::proportional(12.0);
-    let galley = ui.painter().layout_no_wrap(text.to_string(), font, tc.fg);
+    let galley = ui
+        .painter()
+        .layout_no_wrap(text.to_string(), font, Color32::PLACEHOLDER);
     let arrow_space = 16.0;
     let pad_x = 8.0;
     let desired_w = (galley.size().x + pad_x * 2.0 + arrow_space).clamp(72.0, max_w);
@@ -825,8 +841,16 @@ pub fn dropdown_button(
                     Stroke::new(1.0, Color32::from_white_alpha(glint_alpha)),
                 );
             }
-            let fg = if hovered { tc.fg } else { tc.fg_dim };
-            (rect, fg, tc.fg)
+            let fg = if hovered {
+                if tc.dark {
+                    Color32::WHITE
+                } else {
+                    Color32::BLACK
+                }
+            } else {
+                tc.fg_dim
+            };
+            (rect, fg, fg)
         };
 
         let text_clip = Rect::from_min_max(

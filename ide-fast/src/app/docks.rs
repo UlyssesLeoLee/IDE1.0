@@ -181,10 +181,12 @@ impl App {
         let mut dot_y = rect.top() + 66.0;
         let max_dot_y = rect.bottom() - 36.0;
         while dot_y < max_dot_y {
-            // 外圈墨黑微点
-            p.circle_filled(pos2(cx, dot_y), 1.3, Color32::from_black_alpha(140));
-            // 内圈波普黄高亮核心，形成逼真四色套印半色调网点
-            p.circle_filled(pos2(cx, dot_y), 0.65, Color32::from_rgb(255, 204, 0));
+            if (dot_y - rect.center().y).abs() > 28.0 {
+                // 外圈墨黑微点
+                p.circle_filled(pos2(cx, dot_y), 1.3, Color32::from_black_alpha(140));
+                // 内圈波普黄高亮核心，形成逼真四色套印半色调网点
+                p.circle_filled(pos2(cx, dot_y), 0.65, Color32::from_rgb(255, 204, 0));
+            }
             dot_y += dot_step;
         }
 
@@ -204,13 +206,10 @@ impl App {
         );
         p.hline(notch_x_range, bot_y + 2.0, Stroke::new(1.2, Color32::BLACK));
 
-        // 4. 美漫书签拉手 (Comic Pull-Tab Bookmark)
+        // 4. 美漫书签拉手 (Comic Pull-Tab Bookmark): 位于竖条腰部垂直居中
         let tab_w = 13.0;
         let tab_h = 44.0;
-        let tab_rect = Rect::from_center_size(
-            pos2(cx, rect.top() + 6.0 + tab_h * 0.5),
-            Vec2::new(tab_w, tab_h),
-        );
+        let tab_rect = Rect::from_center_size(pos2(cx, rect.center().y), Vec2::new(tab_w, tab_h));
 
         let shadow_offset = if pressed {
             Vec2::ZERO
@@ -426,8 +425,7 @@ impl App {
                                 ui.painter().rect_filled(rect, 0.0, tc.bg_hover);
                             }
                             let col = if resp.hovered() { tc.fg } else { tc.fg_dim };
-                            let chevron_pos =
-                                Pos2::new(rect.center().x, rect.top() + panels::STRIP_BTN_H * 0.5);
+                            let chevron_pos = Pos2::new(rect.center().x, rect.center().y);
                             ui.painter().text(
                                 chevron_pos,
                                 egui::Align2::CENTER_CENTER,
@@ -451,6 +449,100 @@ impl App {
             }
         }
         if toggle {
+            self.collapse_dock(d);
+        }
+    }
+
+    /// 展开状态下位于停靠区内侧边缘腰部的折叠手柄按钮 (符合一般折叠手柄特征: 展开后自动移动到内侧一边的边缘，腰部垂直居中)
+    pub(super) fn paint_dock_inner_waist_button(
+        &mut self,
+        ui: &mut egui::Ui,
+        panel_rect: Rect,
+        d: Dock,
+    ) {
+        let tc = self.tc;
+        let tab_w = 14.0;
+        let tab_h = 44.0;
+        let cy = panel_rect.center().y;
+        let cx = match d {
+            Dock::Side => panel_rect.right() - tab_w * 0.5,
+            Dock::Right => panel_rect.left() + tab_w * 0.5,
+            _ => return,
+        };
+        let rect = Rect::from_center_size(pos2(cx, cy), Vec2::new(tab_w, tab_h));
+        let resp = ui.allocate_rect(rect, Sense::click());
+        let resp = resp
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .tip(trz(panels::tip(d, false)));
+
+        let hovered = resp.hovered();
+        let pressed = resp.is_pointer_button_down_on();
+        let p = ui.painter();
+        let arrow = panels::chevron(d, false);
+
+        if tc.comic {
+            let shadow_offset = if pressed {
+                Vec2::ZERO
+            } else {
+                Vec2::new(1.5, 1.5)
+            };
+            if !pressed {
+                p.rect_filled(rect.translate(shadow_offset), 3.0, Color32::BLACK);
+            }
+            let draw_rect = if pressed {
+                rect.translate(Vec2::new(1.0, 1.0))
+            } else {
+                rect
+            };
+            let (bg, fg) = if pressed {
+                (Color32::from_rgb(255, 160, 0), Color32::BLACK)
+            } else if hovered {
+                (Color32::from_rgb(255, 204, 0), Color32::BLACK)
+            } else {
+                (
+                    Color32::from_rgb(32, 36, 52),
+                    Color32::from_rgb(255, 204, 0),
+                )
+            };
+            p.rect_filled(draw_rect, 3.0, bg);
+            p.rect_stroke(
+                draw_rect,
+                3.0,
+                Stroke::new(1.8, Color32::BLACK),
+                egui::StrokeKind::Inside,
+            );
+            p.text(
+                draw_rect.center(),
+                egui::Align2::CENTER_CENTER,
+                arrow,
+                egui::FontId::proportional(15.0),
+                fg,
+            );
+        } else {
+            let (bg, fg) = if pressed {
+                (tc.bg_active, tc.fg)
+            } else if hovered {
+                (tc.bg_hover, tc.fg)
+            } else {
+                (tc.bg_bar, tc.fg_dim)
+            };
+            p.rect_filled(rect, 3.0, bg);
+            p.rect_stroke(
+                rect,
+                3.0,
+                Stroke::new(1.0, tc.border),
+                egui::StrokeKind::Inside,
+            );
+            p.text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                arrow,
+                egui::FontId::proportional(14.0),
+                fg,
+            );
+        }
+
+        if resp.clicked() {
             self.collapse_dock(d);
         }
     }

@@ -200,7 +200,11 @@ pub fn style(tc: ThemeColors) -> impl Fn(&mut egui::Style) + Send + Sync + 'stat
         v.window_fill = fill;
         // 动态计算菜单前景文字颜色，避免在透明模式下文字不能动态变色造成看不清
         let menu_fg = contrast_fg(fill);
-        v.override_text_color = Some(menu_fg);
+        if tc.is_translucent() {
+            v.override_text_color = Some(menu_fg);
+        } else {
+            v.override_text_color = None;
+        }
         v.window_stroke = Stroke::new(1.0, tc.border);
         v.menu_corner_radius = egui::CornerRadius::ZERO;
         v.popup_shadow = Shadow {
@@ -209,13 +213,38 @@ pub fn style(tc: ThemeColors) -> impl Fn(&mut egui::Style) + Send + Sync + 'stat
             spread: 0,
             color: Color32::from_black_alpha(128),
         };
-        v.widgets.hovered.weak_bg_fill = tc.bg_active;
-        v.widgets.hovered.fg_stroke.color = menu_fg;
-        v.widgets.hovered.corner_radius = egui::CornerRadius::ZERO;
-        v.widgets.inactive.corner_radius = egui::CornerRadius::ZERO;
-        v.widgets.active.corner_radius = egui::CornerRadius::ZERO;
-        v.widgets.active.weak_bg_fill = tc.bg_active;
+        let hover_bg = if tc.comic {
+            Color32::from_rgb(255, 240, 60)
+        } else {
+            tc.bg_active
+        };
+        let hover_fg = if tc.comic {
+            Color32::BLACK
+        } else {
+            contrast_fg(hover_bg)
+        };
+        v.widgets.inactive.weak_bg_fill = Color32::TRANSPARENT;
+        v.widgets.inactive.bg_fill = Color32::TRANSPARENT;
+        v.widgets.inactive.bg_stroke = Stroke::NONE;
         v.widgets.inactive.fg_stroke.color = menu_fg;
+        v.widgets.inactive.corner_radius = egui::CornerRadius::ZERO;
+
+        v.widgets.hovered.weak_bg_fill = hover_bg;
+        v.widgets.hovered.bg_fill = hover_bg;
+        v.widgets.hovered.bg_stroke = if tc.comic {
+            Stroke::new(1.0, Color32::BLACK)
+        } else {
+            Stroke::NONE
+        };
+        v.widgets.hovered.fg_stroke.color = hover_fg;
+        v.widgets.hovered.corner_radius = egui::CornerRadius::ZERO;
+
+        v.widgets.active.weak_bg_fill = hover_bg;
+        v.widgets.active.bg_fill = hover_bg;
+        v.widgets.active.bg_stroke = Stroke::NONE;
+        v.widgets.active.fg_stroke.color = hover_fg;
+        v.widgets.active.corner_radius = egui::CornerRadius::ZERO;
+
         v.widgets.open.fg_stroke.color = menu_fg;
     }
 }
@@ -251,18 +280,29 @@ pub fn mbtn(ui: &mut Ui, text: impl AsRef<str>) -> Response {
     ui.add(b)
 }
 
-pub fn menu_check(ui: &mut Ui, _tc: &ThemeColors, on: bool, label: impl AsRef<str>) -> Response {
+pub fn menu_check(ui: &mut Ui, tc: &ThemeColors, on: bool, label: impl AsRef<str>) -> Response {
     let (name, keys) = split_keys(label.as_ref());
-    let mut b = egui::Button::new(name).fill(Color32::TRANSPARENT);
+    let mut b = egui::Button::new(name);
     if !keys.is_empty() {
         b = b.shortcut_text(keys);
     }
     let r = ui.add(b);
     if on {
-        let check_col = ui
-            .visuals()
-            .override_text_color
-            .unwrap_or(ui.visuals().widgets.inactive.fg_stroke.color);
+        let hover_bg = if tc.comic {
+            Color32::from_rgb(255, 240, 60)
+        } else {
+            tc.bg_active
+        };
+        let hover_fg = if tc.comic {
+            Color32::BLACK
+        } else {
+            contrast_fg(hover_bg)
+        };
+        let check_col = if r.hovered() {
+            hover_fg
+        } else {
+            ui.visuals().widgets.inactive.fg_stroke.color
+        };
         crate::ui_icons::paint_checkmark(
             ui.painter(),
             egui::Rect::from_center_size(

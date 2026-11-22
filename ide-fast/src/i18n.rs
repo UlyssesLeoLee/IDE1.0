@@ -4762,6 +4762,38 @@ pub const CMD_T: &[Row] = &[
             "Agent Roster & Precision Control",
         ],
     ),
+    (
+        "Agent 协同编队状态",
+        [
+            "Agent 协同编队状态",
+            "Agent 協働編成ステータス",
+            "Agent Team Status",
+        ],
+    ),
+    (
+        "就绪",
+        [
+            "就绪",
+            "準備完了",
+            "Ready",
+        ],
+    ),
+    (
+        "运行中",
+        [
+            "运行中",
+            "実行中",
+            "Running",
+        ],
+    ),
+    (
+        "收起模型与接口设置",
+        [
+            "收起模型与接口设置",
+            "モデル・API設定を閉じる",
+            "Collapse Model & API Settings",
+        ],
+    ),
 ];
 
 #[cfg(test)]

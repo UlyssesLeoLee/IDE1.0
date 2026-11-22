@@ -1673,7 +1673,7 @@ impl App {
                     }
                 });
             ui.horizontal(|ui| {
-                let btn_w = 148.0;
+                let btn_w = 186.0;
                 let re = ui.add(
                     egui::TextEdit::singleline(&mut self.collab.master_input)
                         .hint_text("输入统筹命令 (Enter 直接并行执行)...")
@@ -1695,6 +1695,26 @@ impl App {
                     } else {
                         master_send = Some(self.collab.master_input.clone());
                     }
+                }
+                let gear_tip = if self.ai.settings {
+                    crate::i18n::trz("收起模型与接口设置")
+                } else {
+                    crate::i18n::trz("模型与接口设置…")
+                };
+                if crate::ui_icons::icon_only_button(
+                    ui,
+                    crate::ui_icons::UiIcon::Gear,
+                    vec2(24.0, 24.0),
+                    if self.ai.settings {
+                        Color32::from_rgb(56, 189, 248)
+                    } else {
+                        tc.fg
+                    },
+                )
+                .on_hover_text(gear_tip)
+                .clicked()
+                {
+                    self.ai.settings = !self.ai.settings;
                 }
                 if self.collab.any_running()
                     && crate::btnstyle::agent_command_button(
@@ -1756,11 +1776,10 @@ impl App {
             })
             .collect();
 
-        let mut pick_single: Option<usize> = None;
         ui.group(|ui| {
             ui.horizontal(|ui| {
                 ui.label(
-                    egui::RichText::new(crate::i18n::trz("Agent 编队精准控制"))
+                    egui::RichText::new(crate::i18n::trz("Agent 协同编队状态"))
                         .strong()
                         .color(Color32::from_rgb(56, 189, 248)),
                 );
@@ -1835,15 +1854,18 @@ impl App {
                                     ui.with_layout(
                                         egui::Layout::right_to_left(egui::Align::Center),
                                         |ui| {
-                                            if crate::ui_icons::icon_button(
-                                                ui,
-                                                crate::ui_icons::UiIcon::ArrowRight,
-                                                crate::i18n::trz("精准控制"),
-                                                Color32::from_rgb(56, 189, 248),
-                                            )
-                                            .clicked()
-                                            {
-                                                pick_single = Some(entry.idx);
+                                            if entry.busy {
+                                                ui.label(
+                                                    egui::RichText::new(crate::i18n::trz("运行中"))
+                                                        .size(10.5)
+                                                        .color(Color32::from_rgb(50, 215, 130)),
+                                                );
+                                            } else {
+                                                ui.label(
+                                                    egui::RichText::new(crate::i18n::trz("就绪"))
+                                                        .size(10.5)
+                                                        .weak(),
+                                                );
                                             }
                                         },
                                     );
@@ -1869,10 +1891,6 @@ impl App {
                 });
         });
 
-        // 执行延迟动作
-        if let Some(idx) = pick_single {
-            self.select_single_agent(idx);
-        }
         if stop_all_clicked {
             self.collab.stop_all();
         }

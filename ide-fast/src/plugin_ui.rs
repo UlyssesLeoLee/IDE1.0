@@ -26,6 +26,7 @@ pub struct ResultWin {
     /// 画不出来 / 不是图时显示的文本 (HTML 剥标签、原始 JSON、SVG 源码)
     pub text: String,
     pub doc_id: u64,
+    pub gen: u64,
 }
 
 #[derive(Default)]
@@ -33,6 +34,7 @@ pub struct PlugState {
     host: Option<PluginHost>,
     jobs: Vec<Job>,
     pub win: Option<ResultWin>,
+    next_gen: u64,
 }
 
 /// 选区文字 (多行用 \n 连); 没有选区 = 空串。列按字符数
@@ -173,6 +175,19 @@ impl PlugState {
 
     fn dispatch(&mut self, job: &Job, out: Outcome, doc: &mut Doc) -> Option<String> {
         if let Some(e) = out.error {
+            self.next_gen = self.next_gen.wrapping_add(1);
+            let gen = self.next_gen;
+            self.win = Some(ResultWin {
+                title: job.title.clone(),
+                summary: format!("⚠️ {}", e),
+                svg: None,
+                text: format!(
+                    "{}\n\n💡 提示：文档关系图基于 Markdown 标题结构与引用生成。\n请在当前文档中添加 #、## 等标题，或使用 [[标题]] 引用关系后再试。",
+                    e
+                ),
+                doc_id: doc.id,
+                gen,
+            });
             return Some(e);
         }
         let shows = out.svg.is_some() || out.html.is_some() || out.raw.is_some();
@@ -206,12 +221,15 @@ impl PlugState {
             _ => (None, String::new()),
         };
         let tip = out.summary.clone();
+        self.next_gen = self.next_gen.wrapping_add(1);
+        let gen = self.next_gen;
         self.win = Some(ResultWin {
             title: job.title.clone(),
             summary: out.summary,
             svg,
             text,
             doc_id: doc.id,
+            gen,
         });
         Some(tip) // 状态栏的「正在运行」提示换成摘要
     }
@@ -226,9 +244,11 @@ impl PlugState {
         let mut open = true;
         let mut jump = None;
         let doc_id = w.doc_id;
+        let win_id = egui::Id::new(("plugin_result_window", w.gen));
         egui::Window::new(w.title.clone())
+            .id(win_id)
             .open(&mut open)
-            .default_size([520.0, 420.0])
+            .default_size([540.0, 440.0])
             .resizable(true)
             .default_pos(egui::pos2(24.0, 56.0))
             .show(ctx, |ui| {
