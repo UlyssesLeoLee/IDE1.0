@@ -2548,6 +2548,10 @@ impl App {
             ui.close();
         }
         for r in &rows {
+            // 透明玻璃(theme-clear)与透明水晶(theme-crystal)已统一为透明水晶界面，插件面板只保留单一透明主题入口
+            if r.id == "theme-clear" {
+                continue;
+            }
             ui.horizontal(|ui| {
                 if r.theme.is_none() {
                     if ui
@@ -2561,11 +2565,13 @@ impl App {
                     }
                 }
                 if let Some(t) = &r.theme {
+                    let is_active = if r.id == "theme-crystal" {
+                        self.theme_id == "theme-crystal" || self.theme_id == "theme-clear"
+                    } else {
+                        self.theme_id == r.id
+                    };
                     if ui
-                        .radio(
-                            self.theme_id == r.id,
-                            format!("{}{}", tr("ui.theme-prefix"), t.label),
-                        )
+                        .radio(is_active, format!("{}{}", tr("ui.theme-prefix"), t.label))
                         .clicked()
                     {
                         self.set_theme_plugin(&r.id);
@@ -2650,7 +2656,10 @@ impl App {
             ui.close();
             self.gh_open();
         }
-        let gone = plugins::removed_bundled();
+        let gone: Vec<_> = plugins::removed_bundled()
+            .into_iter()
+            .filter(|(id, _, _)| id != "theme-clear")
+            .collect();
         if !gone.is_empty() {
             ui.menu_button(tr("sub.plugin-restore"), |ui| {
                 for (id, name, _) in gone {
@@ -2701,12 +2710,11 @@ impl App {
         let row_opt = plugins::rows().into_iter().find(|r| r.id == plugin);
         let row = match row_opt {
             Some(r) if r.enabled => r,
-            Some(r) => {
-                let _ = plugins::set_enabled(plugin, true);
-                r
-            }
-            None => {
-                self.cur().tip = trf("dlg.plugin-off", &[plugin]);
+            Some(_) | None => {
+                let msg = trf("dlg.plugin-off", &[plugin]);
+                let doc_id = self.docs[self.active].id;
+                self.cur().tip = msg.clone();
+                self.plug.open_error_win(title, msg.clone(), msg, doc_id);
                 return;
             }
         };
@@ -5012,10 +5020,8 @@ impl App {
                                         + char_w * c.saturating_sub(tail) as f32
                                 };
                                 let (x_left, x_right) = (x0 + xx(c0), x0 + xx(c1));
-                                let stroke_col = if self.tc.crystal {
+                                let stroke_col = if self.tc.is_translucent() {
                                     self.tc.mat_prism_cyan
-                                } else if self.tc.clear {
-                                    self.tc.blue
                                 } else {
                                     Color32::from_rgb(0, 215, 255)
                                 };
@@ -5036,7 +5042,7 @@ impl App {
                                         Pos2::new(x_left, y + 0.5),
                                         Pos2::new(x_right, y + row_h - 0.5),
                                     );
-                                    let alt_sel_fill = if self.tc.crystal || self.tc.clear {
+                                    let alt_sel_fill = if self.tc.is_translucent() {
                                         Color32::from_rgba_unmultiplied(0, 180, 255, 75)
                                     } else {
                                         Color32::from_rgba_unmultiplied(
@@ -5223,22 +5229,13 @@ impl App {
                                 Pos2::new(rect.min.x + gutter, y),
                                 Pos2::new(rect.max.x, y + row_h),
                             );
-                            if tc.crystal {
+                            if tc.is_translucent() {
                                 painter.rect_filled(cur_rect, 0.0, Color32::from_white_alpha(15));
                                 painter.line_segment(
                                     [cur_rect.left_bottom(), cur_rect.right_bottom()],
                                     egui::Stroke::new(
                                         1.0,
                                         Color32::from_rgba_unmultiplied(0, 240, 255, 85),
-                                    ),
-                                );
-                            } else if tc.clear {
-                                painter.rect_filled(cur_rect, 0.0, Color32::from_white_alpha(15));
-                                painter.line_segment(
-                                    [cur_rect.left_bottom(), cur_rect.right_bottom()],
-                                    egui::Stroke::new(
-                                        1.0,
-                                        Color32::from_rgba_unmultiplied(56, 189, 248, 80),
                                     ),
                                 );
                             } else {
@@ -5365,10 +5362,8 @@ impl App {
                                 })
                                 .unwrap_or(false);
                             if is_in_box {
-                                let strip_col = if self.tc.crystal {
+                                let strip_col = if self.tc.is_translucent() {
                                     self.tc.mat_prism_cyan
-                                } else if self.tc.clear {
-                                    self.tc.blue
                                 } else {
                                     Color32::from_rgb(0, 215, 255)
                                 };
@@ -5418,8 +5413,8 @@ impl App {
                             bar_accent_col,
                             view_bg,
                             view_stroke,
-                        ) = if tc.crystal {
-                            // 水晶主题: 纯净通透水晶质感 (透明度生效) + 青粉色散边缘高光 + 晶钻白微线
+                        ) = if tc.is_translucent() {
+                            // 统一透明水晶主题: 纯净通透水晶质感 + 青粉色散边缘高光 + 晶钻白微线
                             (
                                 Color32::from_rgba_unmultiplied(255, 255, 255, 12),
                                 Some(egui::Stroke::new(
@@ -5433,26 +5428,6 @@ impl App {
                                     1.0,
                                     Color32::from_rgba_unmultiplied(0, 240, 255, 180),
                                 ),
-                            )
-                        } else if tc.clear {
-                            // 玻璃主题: 极简纯透毛玻璃 (透明度生效) + 柔白边缘反光
-                            (
-                                Color32::from_rgba_unmultiplied(255, 255, 255, 8),
-                                Some(egui::Stroke::new(1.0, Color32::from_white_alpha(35))),
-                                Color32::from_rgba_unmultiplied(
-                                    tc.fg.r(),
-                                    tc.fg.g(),
-                                    tc.fg.b(),
-                                    70,
-                                ),
-                                Color32::from_rgba_unmultiplied(
-                                    tc.blue.r(),
-                                    tc.blue.g(),
-                                    tc.blue.b(),
-                                    140,
-                                ),
-                                Color32::from_white_alpha(16),
-                                egui::Stroke::new(1.0, Color32::from_white_alpha(80)),
                             )
                         } else if tc.comic {
                             // 美漫 3渲2 主题: 不透明深蓝黑分镜底板 (#141724) + 2.0px 纯黑墨水轮廓 + 波普黄高亮视口
@@ -5744,10 +5719,8 @@ impl App {
                                 egui::Stroke::new(1.0, text_color),
                             );
                         } else if blink {
-                            let caret_col = if self.tc.crystal {
+                            let caret_col = if self.tc.is_translucent() {
                                 self.tc.mat_prism_cyan
-                            } else if self.tc.clear {
-                                self.tc.blue
                             } else {
                                 text_color
                             };
@@ -6612,7 +6585,7 @@ impl App {
 impl eframe::App for App {
     /// 半透明主题: 窗口是透明的,清屏色也要全透明,面板自己的 alpha 才能透出桌面 / 模糊材质
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
-        if self.sys.theme_glass || self.tc.is_translucent() || self.tc.crystal || self.tc.clear {
+        if self.sys.theme_glass || self.tc.is_translucent() {
             [0.0; 4]
         } else {
             Color32::from_rgb(12, 12, 12).to_normalized_gamma_f32()
@@ -6898,7 +6871,10 @@ impl App {
         };
 
         let dock_side = |app: &mut Self, root: &mut egui::Ui| {
-            app.dock_strip(root, crate::panels::Dock::Side); // 左细条常驻 (最外层), 活动栏 / 侧栏停靠在它右边
+            let side_mode = app.dock_mode(Dock::Side, app.side.open);
+            if side_mode != Mode::Full {
+                app.dock_strip(root, Dock::Side);
+            }
             if app.cfg.view.rail {
                 egui::Panel::left("rail")
                     .resizable(false)
@@ -6906,95 +6882,82 @@ impl App {
                     .frame(egui::Frame::NONE.fill(app.tc.bg_rail))
                     .show(root, |ui| app.activity_rail(ui));
             }
-            match app.dock_mode(Dock::Side, app.side.open) {
-                Mode::Full => {
-                    let max_w = (root.available_width() - 240.0).max(120.0);
-                    let r = egui::Panel::left("side")
-                        .resizable(true)
-                        .default_size(app.cfg.view.side_w)
-                        .max_size(max_w)
-                        .show(root, |ui| {
-                            ui.set_min_width(ui.available_width());
-                            app.side_ui(ui)
-                        });
-                    if !ctx.input(|i| i.pointer.any_down()) {
-                        app.cfg.view.side_w = crate::panels::clamp_size(
-                            Dock::Side,
-                            r.response.rect.width().round().min(max_w),
-                        );
-                    }
-                    app.paint_dock_inner_waist_button(root, r.response.rect, Dock::Side);
+            if side_mode == Mode::Full {
+                let max_w = (root.available_width() - 240.0).max(120.0);
+                let r = egui::Panel::left("side")
+                    .resizable(true)
+                    .default_size(app.cfg.view.side_w)
+                    .max_size(max_w)
+                    .show(root, |ui| {
+                        ui.set_min_width(ui.available_width());
+                        app.side_ui(ui)
+                    });
+                if !ctx.input(|i| i.pointer.any_down()) {
+                    app.cfg.view.side_w = crate::panels::clamp_size(
+                        Dock::Side,
+                        r.response.rect.width().round().min(max_w),
+                    );
                 }
-                Mode::Strip => {}
-                Mode::Hidden => {}
+                // 展开后折叠手柄自动移动到展开窗口内侧右边沿 (面向编辑区)
+                app.dock_strip(root, Dock::Side);
             }
         };
 
         let dock_right = |app: &mut Self, root: &mut egui::Ui, is_md: bool, is_nema: bool| {
-            app.dock_strip(root, Dock::Right); // 右细条常驻 (最外层), Chat / 预览停靠在它左边
-            match app.dock_mode(
-                Dock::Right,
-                crate::panels::right_visible(
-                    app.ai.open,
-                    app.md_preview,
-                    is_md,
-                    app.cfg.view.md_overlay,
-                ) || (app.nema_preview && is_nema),
-            ) {
-                Mode::Full => {
-                    let settled = !ctx.input(|i| i.pointer.any_down());
-                    let max_right = (root.available_width() - 240.0).max(160.0);
-                    if app.ai.open && right_room(root.available_width()) {
-                        let r = egui::Panel::right("aichat")
-                            .resizable(true)
-                            .default_size(app.cfg.view.ai_w)
-                            .max_size(right_cap(root.available_width()).min(max_right))
-                            .show(root, |ui| {
-                                ui.set_max_width(app.cfg.view.ai_w);
-                                app.ai_ui(ui)
-                            });
-                        if settled && (r.response.dragged() || r.response.drag_stopped()) {
-                            app.cfg.view.ai_w = crate::panels::clamp_size(
-                                Dock::Right,
-                                r.response.rect.width().round(),
-                            );
-                        }
-                        app.paint_dock_inner_waist_button(root, r.response.rect, Dock::Right);
-                    }
-                    if app.md_preview
-                        && is_md
-                        && !app.cfg.view.md_overlay
-                        && right_room(root.available_width())
-                    {
-                        let r = egui::Panel::right("mdprev")
-                            .resizable(true)
-                            .default_size(app.cfg.view.md_w)
-                            .max_size(right_cap(root.available_width()).min(max_right))
-                            .show(root, |ui| app.md_ui(ui, false));
-                        if settled {
-                            app.cfg.view.md_w = crate::panels::clamp_size(
-                                Dock::Right,
-                                r.response.rect.width().round(),
-                            );
-                        }
-                    }
-                    if app.nema_preview && is_nema && right_room(root.available_width()) {
-                        let r = egui::Panel::right("nemaprev")
-                            .resizable(true)
-                            .default_size(app.cfg.view.md_w.max(420.0))
-                            .max_size(right_cap(root.available_width()).min(max_right))
-                            .show(root, |ui| app.nema_ui(ui));
-                        if settled {
-                            app.cfg.view.md_w = crate::panels::clamp_size(
-                                Dock::Right,
-                                r.response.rect.width().round(),
-                            );
-                        }
-                    }
-                }
-                Mode::Strip => {}
-                Mode::Hidden => {}
+            let right_wanted = crate::panels::right_visible(
+                app.ai.open,
+                app.md_preview,
+                is_md,
+                app.cfg.view.md_overlay,
+            ) || (app.nema_preview && is_nema);
+            if app.dock_mode(Dock::Right, right_wanted) != Mode::Full {
+                app.dock_strip(root, Dock::Right);
+                return;
             }
+            let settled = !ctx.input(|i| i.pointer.any_down());
+            let max_right = (root.available_width() - 240.0).max(160.0);
+            if app.ai.open && right_room(root.available_width()) {
+                let r = egui::Panel::right("aichat")
+                    .resizable(true)
+                    .default_size(app.cfg.view.ai_w)
+                    .max_size(right_cap(root.available_width()).min(max_right))
+                    .show(root, |ui| {
+                        ui.set_max_width(app.cfg.view.ai_w);
+                        app.ai_ui(ui)
+                    });
+                if settled && (r.response.dragged() || r.response.drag_stopped()) {
+                    app.cfg.view.ai_w =
+                        crate::panels::clamp_size(Dock::Right, r.response.rect.width().round());
+                }
+            }
+            if app.md_preview
+                && is_md
+                && !app.cfg.view.md_overlay
+                && right_room(root.available_width())
+            {
+                let r = egui::Panel::right("mdprev")
+                    .resizable(true)
+                    .default_size(app.cfg.view.md_w)
+                    .max_size(right_cap(root.available_width()).min(max_right))
+                    .show(root, |ui| app.md_ui(ui, false));
+                if settled {
+                    app.cfg.view.md_w =
+                        crate::panels::clamp_size(Dock::Right, r.response.rect.width().round());
+                }
+            }
+            if app.nema_preview && is_nema && right_room(root.available_width()) {
+                let r = egui::Panel::right("nemaprev")
+                    .resizable(true)
+                    .default_size(app.cfg.view.md_w.max(420.0))
+                    .max_size(right_cap(root.available_width()).min(max_right))
+                    .show(root, |ui| app.nema_ui(ui));
+                if settled {
+                    app.cfg.view.md_w =
+                        crate::panels::clamp_size(Dock::Right, r.response.rect.width().round());
+                }
+            }
+            // 展开后折叠手柄自动移动到展开后右侧停靠窗口(Chat/Markdown/NEMA)内侧左边沿 (面向编辑区)
+            app.dock_strip(root, Dock::Right);
         };
 
         if self.last_opened_dock == Dock::Bottom {

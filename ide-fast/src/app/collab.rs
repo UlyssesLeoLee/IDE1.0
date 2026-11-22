@@ -1711,7 +1711,7 @@ impl App {
                         tc.fg
                     },
                 )
-                .on_hover_text(gear_tip)
+                .tip(gear_tip)
                 .clicked()
                 {
                     self.ai.settings = !self.ai.settings;

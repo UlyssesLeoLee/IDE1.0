@@ -86,12 +86,6 @@ const MD_BAR: &[&[MdBtn]] = &[
             Some(svgicon::EXPORT),
         ),
         ("@md.lint", "ide:lint", "@md.lint-tip", Some(svgicon::LINT)),
-        (
-            "🕸 关系图",
-            "ide:graph",
-            "生成文档关系图 (Markdown 标题与引用关系)",
-            None,
-        ),
     ],
     &[
         ("分隔线", "md-hr", "分隔线", None),
@@ -513,7 +507,6 @@ impl App {
             Some("ide:struct") => self.md_struct_open(),
             Some("ide:export") => self.md_export_now(),
             Some("ide:lint") => self.md_lint_now(),
-            Some("ide:graph") => self.run_plugin_command("doc-graph", "show", "文档关系图"),
             Some(c) => {
                 if let Some(clip) = self.cur().edit(c, None) {
                     self.put_clip(ctx, clip);

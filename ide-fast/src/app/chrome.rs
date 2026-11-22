@@ -119,19 +119,11 @@ impl App {
                             egui::StrokeKind::Inside,
                         );
                     } else if tc.is_translucent() {
-                        let (act_fill, border, glow) = if tc.crystal {
-                            (
-                                Color32::from_rgba_unmultiplied(255, 255, 255, 52),
-                                Color32::from_rgba_unmultiplied(255, 255, 255, 150),
-                                Some(Color32::from_rgba_unmultiplied(0, 240, 255, 95)),
-                            )
-                        } else {
-                            (
-                                Color32::from_rgba_unmultiplied(255, 255, 255, 42),
-                                Color32::from_rgba_unmultiplied(255, 255, 255, 120),
-                                Some(Color32::from_rgba_unmultiplied(56, 189, 248, 65)),
-                            )
-                        };
+                        let (act_fill, border, glow) = (
+                            Color32::from_rgba_unmultiplied(255, 255, 255, 52),
+                            Color32::from_rgba_unmultiplied(255, 255, 255, 155),
+                            Some(Color32::from_rgba_unmultiplied(0, 240, 255, 105)),
+                        );
                         super::glass_render::paint_glowing_pill(
                             p, rect, 6.0, act_fill, border, glow,
                         );
@@ -174,10 +166,8 @@ impl App {
                             Color32::BLACK,
                         );
                     } else {
-                        let bar = if tc.crystal {
+                        let bar = if tc.is_translucent() {
                             tc.mat_prism_cyan
-                        } else if tc.clear {
-                            tc.blue
                         } else if tc.dark {
                             Color32::from_rgb(0x00, 0x7a, 0xcc)
                         } else {

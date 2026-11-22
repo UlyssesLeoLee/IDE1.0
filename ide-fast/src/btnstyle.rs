@@ -47,6 +47,9 @@ pub fn outline(ui: &mut Ui) {
 /// 为当前 Ui 作用域配置深度契合各个主题外观的交互控件样式 (用于菜单、抽屉与浮层按钮)
 pub fn apply_theme_button_style(ui: &mut Ui, tc: &crate::view::ThemeColors) {
     let v = ui.visuals_mut();
+    // 必须清除全局 override_text_color，否则 egui 忽略 hovered/active 的 fg_stroke.color 导致文字无法反色
+    v.override_text_color = None;
+    v.widgets.noninteractive.fg_stroke.color = tc.fg;
     if tc.comic {
         v.widgets.inactive.weak_bg_fill = Color32::TRANSPARENT;
         v.widgets.inactive.bg_stroke = Stroke::new(1.5, Color32::BLACK);
@@ -69,17 +72,30 @@ pub fn apply_theme_button_style(ui: &mut Ui, tc: &crate::view::ThemeColors) {
         v.widgets.hovered.fg_stroke.color = Color32::from_rgb(255, 215, 0);
         v.widgets.active.weak_bg_fill = Color32::from_rgb(48, 30, 80);
         v.widgets.active.fg_stroke.color = Color32::from_rgb(255, 215, 0);
-    } else if tc.crystal || tc.clear {
+    } else if tc.is_translucent() {
+        let (hov_bg, hov_fg) = if tc.dark {
+            (
+                Color32::from_rgba_unmultiplied(255, 255, 255, 48),
+                Color32::WHITE,
+            )
+        } else {
+            (
+                Color32::from_rgba_unmultiplied(0, 150, 200, 48),
+                Color32::from_rgb(16, 24, 34),
+            )
+        };
         v.widgets.inactive.weak_bg_fill = Color32::from_rgba_unmultiplied(255, 255, 255, 18);
         v.widgets.inactive.bg_stroke =
             Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 45));
         v.widgets.inactive.corner_radius = 6.0.into();
         v.widgets.inactive.fg_stroke.color = tc.fg;
-        v.widgets.hovered.weak_bg_fill = Color32::from_rgba_unmultiplied(255, 255, 255, 45);
+        v.widgets.hovered.weak_bg_fill = hov_bg;
         v.widgets.hovered.bg_stroke =
             Stroke::new(1.0, Color32::from_rgba_unmultiplied(100, 230, 255, 140));
         v.widgets.hovered.corner_radius = 6.0.into();
-        v.widgets.hovered.fg_stroke.color = Color32::WHITE;
+        v.widgets.hovered.fg_stroke.color = hov_fg;
+        v.widgets.active.weak_bg_fill = hov_bg;
+        v.widgets.active.fg_stroke.color = hov_fg;
     } else {
         let (inact_bg, inact_strk) = if tc.dark {
             (Color32::from_white_alpha(10), Color32::from_white_alpha(22))
@@ -91,6 +107,11 @@ pub fn apply_theme_button_style(ui: &mut Ui, tc: &crate::view::ThemeColors) {
         } else {
             (Color32::from_black_alpha(16), Color32::from_black_alpha(42))
         };
+        let hov_fg = if tc.dark {
+            Color32::WHITE
+        } else {
+            Color32::BLACK
+        };
         v.widgets.inactive.weak_bg_fill = inact_bg;
         v.widgets.inactive.bg_stroke = Stroke::new(1.0, inact_strk);
         v.widgets.inactive.corner_radius = 5.0.into();
@@ -98,11 +119,9 @@ pub fn apply_theme_button_style(ui: &mut Ui, tc: &crate::view::ThemeColors) {
         v.widgets.hovered.weak_bg_fill = hov_bg;
         v.widgets.hovered.bg_stroke = Stroke::new(1.0, hov_strk);
         v.widgets.hovered.corner_radius = 5.0.into();
-        v.widgets.hovered.fg_stroke.color = if tc.dark {
-            Color32::WHITE
-        } else {
-            Color32::BLACK
-        };
+        v.widgets.hovered.fg_stroke.color = hov_fg;
+        v.widgets.active.weak_bg_fill = hov_bg;
+        v.widgets.active.fg_stroke.color = hov_fg;
     }
 }
 
@@ -137,7 +156,7 @@ pub fn unified_collapse_palette(
             fg,
             2.0,
         )
-    } else if tc.crystal || tc.clear {
+    } else if tc.is_translucent() {
         let alpha = if hovered || active { 56 } else { 28 };
         (
             Color32::from_rgba_unmultiplied(255, 255, 255, alpha),
@@ -412,7 +431,7 @@ pub fn agent_command_button(
                 font_id,
                 fg,
             );
-        } else if tc.crystal || tc.clear {
+        } else if tc.is_translucent() {
             // === 晶莹剔透玻璃拟物风格 (Crystal / Clear Glassmorphism) ===
             // 胶囊大圆角 + 棱镜边缘微光 + 磨砂通透质感
             let radius = if role == AgentBtnRole::Skill {
@@ -778,14 +797,23 @@ pub fn dropdown_button(
                 tc.fg
             };
             (d_rect, fg, fg)
-        } else if tc.crystal || tc.clear {
+        } else if tc.is_translucent() {
             let radius = 6.0;
-            let fill = if pressed {
-                Color32::from_rgba_unmultiplied(255, 255, 255, 65)
+            let fill = if tc.dark {
+                let a = if pressed {
+                    65
+                } else if hovered {
+                    45
+                } else {
+                    22
+                };
+                Color32::from_rgba_unmultiplied(255, 255, 255, a)
+            } else if pressed {
+                Color32::from_rgba_unmultiplied(0, 150, 200, 68)
             } else if hovered {
-                Color32::from_rgba_unmultiplied(255, 255, 255, 45)
+                Color32::from_rgba_unmultiplied(0, 150, 200, 46)
             } else {
-                Color32::from_rgba_unmultiplied(255, 255, 255, 22)
+                Color32::from_rgba_unmultiplied(255, 255, 255, 42)
             };
             let stroke = if hovered {
                 Stroke::new(1.0, Color32::from_rgba_unmultiplied(100, 230, 255, 160))
@@ -803,7 +831,15 @@ pub fn dropdown_button(
                     Stroke::new(1.0, Color32::from_white_alpha(100)),
                 );
             }
-            let fg = if hovered { Color32::WHITE } else { tc.fg };
+            let fg = if hovered {
+                if tc.dark {
+                    Color32::WHITE
+                } else {
+                    Color32::from_rgb(16, 24, 34)
+                }
+            } else {
+                tc.fg
+            };
             (rect, fg, fg)
         } else {
             let radius = 5.0;
@@ -953,6 +989,46 @@ mod tests {
             apply_theme_button_style(ui, &tc_crystal);
             apply_theme_button_style(ui, &tc_retro);
             apply_theme_button_style(ui, &tc_dark);
+        });
+        out.textures_delta.clear();
+    }
+
+    #[test]
+    fn apply_theme_button_style_clears_override_and_preserves_hover_contrast() {
+        let mut tc_comic = crate::view::ThemeColors::builtin(false);
+        tc_comic.comic = true;
+        let mut tc_retro = crate::view::ThemeColors::builtin(true);
+        tc_retro.retro16 = true;
+        let mut tc_crystal_dark = crate::view::ThemeColors::builtin(true);
+        tc_crystal_dark.crystal = true;
+        let mut tc_crystal_light = crate::view::ThemeColors::builtin(false);
+        tc_crystal_light.crystal = true;
+        let tc_dark = crate::view::ThemeColors::builtin(true);
+        let tc_light = crate::view::ThemeColors::builtin(false);
+
+        let ctx = egui::Context::default();
+        let mut out = ctx.run_ui(Default::default(), |ui| {
+            for (name, tc) in [
+                ("comic", tc_comic),
+                ("retro16", tc_retro),
+                ("crystal_dark", tc_crystal_dark),
+                ("crystal_light", tc_crystal_light),
+                ("dark", tc_dark),
+                ("light", tc_light),
+            ] {
+                ui.visuals_mut().override_text_color = Some(Color32::from_rgb(12, 34, 56));
+                apply_theme_button_style(ui, &tc);
+                let v = ui.visuals();
+                assert!(
+                    v.override_text_color.is_none(),
+                    "{name} apply_theme_button_style 必须清除 override_text_color 否则悬停文字无法反色"
+                );
+                assert_ne!(
+                    v.widgets.hovered.fg_stroke.color,
+                    v.widgets.hovered.weak_bg_fill,
+                    "{name} 悬停前景不可与背景相同"
+                );
+            }
         });
         out.textures_delta.clear();
     }

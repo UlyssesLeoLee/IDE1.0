@@ -1891,6 +1891,13 @@ fn theme_switching_enforces_retro16_pixel_font_and_default_font_for_others() {
     assert!(a.cfg.font_family.is_empty());
     assert_eq!(
         crate::fonts::effective_font_family(&a.cfg.font_family, &a.theme_id),
+        "CascadiaCode.ttf"
+    );
+
+    a.set_theme_plugin("theme-light");
+    assert!(a.cfg.font_family.is_empty());
+    assert_eq!(
+        crate::fonts::effective_font_family(&a.cfg.font_family, &a.theme_id),
         "CascadiaMono.ttf"
     );
 }
@@ -1920,27 +1927,32 @@ fn theme_font_user_modification_memory_across_switching() {
     assert_eq!(a.cfg.font_family, "Consolas");
     assert_eq!(a.cfg.effective_font_for(&a.theme_id), "Consolas");
 
-    // 4. 切换到未自定义过的 theme-clear: 自动使用 clear 主题默认字体 CascadiaMono.ttf
-    a.set_theme_plugin("theme-clear");
+    // 4. 切换到未自定义过的 theme-light: 自动使用浅色主题默认字体 CascadiaMono.ttf
+    a.set_theme_plugin("theme-light");
     assert!(a.cfg.font_family.is_empty());
     assert_eq!(a.cfg.effective_font_for(&a.theme_id), "CascadiaMono.ttf");
 
-    // 5. 用户在 theme-clear 下修改为 Fira Code
+    // 5. 切换到 theme-clear (与 theme-crystal 统一): 默认字体为 CascadiaCode.ttf
+    a.set_theme_plugin("theme-clear");
+    assert!(a.cfg.font_family.is_empty());
+    assert_eq!(a.cfg.effective_font_for(&a.theme_id), "CascadiaCode.ttf");
+
+    // 6. 用户在 theme-clear 下修改为 Fira Code
     a.cfg.font_family = "Fira Code".to_string();
     assert_eq!(a.cfg.effective_font_for(&a.theme_id), "Fira Code");
 
-    // 6. 再次切到 retro16: 依然是 PixelFont
+    // 7. 再次切到 retro16: 依然是 PixelFont
     a.set_theme_plugin("theme-retro16");
     assert_eq!(
         a.cfg.effective_font_for(&a.theme_id),
         "PixelFontMulti-12.ttf"
     );
 
-    // 7. 切回 theme-comic: 依然保持 Consolas
+    // 8. 切回 theme-comic: 依然保持 Consolas
     a.set_theme_plugin("theme-comic");
     assert_eq!(a.cfg.font_family, "Consolas");
 
-    // 8. 切回 theme-clear: 依然保持 Fira Code
+    // 9. 切回 theme-clear: 依然保持 Fira Code
     a.set_theme_plugin("theme-clear");
     assert_eq!(a.cfg.font_family, "Fira Code");
 }
@@ -2163,36 +2175,40 @@ fn test_translucent_theme_menu_opaque_and_body_60pct_transparency() {
         "暗字在深色背景下自动提亮为高对比浅字"
     );
 
-    // 4. 透明模式下拉菜单文字动态变色高对比度校验
-    let dark_menu_fg = style
-        .visuals
-        .override_text_color
-        .expect("暗色透明主题菜单文字颜色已设置");
-    let dark_bg = style.visuals.window_fill;
-    let dark_bg_lum =
-        0.299 * (dark_bg.r() as f32) + 0.587 * (dark_bg.g() as f32) + 0.114 * (dark_bg.b() as f32);
-    let dark_fg_lum = 0.299 * (dark_menu_fg.r() as f32)
-        + 0.587 * (dark_menu_fg.g() as f32)
-        + 0.114 * (dark_menu_fg.b() as f32);
+    // 4. 透明模式下拉菜单文字动态变色高对比度校验（同时确保不锁定 override_text_color 阻断悬停反色）
     assert!(
-        (dark_fg_lum - dark_bg_lum).abs() > 100.0,
+        style.visuals.override_text_color.is_none(),
+        "暗色透明主题菜单不可锁定 override_text_color 以确保悬停反色生效"
+    );
+    let lum = |c: Color32| 0.299 * (c.r() as f32) + 0.587 * (c.g() as f32) + 0.114 * (c.b() as f32);
+    let dark_menu_fg = style.visuals.widgets.inactive.fg_stroke.color;
+    let dark_bg = style.visuals.window_fill;
+    assert!(
+        (lum(dark_menu_fg) - lum(dark_bg)).abs() > 100.0,
         "暗底下拉菜单文字必须有高对比度浅色"
     );
-
-    let light_menu_fg = light_style
-        .visuals
-        .override_text_color
-        .expect("浅色透明主题菜单文字颜色已设置");
-    let light_bg = light_style.visuals.window_fill;
-    let light_bg_lum = 0.299 * (light_bg.r() as f32)
-        + 0.587 * (light_bg.g() as f32)
-        + 0.114 * (light_bg.b() as f32);
-    let light_fg_lum = 0.299 * (light_menu_fg.r() as f32)
-        + 0.587 * (light_menu_fg.g() as f32)
-        + 0.114 * (light_menu_fg.b() as f32);
+    let dark_hov_bg = style.visuals.widgets.hovered.weak_bg_fill;
+    let dark_hov_fg = style.visuals.widgets.hovered.fg_stroke.color;
     assert!(
-        (light_bg_lum - light_fg_lum).abs() > 100.0,
+        (lum(dark_hov_fg) - lum(dark_hov_bg)).abs() > 100.0,
+        "暗底下拉菜单悬停反色文字对比度必须 > 100"
+    );
+
+    assert!(
+        light_style.visuals.override_text_color.is_none(),
+        "浅色透明主题菜单不可锁定 override_text_color 以确保悬停反色生效"
+    );
+    let light_menu_fg = light_style.visuals.widgets.inactive.fg_stroke.color;
+    let light_bg = light_style.visuals.window_fill;
+    assert!(
+        (lum(light_bg) - lum(light_menu_fg)).abs() > 100.0,
         "浅底下拉菜单文字必须有高对比度深色"
+    );
+    let light_hov_bg = light_style.visuals.widgets.hovered.weak_bg_fill;
+    let light_hov_fg = light_style.visuals.widgets.hovered.fg_stroke.color;
+    assert!(
+        (lum(light_hov_bg) - lum(light_hov_fg)).abs() > 100.0,
+        "浅底下拉菜单悬停反色文字对比度必须 > 100"
     );
 }
 
@@ -2501,4 +2517,54 @@ fn test_non_blocking_diff_with_file_loading_progress_bar() {
     // 3. 模拟用户取消
     a.file_dialog_loading = None;
     assert!(a.file_dialog_loading.is_none());
+}
+
+#[test]
+fn test_adapt_char_color_preserves_chromatic_hue_and_unifies_transparent_themes() {
+    // 1. 浅色背景下保留色相区分度，同时将中性白色转为深石墨
+    let white = Color32::from_rgb(255, 255, 255);
+    assert_eq!(adapt_char_color(white, true), Color32::from_rgb(24, 28, 38));
+
+    let cyan = Color32::from_rgb(0, 240, 255);
+    let dark_cyan = adapt_char_color(cyan, true);
+    assert!(
+        dark_cyan.b() > dark_cyan.r() && dark_cyan.g() > dark_cyan.r(),
+        "亮底青色反色后应保留冷青色相而非退化成灰蓝: {dark_cyan:?}"
+    );
+
+    let yellow = Color32::from_rgb(255, 215, 0);
+    let dark_yellow = adapt_char_color(yellow, true);
+    assert!(
+        dark_yellow.r() > dark_yellow.b() && dark_yellow.g() > dark_yellow.b(),
+        "亮底黄色反色后应保留暖琥珀色相: {dark_yellow:?}"
+    );
+
+    // 2. 暗色背景下提亮暗色字符并保持高对比度
+    let deep_blue = Color32::from_rgb(18, 28, 72);
+    let lifted = adapt_char_color(deep_blue, false);
+    assert!(lifted.b() >= lifted.r() && lifted.r() >= 200);
+
+    // 3. theme-clear 与 theme-crystal 统一透明水晶体系（默认字体、tc.crystal、translucent）
+    let (mut a, _g) = app(Settings::default());
+    let ctx = egui::Context::default();
+    a.set_theme_plugin("theme-crystal");
+    let mut o1 = ctx.run_ui(Default::default(), |ui| a.ui_main(ui));
+    o1.textures_delta.clear();
+    let tc_crystal = a.tc;
+
+    a.set_theme_plugin("theme-clear");
+    let mut o2 = ctx.run_ui(Default::default(), |ui| a.ui_main(ui));
+    o2.textures_delta.clear();
+    let tc_clear = a.tc;
+
+    assert!(tc_crystal.crystal && tc_crystal.is_translucent());
+    assert!(tc_clear.crystal && tc_clear.is_translucent());
+    assert_eq!(
+        crate::fonts::theme_default_font("theme-crystal"),
+        Some("CascadiaCode.ttf")
+    );
+    assert_eq!(
+        crate::fonts::theme_default_font("theme-clear"),
+        Some("CascadiaCode.ttf")
+    );
 }

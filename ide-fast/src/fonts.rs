@@ -179,9 +179,9 @@ pub fn effective_font_family(font_family: &str, theme_id: &str) -> String {
 pub fn theme_default_font(theme_id: &str) -> Option<&'static str> {
     match theme_id {
         "theme-retro16" => Some("PixelFontMulti-12.ttf"), // 16位复古像素风主题专属
-        "theme-crystal" => Some("CascadiaCode.ttf"),      // 水晶现代几何通透感
+        "theme-crystal" => Some("CascadiaCode.ttf"),      // 统一透明水晶现代几何通透感
         "theme-comic" => Some("CascadiaCode.ttf"),        // 美漫 3渲2 粗线条高辨识度
-        "theme-clear" => Some("CascadiaMono.ttf"),        // 玻璃极简清透
+        "theme-clear" => Some("CascadiaCode.ttf"),        // 与 theme-crystal 统一使用同一默认字体
         "theme-dark" => Some("CascadiaCode.ttf"),         // 暗色专业代码
         "theme-light" => Some("CascadiaMono.ttf"),        // 纸质明朗舒适
         "theme-high-contrast" => Some("CascadiaCode.ttf"), // 高对比度锐利大字怀
@@ -681,7 +681,7 @@ mod tests {
             theme_default_font("theme-crystal"),
             Some("CascadiaCode.ttf")
         );
-        assert_eq!(theme_default_font("theme-clear"), Some("CascadiaMono.ttf"));
+        assert_eq!(theme_default_font("theme-clear"), Some("CascadiaCode.ttf"));
         assert_eq!(theme_default_font("theme-dark"), Some("CascadiaCode.ttf"));
         assert_eq!(theme_default_font("theme-light"), Some("CascadiaMono.ttf"));
         assert_eq!(theme_default_font("theme-comic"), Some("CascadiaCode.ttf"));

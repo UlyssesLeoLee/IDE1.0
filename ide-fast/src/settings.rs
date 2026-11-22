@@ -2099,7 +2099,8 @@ nColumnSpace=2
             "PixelFontMulti-12.ttf"
         );
         assert_eq!(s.effective_font_for("theme-comic"), "CascadiaCode.ttf");
-        assert_eq!(s.effective_font_for("theme-clear"), "CascadiaMono.ttf");
+        assert_eq!(s.effective_font_for("theme-clear"), "CascadiaCode.ttf");
+        assert_eq!(s.effective_font_for("theme-light"), "CascadiaMono.ttf");
 
         // 模拟用户对不同主题自定义修改字体
         s.theme_fonts

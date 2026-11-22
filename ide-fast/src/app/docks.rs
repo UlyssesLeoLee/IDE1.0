@@ -388,7 +388,7 @@ impl App {
         }
     }
 
-    /// 细条: 左 / 右是常驻的 16px 竖条 (rail 底色, 顶部一个撑满宽、高 40 的无框 `›` / `‹` 按钮);
+    /// 细条: 折叠时靠最外侧，展开后自动移动到展开窗口的内侧边缘，竖直腰部居中绘制拉手图标；
     /// 底部是 28px 的面板头 (折叠时保留页签名, 右端文字钮「展开」)
     pub(super) fn dock_strip(&mut self, root: &mut egui::Ui, d: Dock) {
         let collapsed = self.dock_mode(d, self.dock_wanted(d)) != Mode::Full;
@@ -421,17 +421,14 @@ impl App {
                                 resp.is_pointer_button_down_on(),
                             );
                         } else {
-                            if resp.hovered() {
-                                ui.painter().rect_filled(rect, 0.0, tc.bg_hover);
-                            }
-                            let col = if resp.hovered() { tc.fg } else { tc.fg_dim };
-                            let chevron_pos = Pos2::new(rect.center().x, rect.center().y);
-                            ui.painter().text(
-                                chevron_pos,
-                                egui::Align2::CENTER_CENTER,
-                                panels::chevron(d, collapsed),
-                                egui::FontId::proportional(16.0),
-                                col,
+                            Self::paint_modern_dock_strip(
+                                ui.painter(),
+                                rect,
+                                d,
+                                collapsed,
+                                &tc,
+                                resp.hovered(),
+                                resp.is_pointer_button_down_on(),
                             );
                         }
                         toggle = resp.clicked();
@@ -453,98 +450,63 @@ impl App {
         }
     }
 
-    /// 展开状态下位于停靠区内侧边缘腰部的折叠手柄按钮 (符合一般折叠手柄特征: 展开后自动移动到内侧一边的边缘，腰部垂直居中)
-    pub(super) fn paint_dock_inner_waist_button(
-        &mut self,
-        ui: &mut egui::Ui,
-        panel_rect: Rect,
+    /// 现代/水晶/复古主题左右折叠条腰部居中拉手胶囊
+    fn paint_modern_dock_strip(
+        p: &egui::Painter,
+        rect: Rect,
         d: Dock,
+        collapsed: bool,
+        tc: &crate::view::ThemeColors,
+        hovered: bool,
+        pressed: bool,
     ) {
-        let tc = self.tc;
-        let tab_w = 14.0;
-        let tab_h = 44.0;
-        let cy = panel_rect.center().y;
-        let cx = match d {
-            Dock::Side => panel_rect.right() - tab_w * 0.5,
-            Dock::Right => panel_rect.left() + tab_w * 0.5,
-            _ => return,
-        };
-        let rect = Rect::from_center_size(pos2(cx, cy), Vec2::new(tab_w, tab_h));
-        let resp = ui.allocate_rect(rect, Sense::click());
-        let resp = resp
-            .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .tip(trz(panels::tip(d, false)));
-
-        let hovered = resp.hovered();
-        let pressed = resp.is_pointer_button_down_on();
-        let p = ui.painter();
-        let arrow = panels::chevron(d, false);
-
-        if tc.comic {
-            let shadow_offset = if pressed {
-                Vec2::ZERO
-            } else {
-                Vec2::new(1.5, 1.5)
-            };
-            if !pressed {
-                p.rect_filled(rect.translate(shadow_offset), 3.0, Color32::BLACK);
-            }
-            let draw_rect = if pressed {
-                rect.translate(Vec2::new(1.0, 1.0))
-            } else {
-                rect
-            };
-            let (bg, fg) = if pressed {
-                (Color32::from_rgb(255, 160, 0), Color32::BLACK)
+        if hovered {
+            p.rect_filled(rect, 0.0, tc.bg_hover.gamma_multiply(0.35));
+        }
+        let pill = Rect::from_center_size(
+            Pos2::new(rect.center().x, rect.center().y),
+            Vec2::new((rect.width() - 3.0).max(10.0), 44.0),
+        );
+        let (fill, stroke_col, fg) = if tc.is_translucent() {
+            let a = if pressed {
+                68
             } else if hovered {
-                (Color32::from_rgb(255, 204, 0), Color32::BLACK)
+                48
             } else {
-                (
-                    Color32::from_rgb(32, 36, 52),
-                    Color32::from_rgb(255, 204, 0),
-                )
+                22
             };
-            p.rect_filled(draw_rect, 3.0, bg);
-            p.rect_stroke(
-                draw_rect,
-                3.0,
-                Stroke::new(1.8, Color32::BLACK),
-                egui::StrokeKind::Inside,
-            );
-            p.text(
-                draw_rect.center(),
-                egui::Align2::CENTER_CENTER,
-                arrow,
-                egui::FontId::proportional(15.0),
-                fg,
-            );
+            let st = if hovered || pressed {
+                tc.mat_prism_cyan
+            } else {
+                Color32::from_white_alpha(95)
+            };
+            let fg = if hovered || pressed {
+                tc.mat_prism_cyan
+            } else {
+                tc.fg
+            };
+            (Color32::from_rgba_unmultiplied(255, 255, 255, a), st, fg)
+        } else if pressed {
+            (tc.bg_active, tc.border_strong, tc.fg)
+        } else if hovered {
+            (tc.bg_hover, tc.border_strong, tc.fg)
         } else {
-            let (bg, fg) = if pressed {
-                (tc.bg_active, tc.fg)
-            } else if hovered {
-                (tc.bg_hover, tc.fg)
-            } else {
-                (tc.bg_bar, tc.fg_dim)
-            };
-            p.rect_filled(rect, 3.0, bg);
-            p.rect_stroke(
-                rect,
-                3.0,
-                Stroke::new(1.0, tc.border),
-                egui::StrokeKind::Inside,
-            );
-            p.text(
-                rect.center(),
-                egui::Align2::CENTER_CENTER,
-                arrow,
-                egui::FontId::proportional(14.0),
-                fg,
-            );
-        }
-
-        if resp.clicked() {
-            self.collapse_dock(d);
-        }
+            (tc.bg_bar, tc.border, tc.fg_dim)
+        };
+        p.rect_filled(pill, 4.0, fill);
+        p.rect_stroke(
+            pill,
+            4.0,
+            Stroke::new(1.0, stroke_col),
+            egui::StrokeKind::Inside,
+        );
+        p.text(
+            pill.center(),
+            egui::Align2::CENTER_CENTER,
+            panels::chevron(d, collapsed),
+            egui::FontId::proportional(14.0),
+            fg,
+        );
     }
 
     /// 底部面板头 (Tauri `#bottom-head`, 28px): 左 = TERMINAL / OUTPUT / PROBLEMS / 🛡️ 协同审查 四个页签 (当前页 2px 蓝色下划线),
@@ -903,5 +865,93 @@ mod tests {
         assert_eq!(a.dock_mode(Dock::Bottom, a.term.open), Mode::Strip);
         a.collapse_dock(Dock::Bottom);
         assert_eq!(a.dock_mode(Dock::Bottom, a.term.open), Mode::Full);
+    }
+
+    #[test]
+    fn dock_strip_moves_to_inner_edge_when_expanded() {
+        let (mut a, _g) = app();
+        a.side.open = false;
+        a.ai.open = false;
+        a.md_preview = false;
+        a.cfg.view.rail = true;
+        a.cfg.view.side_w = 240.0;
+        a.cfg.view.ai_w = 340.0;
+
+        let ctx = egui::Context::default();
+        let raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(
+                pos2(0.0, 0.0),
+                Vec2::new(1200.0, 720.0),
+            )),
+            ..Default::default()
+        };
+        let mut parent_scope_id = egui::Id::NULL;
+        let panel_rect = |scope: egui::Id, id: &str| -> Option<Rect> {
+            egui::PanelState::load(&ctx, scope.with(id)).map(|s| s.outer_rect)
+        };
+
+        // 1. 折叠状态: 折叠条位于最外侧边缘
+        let mut out = ctx.run_ui(raw.clone(), |root| {
+            parent_scope_id = root.scope_id();
+            a.ui_main(root);
+        });
+        out.textures_delta.clear();
+        let side_strip_collapsed =
+            panel_rect(parent_scope_id, "side_strip").expect("side_strip rect");
+        let right_strip_collapsed =
+            panel_rect(parent_scope_id, "right_strip").expect("right_strip rect");
+        assert!(side_strip_collapsed.left() <= 1.0, "折叠时左侧条靠最左外缘");
+        assert!(
+            right_strip_collapsed.right() >= 1199.0,
+            "折叠时右侧条靠最右外缘"
+        );
+
+        // 2. 展开左侧栏与右侧 AI 协同: 折叠条自动移动到展开后窗口的内侧边缘 (面向编辑区)
+        a.side.open = true;
+        a.cfg.view.side_collapsed = false;
+        a.ai.open = true;
+        a.cfg.view.right_collapsed = false;
+        for _ in 0..2 {
+            let mut o = ctx.run_ui(raw.clone(), |root| {
+                parent_scope_id = root.scope_id();
+                a.ui_main(root);
+            });
+            o.textures_delta.clear();
+        }
+        let side_rect = panel_rect(parent_scope_id, "side").expect("side rect");
+        let side_strip_expanded =
+            panel_rect(parent_scope_id, "side_strip").expect("side_strip rect expanded");
+        assert!(
+            side_strip_expanded.left() >= side_rect.right() - 1.0,
+            "左侧展开后折叠条必须在 side 内侧右边: strip={side_strip_expanded:?}, side={side_rect:?}"
+        );
+        let ai_rect = panel_rect(parent_scope_id, "aichat").expect("aichat rect");
+        let right_strip_expanded =
+            panel_rect(parent_scope_id, "right_strip").expect("right_strip rect expanded");
+        assert!(
+            right_strip_expanded.right() <= ai_rect.left() + 1.0,
+            "右侧 AI 展开后折叠条必须在 aichat 内侧左边: strip={right_strip_expanded:?}, aichat={ai_rect:?}"
+        );
+
+        // 3. 右侧为 Markdown 预览时同样移到 mdprev 内侧左边
+        a.ai.open = false;
+        a.docs[0].name = "note.md".into();
+        a.md_preview = true;
+        a.cfg.view.md_overlay = false;
+        a.cfg.view.right_collapsed = false;
+        for _ in 0..2 {
+            let mut o = ctx.run_ui(raw.clone(), |root| {
+                parent_scope_id = root.scope_id();
+                a.ui_main(root);
+            });
+            o.textures_delta.clear();
+        }
+        let md_rect = panel_rect(parent_scope_id, "mdprev").expect("mdprev rect");
+        let right_strip_md =
+            panel_rect(parent_scope_id, "right_strip").expect("right_strip md rect");
+        assert!(
+            right_strip_md.right() <= md_rect.left() + 1.0,
+            "Markdown 预览展开后折叠条必须在 mdprev 内侧左边: strip={right_strip_md:?}, md={md_rect:?}"
+        );
     }
 }

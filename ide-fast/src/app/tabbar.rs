@@ -249,18 +249,10 @@ impl App {
         };
         if active {
             if tc.is_translucent() {
-                // 水晶与玻璃主题: 半透明磨砂晶面底色 + 顶部棱镜色散高光 (对齐 Tauri .tab.active)
-                let tab_fill = if tc.crystal {
-                    Color32::from_rgba_unmultiplied(255, 255, 255, 36)
-                } else {
-                    Color32::from_rgba_unmultiplied(255, 255, 255, 48)
-                };
+                // 统一透明水晶主题: 半透明磨砂晶面底色 + 顶部棱镜色散高光 (对齐 Tauri .tab.active)
+                let tab_fill = Color32::from_rgba_unmultiplied(255, 255, 255, 42);
                 p.rect_filled(rect, top_round, tab_fill);
-                let top_specular = if tc.crystal {
-                    tc.mat_prism_cyan
-                } else {
-                    tc.blue
-                };
+                let top_specular = tc.mat_prism_cyan;
                 // 顶部 2px 发光强调指示条
                 p.rect_filled(
                     Rect::from_min_size(rect.min, Vec2::new(rect.width(), 2.0)),

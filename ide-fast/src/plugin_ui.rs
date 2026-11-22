@@ -10,6 +10,7 @@ use std::sync::mpsc::{Receiver, TryRecvError};
 
 struct Job {
     rx: Receiver<Result<String, String>>,
+    plugin_id: String,
     perms: Vec<String>,
     title: String,
     /// 命令作用的文档 (id; 期间被关掉就丢弃结果)
@@ -95,6 +96,7 @@ impl PlugState {
         let rx = host.call(plugin, &format!("command:{cmd}"), &json!([arg]));
         self.jobs.push(Job {
             rx,
+            plugin_id: plugin.to_string(),
             perms: perms.to_vec(),
             title: title.to_string(),
             doc_id: doc.id,
@@ -163,11 +165,29 @@ impl PlugState {
         }
     }
 
+    /// 弹出插件错误/提示结果窗口
+    pub fn open_error_win(&mut self, title: &str, summary: String, detail: String, doc_id: u64) {
+        self.next_gen = self.next_gen.wrapping_add(1);
+        let gen = self.next_gen;
+        self.win = Some(ResultWin {
+            title: title.to_string(),
+            summary,
+            svg: None,
+            text: detail,
+            doc_id,
+            gen,
+        });
+    }
+
     /// 处理一个结果, 返回要显示的提示
     fn finish(&mut self, job: &Job, r: Result<String, String>, doc: &mut Doc) -> Option<String> {
         let json = match r {
             Ok(j) => j,
-            Err(e) => return Some(format!("插件命令失败 (编辑器不受影响): {e}")),
+            Err(e) => {
+                let msg = format!("{}: {e}", crate::i18n::trz("插件命令失败 (编辑器不受影响)"));
+                self.open_error_win(&job.title, msg.clone(), msg.clone(), doc.id);
+                return Some(msg);
+            }
         };
         let out = plugin_host::parse_outcome(&json);
         self.dispatch(job, out, doc)
@@ -175,19 +195,17 @@ impl PlugState {
 
     fn dispatch(&mut self, job: &Job, out: Outcome, doc: &mut Doc) -> Option<String> {
         if let Some(e) = out.error {
-            self.next_gen = self.next_gen.wrapping_add(1);
-            let gen = self.next_gen;
-            self.win = Some(ResultWin {
-                title: job.title.clone(),
-                summary: format!("⚠️ {}", e),
-                svg: None,
-                text: format!(
-                    "{}\n\n💡 提示：文档关系图基于 Markdown 标题结构与引用生成。\n请在当前文档中添加 #、## 等标题，或使用 [[标题]] 引用关系后再试。",
-                    e
-                ),
-                doc_id: doc.id,
-                gen,
-            });
+            let detail = if job.plugin_id == "doc-graph" {
+                format!(
+                    "{e}\n\n{}",
+                    crate::i18n::trz(
+                        "提示：文档关系图基于 Markdown 标题结构与引用生成。请在当前文档中添加 #、## 等标题，或使用 [[标题]] 引用关系后再试。"
+                    )
+                )
+            } else {
+                e.clone()
+            };
+            self.open_error_win(&job.title, e.clone(), detail, doc.id);
             return Some(e);
         }
         let shows = out.svg.is_some() || out.html.is_some() || out.raw.is_some();
@@ -324,6 +342,7 @@ mod tests {
         let patch = r#"{"summary":"已修改","edit":{"start":0,"remove":1,"insert":["X"]}}"#;
         let ro = Job {
             rx: std::sync::mpsc::channel().1,
+            plugin_id: "test-plug".into(),
             perms: perms(&["editor.read"]),
             title: "t".into(),
             doc_id: 7,
@@ -352,11 +371,13 @@ mod tests {
             .finish(&rw, Ok(bad.into()), &mut d)
             .unwrap()
             .contains("越界"));
+        assert!(st.win.is_none());
         assert!(st
             .finish(&rw, Err("炸了".into()), &mut d)
             .unwrap()
             .contains("炸了"));
-        assert!(st.win.is_none());
+        let err_win = st.win.take().expect("宿主错误也应弹出结果窗口避免静默失败");
+        assert!(err_win.text.contains("炸了"));
     }
 
     #[test]
@@ -365,6 +386,7 @@ mod tests {
         let mut d = doc(&["# a"]);
         let j = Job {
             rx: std::sync::mpsc::channel().1,
+            plugin_id: "doc-graph".into(),
             perms: perms(&["editor.read"]),
             title: "图".into(),
             doc_id: 7,
@@ -388,6 +410,50 @@ mod tests {
             Some("仅提示")
         );
         assert!(st.win.is_none());
+    }
+
+    #[test]
+    fn host_error_and_plugin_error_open_window_with_scoped_hints() {
+        let _g = crate::i18n::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        crate::i18n::set(crate::i18n::Lang::Zh);
+        let mut st = PlugState::default();
+        let mut d = doc(&["plain line"]);
+
+        let j_other = Job {
+            rx: std::sync::mpsc::channel().1,
+            plugin_id: "other".into(),
+            perms: perms(&["editor.read"]),
+            title: "Other".into(),
+            doc_id: 7,
+            rev: 0,
+        };
+        let tip = st.finish(&j_other, Err("timeout".into()), &mut d).unwrap();
+        assert!(tip.contains("timeout"));
+        let w1 = st.win.take().expect("Host Err must open ResultWin");
+        assert!(w1.text.contains("timeout") && w1.doc_id == 7);
+
+        let j_graph = Job {
+            rx: std::sync::mpsc::channel().1,
+            plugin_id: "doc-graph".into(),
+            perms: perms(&["editor.read"]),
+            title: "文档关系图".into(),
+            doc_id: 7,
+            rev: 0,
+        };
+        st.finish(&j_graph, Ok(r#"{"error":"没有找到标题"}"#.into()), &mut d);
+        let w2 = st.win.take().expect("doc-graph error must open ResultWin");
+        assert!(w2.text.contains("没有找到标题"));
+        assert!(w2.text.contains("Markdown 标题结构与引用"));
+
+        st.finish(&j_other, Ok(r#"{"error":"语法错误"}"#.into()), &mut d);
+        let w3 = st
+            .win
+            .take()
+            .expect("other plugin error must open ResultWin");
+        assert!(w3.text.contains("语法错误"));
+        assert!(!w3.text.contains("Markdown 标题结构与引用"));
     }
 
     #[test]

@@ -176,6 +176,51 @@ pub fn contrast_fg(bg: Color32) -> Color32 {
     }
 }
 
+/// 将预乘 alpha 前景色合成到不透明/实色背景上，用于计算悬停/选中半透明色块的真实视觉亮度
+pub fn composite_over(fg: Color32, bg: Color32) -> Color32 {
+    if fg.a() == 255 {
+        return fg;
+    }
+    let inv_a = 1.0 - (fg.a() as f32 / 255.0);
+    let mix =
+        |f: u8, b: u8| -> u8 { ((f as f32) + (b as f32) * inv_a).round().clamp(0.0, 255.0) as u8 };
+    Color32::from_rgb(
+        mix(fg.r(), bg.r()),
+        mix(fg.g(), bg.g()),
+        mix(fg.b(), bg.b()),
+    )
+}
+
+/// 解析下拉菜单窗口底色 (透明主题下强制使用高质感实色底，杜绝穿透重影)
+pub fn menu_fill_color(tc: &ThemeColors) -> Color32 {
+    if tc.is_translucent() {
+        if tc.dark {
+            Color32::from_rgb(22, 27, 34)
+        } else {
+            Color32::from_rgb(250, 250, 252)
+        }
+    } else {
+        tc.bg_bar
+    }
+}
+
+/// 解析菜单项悬停/激活时的 `(背景色, 反色前景文字色)`
+pub fn menu_hover_colors(tc: &ThemeColors, menu_fill: Color32) -> (Color32, Color32) {
+    if tc.comic {
+        (Color32::from_rgb(255, 240, 60), Color32::BLACK)
+    } else if tc.is_translucent() {
+        let bg = if tc.dark {
+            Color32::from_rgb(0, 130, 175)
+        } else {
+            Color32::from_rgb(212, 232, 248)
+        };
+        (bg, contrast_fg(bg))
+    } else {
+        let eff = composite_over(tc.bg_active, menu_fill);
+        (tc.bg_active, contrast_fg(eff))
+    }
+}
+
 /// 菜单里的样式修改器: 下拉框(底色 = 菜单栏色, 1px 边, 直角, 阴影 `0 2px 8px`), 行内边距, 悬停色, 最小宽
 pub fn style(tc: ThemeColors) -> impl Fn(&mut egui::Style) + Send + Sync + 'static {
     move |s: &mut egui::Style| {
@@ -187,24 +232,13 @@ pub fn style(tc: ThemeColors) -> impl Fn(&mut egui::Style) + Send + Sync + 'stat
         s.text_styles
             .insert(egui::TextStyle::Button, FontId::proportional(12.0));
         let v = &mut s.visuals;
-        let fill = if tc.is_translucent() {
-            // 透明主题下下拉菜单严禁透明，使用高质感实色底，杜绝文字重叠穿透
-            if tc.dark {
-                Color32::from_rgb(22, 27, 34)
-            } else {
-                Color32::from_rgb(250, 250, 252)
-            }
-        } else {
-            tc.bg_bar
-        };
-        v.window_fill = fill;
-        // 动态计算菜单前景文字颜色，避免在透明模式下文字不能动态变色造成看不清
+        let fill = menu_fill_color(&tc);
         let menu_fg = contrast_fg(fill);
-        if tc.is_translucent() {
-            v.override_text_color = Some(menu_fg);
-        } else {
-            v.override_text_color = None;
-        }
+        let (hover_bg, hover_fg) = menu_hover_colors(&tc, fill);
+
+        v.window_fill = fill;
+        // 必须置 None：egui 中 override_text_color 会压制 hovered/active 的 fg_stroke，导致悬停反色失效
+        v.override_text_color = None;
         v.window_stroke = Stroke::new(1.0, tc.border);
         v.menu_corner_radius = egui::CornerRadius::ZERO;
         v.popup_shadow = Shadow {
@@ -213,16 +247,8 @@ pub fn style(tc: ThemeColors) -> impl Fn(&mut egui::Style) + Send + Sync + 'stat
             spread: 0,
             color: Color32::from_black_alpha(128),
         };
-        let hover_bg = if tc.comic {
-            Color32::from_rgb(255, 240, 60)
-        } else {
-            tc.bg_active
-        };
-        let hover_fg = if tc.comic {
-            Color32::BLACK
-        } else {
-            contrast_fg(hover_bg)
-        };
+
+        v.widgets.noninteractive.fg_stroke.color = menu_fg;
         v.widgets.inactive.weak_bg_fill = Color32::TRANSPARENT;
         v.widgets.inactive.bg_fill = Color32::TRANSPARENT;
         v.widgets.inactive.bg_stroke = Stroke::NONE;
@@ -288,16 +314,7 @@ pub fn menu_check(ui: &mut Ui, tc: &ThemeColors, on: bool, label: impl AsRef<str
     }
     let r = ui.add(b);
     if on {
-        let hover_bg = if tc.comic {
-            Color32::from_rgb(255, 240, 60)
-        } else {
-            tc.bg_active
-        };
-        let hover_fg = if tc.comic {
-            Color32::BLACK
-        } else {
-            contrast_fg(hover_bg)
-        };
+        let (_, hover_fg) = menu_hover_colors(tc, menu_fill_color(tc));
         let check_col = if r.hovered() {
             hover_fg
         } else {
@@ -423,5 +440,53 @@ mod tests {
         assert_eq!(j.text, "文件F");
         assert_eq!(j.sections[1].leading_space, 6.0);
         assert_ne!(j.sections[1].format.underline, Stroke::NONE);
+    }
+
+    #[test]
+    fn menu_style_clears_override_text_color_and_inverts_hover_across_themes() {
+        let luma =
+            |c: Color32| 0.299 * (c.r() as f32) + 0.587 * (c.g() as f32) + 0.114 * (c.b() as f32);
+
+        let light = ThemeColors::builtin(false);
+        let light_eff = composite_over(light.bg_active, light.bg_bar);
+        assert!(
+            luma(contrast_fg(light_eff)) < 60.0,
+            "浅色主题悬停合成底色为浅灰，反色文字必须是深色"
+        );
+
+        let dark = ThemeColors::builtin(true);
+        let mut comic = ThemeColors::builtin(false);
+        comic.comic = true;
+        let mut trans_dark = ThemeColors::builtin(true);
+        trans_dark.crystal = true;
+        let mut trans_light = ThemeColors::builtin(false);
+        trans_light.crystal = true;
+
+        for (name, tc) in [
+            ("dark", dark),
+            ("light", light),
+            ("comic", comic),
+            ("trans_dark", trans_dark),
+            ("trans_light", trans_light),
+        ] {
+            let mut s = egui::Style::default();
+            style(tc)(&mut s);
+            assert!(
+                s.visuals.override_text_color.is_none(),
+                "{name} 下拉菜单不可设置 override_text_color 以免阻断悬停反色"
+            );
+            let fill = s.visuals.window_fill;
+            let inact_fg = s.visuals.widgets.inactive.fg_stroke.color;
+            let hov_eff = composite_over(s.visuals.widgets.hovered.weak_bg_fill, fill);
+            let hov_fg = s.visuals.widgets.hovered.fg_stroke.color;
+            assert!(
+                (luma(inact_fg) - luma(fill)).abs() >= 100.0,
+                "{name} 常态文字与背景对比度不足"
+            );
+            assert!(
+                (luma(hov_fg) - luma(hov_eff)).abs() >= 100.0,
+                "{name} 悬停反色文字与悬停合成背景对比度不足"
+            );
+        }
     }
 }
