@@ -58,6 +58,137 @@ impl TraceBuffer {
 static IN_MEMORY_TRACE: Mutex<TraceBuffer> = Mutex::new(TraceBuffer::new());
 static CACHED_LOG_DIR: OnceLock<PathBuf> = OnceLock::new();
 
+/// 官方 GitHub Issues 反馈页面链接
+pub const ISSUES_URL: &str = "https://github.com/UlyssesLeoLee/IDE1.0/issues";
+
+/// 默认日志最大保留天数 (超过 7 天即视为过期日志)
+pub const MAX_LOG_AGE_DAYS: u64 = 7;
+
+/// 日志清理进度与完成消息通知
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum LogCleanupMsg {
+    Progress {
+        current: usize,
+        total: usize,
+        file_name: String,
+    },
+    Complete {
+        deleted: usize,
+        failed: usize,
+    },
+}
+
+/// 判定是否应弹出崩溃/错误反馈对话框 (单元测试、无头测试与 CI 环境下静默以防卡死测试)
+pub fn should_show_crash_dialog() -> bool {
+    if cfg!(test) {
+        return false;
+    }
+    if std::env::var_os("CI").is_some()
+        || std::env::var_os("GITHUB_ACTIONS").is_some()
+        || std::env::var_os("RUST_TEST_NOCAPTURE").is_some()
+        || std::env::var_os("HEADLESS").is_some()
+        || std::env::var_os("IDE10_HEADLESS").is_some()
+    {
+        return false;
+    }
+    true
+}
+
+/// 在崩溃或启动严重异常时提示用户并提供打开 GitHub Issues 反馈按钮
+pub fn prompt_crash_feedback(log_path: &std::path::Path, error_type: &str) {
+    if !should_show_crash_dialog() {
+        return;
+    }
+    let res = rfd::MessageDialog::new()
+        .set_title(format!("IDE1.0 - {error_type}"))
+        .set_description(format!(
+            "IDE1.0 遇到严重错误并已记录日志。\n\
+            日志路径：{}\n\n\
+            是否打开 GitHub Issues 页面反馈此问题？",
+            log_path.display()
+        ))
+        .set_buttons(rfd::MessageButtons::YesNo)
+        .show();
+
+    if res == rfd::MessageDialogResult::Yes {
+        let _ = crate::md_view::open_url(ISSUES_URL);
+    }
+}
+
+/// 扫描指定目录下超过 max_age_days 天的日志文件 (带自定义基准时钟，便于纯函数单测)
+pub fn scan_stale_logs_with_clock(
+    dir: &std::path::Path,
+    max_age_days: u64,
+    now: std::time::SystemTime,
+) -> Vec<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let cutoff_sec = max_age_days.saturating_mul(86400);
+    let mut stale = Vec::new();
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_file() && path.extension().is_some_and(|ext| ext == "log") {
+            if let Ok(meta) = entry.metadata() {
+                if let Ok(mtime) = meta.modified() {
+                    if let Ok(age) = now.duration_since(mtime) {
+                        if age.as_secs() >= cutoff_sec {
+                            stale.push(path);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    stale
+}
+
+/// 扫描应用日志目录下超过 max_age_days 天的日志文件
+pub fn scan_stale_logs(max_age_days: u64) -> Vec<PathBuf> {
+    scan_stale_logs_with_clock(&get_log_dir(), max_age_days, std::time::SystemTime::now())
+}
+
+/// 启动异步日志清理任务并返回进度通道
+pub fn start_stale_log_cleanup(
+    stale_files: Vec<PathBuf>,
+) -> std::sync::mpsc::Receiver<LogCleanupMsg> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let total = stale_files.len();
+        let mut deleted = 0;
+        let mut failed = 0;
+        for (i, path) in stale_files.into_iter().enumerate() {
+            let file_name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+            let _ = tx.send(LogCleanupMsg::Progress {
+                current: i + 1,
+                total,
+                file_name,
+            });
+            if std::fs::remove_file(&path).is_ok() {
+                deleted += 1;
+            } else {
+                failed += 1;
+            }
+            let sleep_ms = if total <= 5 {
+                30
+            } else if total <= 15 {
+                10
+            } else {
+                0
+            };
+            if sleep_ms > 0 {
+                std::thread::sleep(std::time::Duration::from_millis(sleep_ms));
+            }
+        }
+        let _ = tx.send(LogCleanupMsg::Complete { deleted, failed });
+    });
+    rx
+}
+
 /// 记录启动或运行关键步骤追踪（仅保存在内存中，保留首段启动轨迹与最近 256 条运行事件）
 pub fn record_trace_step(msg: &str) {
     let mut lock = IN_MEMORY_TRACE.lock().unwrap_or_else(|e| e.into_inner());
@@ -167,6 +298,8 @@ pub fn install_crash_handler() {
         let _ = std::fs::write(&log_file, &report);
         eprintln!("{report}");
 
+        prompt_crash_feedback(&log_file, "程序异常崩溃");
+
         default_hook(info);
     }));
 }
@@ -198,7 +331,10 @@ pub fn log_startup_error(err: &dyn std::fmt::Display) {
         content.push('\n');
     }
 
-    let _ = std::fs::write(&log_file, content);
+    let _ = std::fs::write(&log_file, &content);
+    eprintln!("IDE1.0 startup error: {err}");
+
+    prompt_crash_feedback(&log_file, "启动异常");
 }
 
 /// 手动触发导出诊断与性能日志 (通过菜单点击或命令行调用)
@@ -334,5 +470,65 @@ mod tests {
         assert!(d1.is_dir());
         assert_eq!(d1, d2);
         assert_eq!(CACHED_LOG_DIR.get(), Some(&d1));
+    }
+
+    #[test]
+    fn test_crash_feedback_contract() {
+        assert_eq!(ISSUES_URL, "https://github.com/UlyssesLeoLee/IDE1.0/issues");
+        assert!(!should_show_crash_dialog());
+    }
+
+    #[test]
+    fn test_scan_and_cleanup_stale_logs() {
+        let temp_dir = std::env::temp_dir().join(format!("ide10_test_logs_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).expect("create temp dir");
+
+        let log_old = temp_dir.join("test_old.log");
+        let log_recent = temp_dir.join("test_recent.log");
+        let non_log = temp_dir.join("test_other.txt");
+
+        std::fs::write(&log_old, b"old log content").unwrap();
+        std::fs::write(&log_recent, b"recent log content").unwrap();
+        std::fs::write(&non_log, b"other content").unwrap();
+
+        // 模拟 1: 基准时钟为文件创建时刻 -> 没有任何日志超过 7 天
+        let now_fresh = std::time::SystemTime::now();
+        let stale_zero = scan_stale_logs_with_clock(&temp_dir, 7, now_fresh);
+        assert!(stale_zero.is_empty(), "新建日志不应判定为过期");
+
+        // 模拟 2: 基准时钟快进 8 天 -> 两份 log 均判定为过期，txt 非 log 文件不包含
+        let now_later = now_fresh + std::time::Duration::from_secs(8 * 86400);
+        let stale_found = scan_stale_logs_with_clock(&temp_dir, 7, now_later);
+        assert_eq!(stale_found.len(), 2, "应扫描出 2 份过期日志文件");
+        assert!(stale_found.contains(&log_old));
+        assert!(stale_found.contains(&log_recent));
+        assert!(!stale_found.contains(&non_log));
+
+        // 运行清理任务
+        let rx = start_stale_log_cleanup(stale_found);
+        let mut completed = false;
+        let mut last_progress = 0;
+        while let Ok(msg) = rx.recv_timeout(std::time::Duration::from_secs(3)) {
+            match msg {
+                LogCleanupMsg::Progress { current, total, .. } => {
+                    assert_eq!(total, 2);
+                    last_progress = current;
+                }
+                LogCleanupMsg::Complete { deleted, failed } => {
+                    assert_eq!(deleted, 2);
+                    assert_eq!(failed, 0);
+                    completed = true;
+                    break;
+                }
+            }
+        }
+        assert!(completed, "清理任务应正常发送完成通知");
+        assert_eq!(last_progress, 2);
+        assert!(!log_old.exists(), "过期日志 old 应当已被物理删除");
+        assert!(!log_recent.exists(), "过期日志 recent 应当已被物理删除");
+        assert!(non_log.exists(), "非 log 文件必须完整保留");
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }

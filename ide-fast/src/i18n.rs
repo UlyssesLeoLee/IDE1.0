@@ -837,6 +837,38 @@ pub const CMD_T: &[Row] = &[
         ],
     ),
     (
+        "日志自动维护 (LOG CLEANUP)",
+        [
+            "日志自动维护 (LOG CLEANUP)",
+            "ログ自動保守 (LOG CLEANUP)",
+            "Log Maintenance (LOG CLEANUP)",
+        ],
+    ),
+    (
+        "正在清理超过 7 天的历史诊断日志，请稍候...",
+        [
+            "正在清理超过 7 天的历史诊断日志，请稍候...",
+            "7日以上前の診断ログをクリーンアップしています。しばらくお待ちください...",
+            "Cleaning up diagnostic logs older than 7 days, please wait...",
+        ],
+    ),
+    (
+        "正在清理",
+        [
+            "正在清理",
+            "クリーンアップ中",
+            "Cleaning",
+        ],
+    ),
+    (
+        "正在准备清理任务...",
+        [
+            "正在准备清理任务...",
+            "クリーンアップタスクを準備しています...",
+            "Preparing cleanup task...",
+        ],
+    ),
+    (
         "显示空白符",
         ["显示空白符", "空白文字を表示", "Show Whitespace"],
     ),

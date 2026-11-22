@@ -90,6 +90,7 @@ pub struct App {
     pub collab: collab::CollabState,
     pub installer: installer_ui::InstallerState,
     pub sticky_notes: sticky_notes::StickyNotesState,
+    pub(super) log_cleanup_state: lifecycle::LogCleanupState,
     docs: Vec<Doc>,
     active: usize,
     next_id: u64,
@@ -312,6 +313,7 @@ impl App {
             ai: Default::default(),
             collab: Default::default(),
             installer: Default::default(),
+            log_cleanup_state: Default::default(),
             sticky_notes: {
                 let mut s = if persist {
                     sticky_notes::StickyNotesState::load()
@@ -7083,6 +7085,7 @@ impl App {
         self.installer_window(ctx);
         self.sticky_notes_window(ctx);
         self.restore_window(ctx);
+        self.log_cleanup_window(ctx);
         self.window_grips(ctx);
         self.persist_if_changed();
         ctx.request_repaint_after(std::time::Duration::from_millis(550)); // 光标闪烁
