@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.8.10 — 2026-11-22
+
+### Vercel MCP 持久化事务存储、权限边界全面加固与 Rust 内核规范治理
+
+本版本聚焦于多 AI 代理并发协同与云端 MCP 安全性全面强化：将 Vercel 云端 MCP 全量迁移至 Neon Serverless Postgres 事务存储，落地 P0-01..P0-05 安全不变量与 P1-01..P1-06 协同统一架构，完成双轴代码审查所有高风险鉴权与规范隐患治理，并同步发布最新 Vercel 生产部署。
+
+#### 1. 云端 Durable Postgres 状态存储与防冲突提案 (`api/v1/_store.js`, `db/migrations/001_mcp_durable_state.sql`)
+- **冲突绝不污染 HEAD (`P0-01`)**：重叠修改或语法校验失败时保持正式 HEAD、`revision` 与 `content_hash` 不变，保存独立 `PENDING_REVIEW` 提案并返回结构化冲突差异与预览，支持审核后按基线 CAS 提交。
+- **单文件行锁 + 强 CAS + 作用域幂等 (`P0-02/P0-04/P0-05`)**：所有写操作在 `BEGIN ... SELECT ... FOR UPDATE ... COMMIT` 内校验 `(current_revision, content_hash)`、`(tenant_id, workspace_id, file_path, op_id)` 幂等键、`payload_hash` 一致性与单调 `fencing_token`；`openFile` 默认原子防覆盖。
+
+#### 2. 全栈 Bearer JWT / 令牌鉴权与提案/文件级 ACL (`api/v1/_auth.js`, `api/v1/_http.js`, `api/v1/mcp.js`)
+- **工作区 + 文件级细粒度 ACL (`P0-03`)**：支持 `files` / `allowed_files` 通配与精确文件权限控制，所有按文件 MCP/REST 工具严格校验目标工作区与文件路径。
+- **提案读写闭环防护**：修复 `resolveProposal` 未校验目标工作区写入权限、无 `file_id` 时 `listProposals` 跨工作区返回以及无 `content-length` 时已解析对象 `req.body` 绕过 2 MiB 载荷限制的问题；抽取统一 `_http.js` 中间件直接读取权威迁移 SQL 消除 DDL 重复。
+
+#### 3. 本地 Rust MCP 统一内核与安全规范加固 (`crates/ide-mcp`)
+- **单一权威状态 (`DocumentStore`)**：统一 `McpServer` 与 `RustConsoleEvaluator` 共享 `Arc<DocumentStore>`，重构 `merge/` 模块目录并封装 `read_doc_revision`。
+- **协议与授权一致**：`handle_tools_call` 按结果 `ok == false` 准确置位 `isError: true`；`force_overwrite` 强制要求 `confirm_force_overwrite=true`（及可选 `IDE_MCP_FORCE_TOKEN`）。
+- **无窗进程安全、路径安全与写前备份 (`ADR-003`, `CODING-STANDARDS`)**：`handle_launch_browser` 与 `git_diff_workspace` 严格启用 Windows `CREATE_NO_WINDOW` 并通过环境变量+静态脚本消除命令串拼接；全量锁操作支持中毒恢复；磁盘读写实施路径安全校验及 `auto_backup::backup_before_save` 写前备份。
+
+#### 4. 全量验证与真实云端 E2E 复核
+- `editcore`、`ide-mcp`、`nema-codec`、`tests/mcp-vercel-unit.test.mjs` 及真实生产环境 `https://ide1d0.vercel.app/mcp` 全套 E2E 验证全通过。
+
+---
+
 ## 0.8.9 — 2026-11-22
 
 ### 日志安全清理与美漫进度条、崩溃专属反馈、悬停文字反色彻底修复、停靠区折叠手柄重塑与次世代透明水晶主题统一

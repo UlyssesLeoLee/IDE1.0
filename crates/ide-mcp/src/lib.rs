@@ -19,7 +19,7 @@ use std::sync::Arc;
 
 pub const MCP_PROTOCOL_VERSION: &str = "2024-11-05";
 pub const SERVER_NAME: &str = "ide10-mcp";
-pub const SERVER_VERSION: &str = "0.8.9";
+pub const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const DEFAULT_WEB_URL: &str = "https://ide1d0.vercel.app";
 
 pub struct McpServer {

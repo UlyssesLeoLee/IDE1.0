@@ -13,7 +13,7 @@ import { formatUnifiedDiff, threeWayMerge } from "./_merge.js";
 import { getStore, StoreError } from "./_store.js";
 
 export const MCP_PROTOCOL_VERSION = "2024-11-05";
-export const SERVER_VERSION = "0.8.9";
+export const SERVER_VERSION = "0.8.10";
 
 export const TOOLS = [
   {

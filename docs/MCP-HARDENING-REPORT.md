@@ -40,14 +40,14 @@
 
 ## 3. 全量验证与真实云端 E2E 实测结果
 
-### 3.1 静态检查与本地单测/集成测试
-- `cargo fmt -p ide-mcp`：100% 通过。
+### 3.1 静态检查与本地单测/集成测试 (`v0.8.10`)
+- `cargo fmt -p editcore -p nema-codec -p ide-mcp -- --check`：100% 通过。
 - `cargo clippy -p editcore -p nema-codec -p ide-mcp -- -D warnings`：0 警告通过。
-- `cargo test -p ide-mcp -- --test-threads=1`：全套 25 项（16 项单元 + 2 项 OCC 数学基准 + 6 项红绿对称/不变量测试 + 1 项三代理协同测试）全部通过。
-- `node --test tests/mcp-vercel-unit.test.mjs`：8 项核心算法/鉴权/NEMA v1.5/MCP 协议测试 100% 通过。
+- `cargo test -p editcore -p nema-codec -p ide-mcp -- --test-threads=1`：全套通过（`ide-mcp` 17 项单元 + 2 项 OCC 基准 + 6 项红绿对抗 + 1 项三代理测试 = 26 passed；`nema-codec` 18 + 4 + 4 = 26 passed；`editcore` 475 单元 + Parity/MMap/PPA/Settings/Doc 全通过，另有 `grep_bench` 1 项默认 `ignored`）。
+- `node --test tests/mcp-vercel-unit.test.mjs`：9 项核心算法/JWT/文件级 ACL/提案权限/载荷/NEMA v1.5/MCP 协议测试 100% 通过。
 
-### 3.2 真实 Vercel 生产云端 E2E 测试 (`node tests/mcp-cloud-e2e.mjs --redeploy`)
-以独立隔离工作区 `audit_1795320404138` 对 `https://ide1d0.vercel.app/mcp` 执行真实 HTTPS JSON-RPC 调用：
+### 3.2 真实 Vercel 生产云端 E2E 测试 (`v0.8.10`, `node tests/mcp-cloud-e2e.mjs --redeploy`)
+以独立隔离工作区 `audit_1795323715195` 对 `https://ide1d0.vercel.app/mcp` 执行真实 HTTPS JSON-RPC 调用（新增提案越权拦截、提案跨工作区过滤、`files` 文件级 ACL 与 `backup_before_save` 校验）：
 
 | 用例 | 结果 | 关键观测事实 |
 |---|---|---|
@@ -57,14 +57,14 @@
 | 4. `reopen_existing_file_without_reset` | PASS | 重复打开返回 `ALREADY_EXISTS` 并保留 `rev 4`；无权 `force_overwrite` 返回 `403` |
 | 5. `concurrent_duplicate_op_id` | PASS | 同 `op_id` 并发重放仅提交一次 (`rev 2`)；同 `op_id` 改载荷触发 `IDEMPOTENCY_PAYLOAD_MISMATCH` |
 | 6. `cross_file_idempotency_collision` | PASS | 两份不同文件使用相同 `op_id` 均独立成功提交 |
-| 7. `unauthorized_access_denied` | PASS | 无令牌 `401`、过期 JWT `401`、只读写入 `403`、越界工作区 `403`、跨租户隔离 `FILE_NOT_FOUND`、过期/错误 Fencing Token `FENCING_TOKEN_STALE` |
+| 7. `unauthorized_access_denied` | PASS | 无令牌 `401`、过期 JWT `401`、只读写入 `403`、越界工作区 `403`、只读/越界 `headless_resolve_proposal` `403`、文件级 ACL 越权 `403`、跨租户隔离 `FILE_NOT_FOUND`、过期/错误 Fencing Token `FENCING_TOKEN_STALE` |
 | 8. `multiple_serverless_instances` | PASS | 6 路并发长短连接打向 Neon Postgres 无丢失收敛至 `rev 7` |
-| 9. `server_restart_persistence` | PASS | 测试中途实执行 `vercel deploy --prod --yes` 重建全部生产 Serverless 实例，重启后版本 `rev 3` 与完整历史无损保留 |
+| 9. `server_restart_persistence` | PASS | 测试中途实执行 `vercel deploy --prod --yes` 重建全部生产 Serverless 实例 (`https://ide1-0-avr252f7b-lidian727.vercel.app`)，重启后 `rev 3` 与历史无损保留 |
 | 10. `stale_revision_rebase_or_reject` | PASS | 不重叠陈旧修改安全 Rebase；错 Hash 拒止 `BASE_HASH_MISMATCH`；重叠陈旧修改产生提案不污染 `rev 3` |
 | 11. `atomic_line_edit_and_replace` | PASS | `ide_edit_lines` 与 `ide_replace_all` 并发执行均保留在 `rev 3` |
 | 12. `correct_nema_domain_merge` | PASS | 官方 TAB 域头 Table + 5W1H + Graph 并行合并保留 `\n\n\n` 且双空格非法输入被拦截 |
 | 12b. `authenticated_rest_coordination_endpoints` | PASS | `/api/v1/jobs/dispatch`, `/api/v1/tasks/claim`, `/api/v1/events` 鉴权与持久化租约验证通过 (`24` 条 Outbox 事件) |
-| 13. `real_disk_sync_and_git_diff` | PASS | 真实临时 Git 仓库原子落盘、`git diff` 验证、外部修改检测拒绝及版本回滚全通过 |
+| 13. `real_disk_sync_and_git_diff` | PASS | 真实临时 Git 仓库写前备份 (`.ide10-backup`)、原子落盘、`git diff`、`..` 路径穿越拦截、外部修改拒绝及回滚全通过 |
 
 ---
 
