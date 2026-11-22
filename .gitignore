@@ -66,9 +66,14 @@ tests/uat/fixtures/sample-project/uat-cmd-*.txt
 # MSIX 打包产物
 tools/msix/out/
 
-# Vercel deployment cache
+# Vercel deployment cache & secrets
 .vercel/
 **/.vercel/
+.env
+.env.local
+.env.*.local
+.env.mcp.local
+node_modules/
 
 
 # 外围已剥离项目与非核心参考
@@ -76,3 +81,5 @@ gemarc-5d-atlas-v10.0/
 _upstream/
 refs/
 req.jsonl
+.vercel
+.env*

@@ -1,0 +1,14 @@
+dist/
+dist-fast/
+target/
+crates/
+ide-fast/
+tests/
+docs/
+.env
+.env.*
+node_modules/
+*.exe
+*.msi
+*.wixpdb
+*.wixobj

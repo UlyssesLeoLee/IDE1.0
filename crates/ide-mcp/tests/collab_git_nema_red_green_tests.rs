@@ -35,6 +35,7 @@ fn test_red_adversarial_nema_syntax_rejection() {
             base_revision: Some(1),
             op_id: Some("attack-001".into()),
             mode: Some(CollabMode::Nema),
+            ..Default::default()
         })
         .unwrap();
 
@@ -51,6 +52,7 @@ fn test_red_adversarial_nema_syntax_rejection() {
             base_revision: Some(1),
             op_id: Some("attack-002".into()),
             mode: Some(CollabMode::Nema),
+            ..Default::default()
         })
         .unwrap();
 
@@ -82,6 +84,7 @@ fn test_green_nema_concurrent_safe_coedit() {
             base_revision: Some(1),
             op_id: Some("claude-nema-1".into()),
             mode: Some(CollabMode::Nema),
+            ..Default::default()
         })
         .unwrap();
 
@@ -99,6 +102,7 @@ fn test_green_nema_concurrent_safe_coedit() {
             base_revision: Some(1), // 并发基准
             op_id: Some("gpt-nema-1".into()),
             mode: Some(CollabMode::Nema),
+            ..Default::default()
         })
         .unwrap();
 
@@ -141,6 +145,7 @@ fn test_git_mode_red_green_conflict_and_clean_merge() {
             base_revision: Some(1),
             op_id: None,
             mode: Some(CollabMode::Git),
+            ..Default::default()
         })
         .unwrap();
     assert_eq!(res_a["ok"], true);
@@ -155,6 +160,7 @@ fn test_git_mode_red_green_conflict_and_clean_merge() {
             base_revision: Some(1),
             op_id: None,
             mode: Some(CollabMode::Git),
+            ..Default::default()
         })
         .unwrap();
     assert_eq!(res_b_green["ok"], true);
@@ -165,7 +171,7 @@ fn test_git_mode_red_green_conflict_and_clean_merge() {
     assert!(c3.contains("step1() { 101 }"));
     assert!(c3.contains("step3() { 303 }"));
 
-    // Red Case: Agent C 基于旧的 Rev 1 也修改 step1，但改成 999 (与 Claude 产生直接行冲突)
+    // Red Case: Agent C 基于旧的 Rev 1 也修改 step1，但改成 999 (P0-01: 冲突时不得提交至 HEAD，应创建独立提案)
     let res_c_red = ws
         .coedit_full(FullCoEditRequest {
             file_id: file.into(),
@@ -174,6 +180,7 @@ fn test_git_mode_red_green_conflict_and_clean_merge() {
             base_revision: Some(1),
             op_id: None,
             mode: Some(CollabMode::Git),
+            ..Default::default()
         })
         .unwrap();
 
@@ -182,11 +189,19 @@ fn test_git_mode_red_green_conflict_and_clean_merge() {
         "Red Check: 冲突修改时 ok 必须为 false"
     );
     assert_eq!(res_c_red["status"], "CONFLICT");
+    assert_eq!(res_c_red["head_revision"], 3);
+    assert!(res_c_red["proposal_id"]
+        .as_str()
+        .is_some_and(|s| !s.is_empty()));
     assert!(res_c_red["conflicts"].as_u64().unwrap() >= 1);
-    let c4 = res_c_red["content"].as_str().unwrap();
-    assert!(c4.contains("<<<<<<< HEAD (ours)"));
-    assert!(c4.contains("======="));
-    assert!(c4.contains(">>>>>>> INCOMING (theirs)"));
+    let preview = res_c_red["conflict_preview"].as_str().unwrap();
+    assert!(preview.contains("<<<<<<< HEAD (ours)"));
+    assert!(preview.contains("======="));
+    assert!(preview.contains(">>>>>>> INCOMING (theirs)"));
+    // 验证 HEAD 正文未被污染
+    let head_doc = ws.read_doc(file, None, None).unwrap();
+    assert_eq!(head_doc["current_revision"], 3);
+    assert!(!head_doc["content"].as_str().unwrap().contains("<<<<<<<"));
 }
 
 // ============================================================================
@@ -208,6 +223,7 @@ fn test_math_invariant_idempotence() {
         base_revision: Some(1),
         op_id: Some("math-op-idempotent-001".into()),
         mode: Some(CollabMode::Git),
+        ..Default::default()
     };
 
     let r1 = ws.coedit_full(req.clone()).unwrap();
@@ -230,7 +246,7 @@ fn test_math_invariant_revision_monotonicity() {
     ws.open_doc(file, "0\n", "plain", "system", "init");
 
     let mut prev_rev = 1u64;
-    let mut prev_hash = ws.docs.get(file).unwrap().content_hash.clone();
+    let mut prev_hash = ws.get_doc(file).unwrap().content_hash.clone();
 
     for i in 1..=5 {
         let text = format!("{}\n", i);
@@ -242,6 +258,7 @@ fn test_math_invariant_revision_monotonicity() {
                 base_revision: Some(prev_rev),
                 op_id: None,
                 mode: Some(CollabMode::Git),
+                ..Default::default()
             })
             .unwrap();
 
@@ -273,6 +290,7 @@ fn test_math_invariant_commutativity_disjoint_edits() {
         base_revision: Some(1),
         op_id: None,
         mode: Some(CollabMode::Git),
+        ..Default::default()
     })
     .unwrap();
     let res1 = ws1
@@ -283,6 +301,7 @@ fn test_math_invariant_commutativity_disjoint_edits() {
             base_revision: Some(1), // 从 base 提交
             op_id: None,
             mode: Some(CollabMode::Git),
+            ..Default::default()
         })
         .unwrap();
 
@@ -296,6 +315,7 @@ fn test_math_invariant_commutativity_disjoint_edits() {
         base_revision: Some(1),
         op_id: None,
         mode: Some(CollabMode::Git),
+        ..Default::default()
     })
     .unwrap();
     let res2 = ws2
@@ -306,6 +326,7 @@ fn test_math_invariant_commutativity_disjoint_edits() {
             base_revision: Some(1), // 从 base 提交
             op_id: None,
             mode: Some(CollabMode::Git),
+            ..Default::default()
         })
         .unwrap();
 

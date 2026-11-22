@@ -149,6 +149,7 @@ impl MathEngine {
                 base_revision: Some(cur_rev),
                 op_id: Some(format!("single-op-{i}")),
                 mode: Some(CollabMode::Git),
+                ..Default::default()
             })
             .expect("Single agent coedit must succeed");
 
@@ -197,6 +198,7 @@ impl MathEngine {
                     base_revision: Some(cur_rev),
                     op_id: Some(format!("occ-agent-a-{i}")),
                     mode: Some(CollabMode::Git),
+                    ..Default::default()
                 })
                 .expect("OCC Agent A coedit must succeed");
 
@@ -224,6 +226,7 @@ impl MathEngine {
                     base_revision: Some(cur_rev),
                     op_id: Some(format!("occ-agent-b-{j}")),
                     mode: Some(CollabMode::Git),
+                    ..Default::default()
                 })
                 .expect("OCC Agent B coedit must succeed");
 
@@ -261,7 +264,7 @@ impl MathEngine {
             let start = Instant::now();
             let (cur_rev, cur_content) = {
                 let ws = ws_ma.lock().unwrap();
-                let doc = ws.docs.get(file_id).unwrap();
+                let doc = ws.get_doc(file_id).unwrap();
                 (doc.current_revision, doc.content.clone())
             };
 
@@ -278,6 +281,7 @@ impl MathEngine {
                     base_revision: Some(cur_rev),
                     op_id: Some(format!("mutex-agent-a-{i}")),
                     mode: Some(CollabMode::Git),
+                    ..Default::default()
                 })
                 .expect("Mutex Agent A coedit must succeed")
             };
@@ -294,7 +298,7 @@ impl MathEngine {
             let start = Instant::now();
             let (cur_rev, cur_content) = {
                 let ws = ws_mb.lock().unwrap();
-                let doc = ws.docs.get(file_id).unwrap();
+                let doc = ws.get_doc(file_id).unwrap();
                 (doc.current_revision, doc.content.clone())
             };
 
@@ -311,6 +315,7 @@ impl MathEngine {
                     base_revision: Some(cur_rev),
                     op_id: Some(format!("mutex-agent-b-{j}")),
                     mode: Some(CollabMode::Git),
+                    ..Default::default()
                 })
                 .expect("Mutex Agent B coedit must succeed")
             };
@@ -411,7 +416,7 @@ impl MathEngine {
 
     // Mutex workspace 同样验证
     let ws = ws_mutex.lock().unwrap();
-    let final_mutex_doc = ws.docs.get(file_id).unwrap();
+    let final_mutex_doc = ws.get_doc(file_id).unwrap();
     assert_eq!(
         final_mutex_doc.current_revision,
         1 + TOTAL_EDITS as u64,
@@ -461,6 +466,7 @@ fn test_math_bench_nema_mode_single_vs_dual_speed() {
                 base_revision: Some(cur_rev),
                 op_id: Some(format!("single-nema-{i}")),
                 mode: Some(CollabMode::Nema),
+                ..Default::default()
             })
             .expect("Single NEMA coedit must succeed");
 
@@ -492,6 +498,7 @@ fn test_math_bench_nema_mode_single_vs_dual_speed() {
                     base_revision: Some(cur_rev),
                     op_id: Some(format!("occ-nema-a-{i}")),
                     mode: Some(CollabMode::Nema),
+                    ..Default::default()
                 })
                 .unwrap();
             assert_eq!(res["ok"], true);
@@ -512,6 +519,7 @@ fn test_math_bench_nema_mode_single_vs_dual_speed() {
                     base_revision: Some(cur_rev),
                     op_id: Some(format!("occ-nema-b-{j}")),
                     mode: Some(CollabMode::Nema),
+                    ..Default::default()
                 })
                 .unwrap();
             assert_eq!(res["ok"], true);
@@ -538,7 +546,7 @@ fn test_math_bench_nema_mode_single_vs_dual_speed() {
         for i in 1..=edits_half {
             let (cur_rev, cur_content) = {
                 let ws = ws_ma.lock().unwrap();
-                let doc = ws.docs.get(file_id).unwrap();
+                let doc = ws.get_doc(file_id).unwrap();
                 (doc.current_revision, doc.content.clone())
             };
             let trimmed = cur_content.trim_end_matches('\n');
@@ -553,6 +561,7 @@ fn test_math_bench_nema_mode_single_vs_dual_speed() {
                     base_revision: Some(cur_rev),
                     op_id: Some(format!("mutex-nema-a-{i}")),
                     mode: Some(CollabMode::Nema),
+                    ..Default::default()
                 })
                 .unwrap()
             };
@@ -564,7 +573,7 @@ fn test_math_bench_nema_mode_single_vs_dual_speed() {
         for j in 1..=edits_half {
             let (cur_rev, cur_content) = {
                 let ws = ws_mb.lock().unwrap();
-                let doc = ws.docs.get(file_id).unwrap();
+                let doc = ws.get_doc(file_id).unwrap();
                 (doc.current_revision, doc.content.clone())
             };
             let trimmed = cur_content.trim_end_matches('\n');
@@ -579,6 +588,7 @@ fn test_math_bench_nema_mode_single_vs_dual_speed() {
                     base_revision: Some(cur_rev),
                     op_id: Some(format!("mutex-nema-b-{j}")),
                     mode: Some(CollabMode::Nema),
+                    ..Default::default()
                 })
                 .unwrap()
             };
@@ -626,7 +636,7 @@ fn test_math_bench_nema_mode_single_vs_dual_speed() {
 
     // Mutex 同样验证
     let ws = ws_mutex.lock().unwrap();
-    let mutex_final = ws.docs.get(file_id).unwrap();
+    let mutex_final = ws.get_doc(file_id).unwrap();
     assert!(nema_codec::parse_source(&mutex_final.content).is_ok());
     for i in 1..=edits_half {
         assert!(mutex_final

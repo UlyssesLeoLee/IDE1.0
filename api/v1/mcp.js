@@ -1,399 +1,646 @@
-// MCP (Model Context Protocol) Server for IDE1.0 Serverless Deployment on Vercel
-// Supports JSON-RPC 2.0 over HTTP (POST) and Discovery/Status (GET)
+// Hardened Vercel Serverless MCP Gateway (Streamable HTTP + JSON-RPC 2.0)
+// Enforces Bearer JWT/Token Auth, Tenant/Workspace ACL, Durable Postgres CAS & Conflict Proposals.
 
-import { coordinator, diffLines, formatUnifiedDiff, threeWayMerge } from "./_state.js";
+import crypto from "crypto";
+import {
+  authenticateRequest,
+  AuthError,
+  authorizeScope,
+  enforcePayloadSize,
+  resolveFileTarget,
+} from "./_auth.js";
+import { formatUnifiedDiff, threeWayMerge } from "./_merge.js";
+import { getStore, StoreError } from "./_store.js";
 
-const TOOLS = [
+export const MCP_PROTOCOL_VERSION = "2024-11-05";
+export const SERVER_VERSION = "0.8.9";
+
+export const TOOLS = [
   {
-    name: "headless_coedit",
-    description: "Multi-provider concurrent document co-editing engine. Allows Claude, GPT, DeepSeek, Gemini, etc. to edit the same file simultaneously in memory with CAS fast-path and 3-way line auto-merging.",
+    name: "headless_open",
+    description: "Open or register a document without overwriting an existing HEAD or resetting its revision.",
     inputSchema: {
       type: "object",
       properties: {
-        file_id: { type: "string", description: "Target document identifier, e.g. 'default:src/main.rs'" },
-        author: { type: "string", description: "Editing agent or provider, e.g. 'claude-3-7-sonnet', 'gpt-4o', 'deepseek-v3'" },
-        base_revision: { type: "number", description: "The base revision number when the agent inspected the file" },
-        new_text: { type: "string", description: "The new document content" },
-        op_id: { type: "string", description: "Optional unique operation ID for idempotency" },
-        mode: { type: "string", enum: ["git", "nema"], description: "Collaboration mode: 'git' for line-based 3-way merge; 'nema' for NEMA v1.5 syntax-closure and structured domain safe merge" }
+        file_id: { type: "string", description: "Target document identifier, e.g. 'ws:src/main.rs'" },
+        content: { type: "string", description: "Initial content used ONLY if the document does not yet exist" },
+        language: { type: "string", description: "Syntax mode (rust, js, ts, json, nema, plain)" },
+        agent_id: { type: "string", description: "Optional agent identifier" },
+        mode: { type: "string", enum: ["create_if_absent", "open_existing", "force_overwrite"] },
       },
-      required: ["file_id", "author", "new_text"]
-    }
-  },
-  {
-    name: "headless_read",
-    description: "Read the current or historical revision text of a headless document.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        file_id: { type: "string", description: "Document ID" },
-        revision: { type: "number", description: "Optional specific revision number" }
-      },
-      required: ["file_id"]
-    }
-  },
-  {
-    name: "headless_history",
-    description: "Query document version history, author attributions, timestamps, and line counts.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        file_id: { type: "string", description: "Document ID" }
-      },
-      required: ["file_id"]
-    }
-  },
-  {
-    name: "headless_list_files",
-    description: "List all active documents in headless memory.",
-    inputSchema: {
-      type: "object",
-      properties: {}
-    }
-  },
-  {
-    name: "diff_unified",
-    description: "Compute Myers Unified Diff between any two texts.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        text_a: { type: "string", description: "Original text" },
-        text_b: { type: "string", description: "Modified text" },
-        label_a: { type: "string", description: "Label for text_a" },
-        label_b: { type: "string", description: "Label for text_b" }
-      },
-      required: ["text_a", "text_b"]
-    }
-  },
-  {
-    name: "diff_revisions",
-    description: "Compute Unified Diff between two historical revisions of a file.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        file_id: { type: "string", description: "Document ID" },
-        rev_a: { type: "number", description: "Revision A" },
-        rev_b: { type: "number", description: "Revision B" }
-      },
-      required: ["file_id", "rev_a", "rev_b"]
-    }
-  },
-  {
-    name: "ide_rust_eval",
-    description: "Execute Blender bpy-style Rust automation commands (ide::context::*, ide::data::*, ide::ops::*).",
-    inputSchema: {
-      type: "object",
-      properties: {
-        script: { type: "string", description: "Rust statements separated by newlines or semicolons" }
-      },
-      required: ["script"]
-    }
+      required: ["file_id"],
+    },
   },
   {
     name: "ide_open_file",
-    description: "Open or initialize a document in memory with initial content.",
+    description: "Compatibility alias for headless_open (never overwrites existing HEAD unless mode='force_overwrite').",
     inputSchema: {
       type: "object",
       properties: {
-        file_id: { type: "string", description: "Document ID" },
-        content: { type: "string", description: "Initial file content" },
-        language: { type: "string", description: "Language syntax mode (rust, js, etc.)" }
+        file_id: { type: "string" },
+        content: { type: "string" },
+        language: { type: "string" },
+        agent_id: { type: "string" },
+        mode: { type: "string", enum: ["create_if_absent", "open_existing", "force_overwrite"] },
       },
-      required: ["file_id"]
-    }
+      required: ["file_id"],
+    },
+  },
+  {
+    name: "headless_read",
+    description: "Read the current or historical document text, revision, and SHA-256 content_hash.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        file_id: { type: "string" },
+        revision: { type: "integer", minimum: 1 },
+        start_line: { type: "integer", minimum: 1 },
+        end_line: { type: "integer", minimum: 1 },
+      },
+      required: ["file_id"],
+    },
+  },
+  {
+    name: "headless_coedit",
+    description: "Atomic CAS + 3-way auto-merge collaborative edit. Overlapping conflicts never mutate HEAD and instead save a reviewable proposal.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        file_id: { type: "string" },
+        author: { type: "string" },
+        agent_id: { type: "string" },
+        base_revision: { type: "integer", minimum: 1 },
+        base_content_hash: { type: "string" },
+        fencing_token: { type: "integer", minimum: 1 },
+        op_id: { type: "string", minLength: 1 },
+        new_text: { type: "string" },
+        mode: { type: "string", enum: ["git", "nema"] },
+      },
+      required: ["file_id", "base_revision", "op_id", "new_text"],
+    },
+  },
+  {
+    name: "headless_edit",
+    description: "Atomic line-range edit with CAS base_revision, scoped op_id idempotency, and safe 3-way auto-merge.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        file_id: { type: "string" },
+        agent_id: { type: "string" },
+        author: { type: "string" },
+        base_revision: { type: "integer", minimum: 1 },
+        base_content_hash: { type: "string" },
+        fencing_token: { type: "integer", minimum: 1 },
+        start_line: { type: "integer", minimum: 1 },
+        end_line: { type: "integer", minimum: 1 },
+        replacement: { type: "string" },
+        op_id: { type: "string", minLength: 1 },
+      },
+      required: ["file_id", "base_revision", "op_id", "start_line", "end_line", "replacement"],
+    },
   },
   {
     name: "ide_edit_lines",
-    description: "Replace a range of lines in an existing document (1-based line numbers).",
+    description: "Atomic compatibility alias for headless_edit (1-based line replacement inside DB CAS transaction).",
     inputSchema: {
       type: "object",
       properties: {
-        file_id: { type: "string", description: "Document ID" },
-        start_line: { type: "number", description: "Start line number (1-based)" },
-        end_line: { type: "number", description: "End line number (1-based, inclusive)" },
-        replacement: { type: "string", description: "New lines text" }
+        file_id: { type: "string" },
+        agent_id: { type: "string" },
+        author: { type: "string" },
+        base_revision: { type: "integer", minimum: 1 },
+        base_content_hash: { type: "string" },
+        fencing_token: { type: "integer", minimum: 1 },
+        start_line: { type: "integer", minimum: 1 },
+        end_line: { type: "integer", minimum: 1 },
+        replacement: { type: "string" },
+        op_id: { type: "string", minLength: 1 },
       },
-      required: ["file_id", "start_line", "end_line", "replacement"]
-    }
+      required: ["file_id", "base_revision", "op_id", "start_line", "end_line", "replacement"],
+    },
   },
   {
     name: "ide_replace_all",
-    description: "Find and replace all occurrences of a string in a document.",
+    description: "Atomic CAS find-and-replace across a document with base_revision and scoped op_id protection.",
     inputSchema: {
       type: "object",
       properties: {
-        file_id: { type: "string", description: "Document ID" },
-        find: { type: "string", description: "String to find" },
-        replace: { type: "string", description: "Replacement string" }
+        file_id: { type: "string" },
+        agent_id: { type: "string" },
+        author: { type: "string" },
+        base_revision: { type: "integer", minimum: 1 },
+        base_content_hash: { type: "string" },
+        fencing_token: { type: "integer", minimum: 1 },
+        find: { type: "string", minLength: 1 },
+        replace: { type: "string" },
+        op_id: { type: "string", minLength: 1 },
       },
-      required: ["file_id", "find", "replace"]
-    }
-  }
+      required: ["file_id", "base_revision", "op_id", "find", "replace"],
+    },
+  },
+  {
+    name: "headless_three_way_merge",
+    description: "Pure 3-way merge algorithm preview without mutating any document.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        base: { type: "string" },
+        ours: { type: "string" },
+        theirs: { type: "string" },
+      },
+      required: ["base", "ours", "theirs"],
+    },
+  },
+  {
+    name: "headless_history",
+    description: "Query durable document revision history, SHA-256 content hashes, op_id, and agent attributions.",
+    inputSchema: {
+      type: "object",
+      properties: { file_id: { type: "string" } },
+      required: ["file_id"],
+    },
+  },
+  {
+    name: "headless_list_files",
+    description: "List active documents visible to the authenticated tenant and authorized workspaces.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "headless_list_proposals",
+    description: "List pending or resolved conflict proposals stored without polluting HEAD.",
+    inputSchema: {
+      type: "object",
+      properties: { file_id: { type: "string" } },
+    },
+  },
+  {
+    name: "headless_resolve_proposal",
+    description: "Resolve a conflict proposal with reviewed content using atomic CAS against base_revision.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        proposal_id: { type: "string" },
+        resolved_content: { type: "string" },
+        base_revision: { type: "integer", minimum: 1 },
+        agent_id: { type: "string" },
+        author: { type: "string" },
+        op_id: { type: "string", minLength: 1 },
+      },
+      required: ["proposal_id", "resolved_content", "base_revision", "op_id"],
+    },
+  },
+  {
+    name: "headless_acquire_lease",
+    description: "Acquire a monotonically increasing fencing-token lease for a file.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        file_id: { type: "string" },
+        agent_id: { type: "string" },
+        ttl_ms: { type: "integer", minimum: 1000 },
+      },
+      required: ["file_id", "agent_id"],
+    },
+  },
+  {
+    name: "diff_unified",
+    description: "Compute Myers Unified Diff between any two texts (accepts old_text/new_text or text_a/text_b).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        old_text: { type: "string" },
+        new_text: { type: "string" },
+        text_a: { type: "string" },
+        text_b: { type: "string" },
+        context_lines: { type: "integer", default: 3 },
+      },
+    },
+  },
+  {
+    name: "diff_revisions",
+    description: "Compute Unified Diff between two revisions (accepts from_revision/to_revision or rev_a/rev_b).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        file_id: { type: "string" },
+        from_revision: { type: "integer" },
+        to_revision: { type: "integer" },
+        rev_a: { type: "integer" },
+        rev_b: { type: "integer" },
+      },
+      required: ["file_id"],
+    },
+  },
+  {
+    name: "ide_rust_eval",
+    description: "Inspect workspace context via safe read-only Blender-style ide::context / ide::data queries.",
+    inputSchema: {
+      type: "object",
+      properties: { script: { type: "string" } },
+      required: ["script"],
+    },
+  },
 ];
 
-export default async function handler(req, res) {
-  // CORS setup
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-
-  if (req.method === "OPTIONS") {
-    return res.status(200).end();
+function reqActor(args, principal) {
+  const actor = String(args?.agent_id || args?.author || "").trim();
+  if (!actor) {
+    throw new StoreError(400, "MISSING_AGENT_ID", "agent_id or author is required for write operations");
   }
+  return `${principal.actorId}:${actor}`;
+}
 
-  // GET: Discovery & Status
+async function callMcpTool(store, principal, name, args = {}) {
+  switch (name) {
+    case "headless_open":
+    case "ide_open_file": {
+      const target = resolveFileTarget(args.file_id, principal);
+      const openMode = args.mode || "create_if_absent";
+      const requiredScope = openMode === "force_overwrite" ? "force_overwrite" : openMode === "open_existing" ? "read" : "write";
+      authorizeScope(principal, target.workspaceId, requiredScope);
+      const actor = String(args.agent_id || args.author || principal.actorId).trim();
+      return await store.openFile({
+        ...target,
+        actorId: actor,
+        content: args.content ?? "",
+        language: args.language || "plain",
+        mode: openMode,
+      });
+    }
+
+    case "headless_read": {
+      const target = resolveFileTarget(args.file_id, principal);
+      authorizeScope(principal, target.workspaceId, "read");
+      return await store.readFile({
+        ...target,
+        revision: args.revision,
+        startLine: args.start_line,
+        endLine: args.end_line,
+      });
+    }
+
+    case "headless_coedit": {
+      const target = resolveFileTarget(args.file_id, principal);
+      authorizeScope(principal, target.workspaceId, "write");
+      const actorId = reqActor(args, principal);
+      if (typeof args.new_text !== "string") {
+        throw new StoreError(400, "MISSING_NEW_TEXT", "new_text string is required");
+      }
+      return await store.coedit({
+        ...target,
+        actorId,
+        baseRevision: args.base_revision,
+        baseContentHash: args.base_content_hash || null,
+        fencingToken: args.fencing_token !== undefined ? args.fencing_token : null,
+        opId: args.op_id,
+        newText: args.new_text,
+        mode: args.mode || null,
+      });
+    }
+
+    case "headless_edit":
+    case "ide_edit_lines": {
+      const target = resolveFileTarget(args.file_id, principal);
+      authorizeScope(principal, target.workspaceId, "write");
+      const actorId = reqActor(args, principal);
+      return await store.editLines({
+        ...target,
+        actorId,
+        baseRevision: args.base_revision,
+        baseContentHash: args.base_content_hash || null,
+        fencingToken: args.fencing_token !== undefined ? args.fencing_token : null,
+        opId: args.op_id,
+        startLine: args.start_line,
+        endLine: args.end_line,
+        replacement: args.replacement ?? "",
+      });
+    }
+
+    case "ide_replace_all": {
+      const target = resolveFileTarget(args.file_id, principal);
+      authorizeScope(principal, target.workspaceId, "write");
+      const actorId = reqActor(args, principal);
+      return await store.replaceAll({
+        ...target,
+        actorId,
+        baseRevision: args.base_revision,
+        baseContentHash: args.base_content_hash || null,
+        fencingToken: args.fencing_token !== undefined ? args.fencing_token : null,
+        opId: args.op_id,
+        find: args.find,
+        replace: args.replace ?? "",
+      });
+    }
+
+    case "headless_three_way_merge": {
+      authorizeScope(principal, principal.defaultWorkspace || "default", "read");
+      return threeWayMerge(args.base || "", args.ours || "", args.theirs || "");
+    }
+
+    case "headless_history": {
+      const target = resolveFileTarget(args.file_id, principal);
+      authorizeScope(principal, target.workspaceId, "read");
+      return await store.fileHistory(target);
+    }
+
+    case "headless_list_files": {
+      const firstWs = principal.workspaces.includes("*") ? "default" : principal.workspaces[0] || "default";
+      authorizeScope(principal, firstWs.replace(/\*$/, "") || "default", "read");
+      return await store.listFiles(principal);
+    }
+
+    case "headless_list_proposals": {
+      let wsId = null;
+      let fId = null;
+      if (args.file_id) {
+        const t = resolveFileTarget(args.file_id, principal);
+        authorizeScope(principal, t.workspaceId, "read");
+        wsId = t.workspaceId;
+        fId = t.fileId;
+      }
+      const proposals = await store.listProposals({ tenantId: principal.tenantId, workspaceId: wsId, fileId: fId });
+      return { proposals };
+    }
+
+    case "headless_resolve_proposal": {
+      const actorId = reqActor(args, principal);
+      if (typeof args.resolved_content !== "string") {
+        throw new StoreError(400, "MISSING_RESOLVED_CONTENT", "resolved_content string is required");
+      }
+      return await store.resolveProposal({
+        tenantId: principal.tenantId,
+        actorId,
+        proposalId: args.proposal_id,
+        resolvedContent: args.resolved_content,
+        baseRevision: args.base_revision,
+        opId: args.op_id,
+      });
+    }
+
+    case "headless_acquire_lease": {
+      const target = resolveFileTarget(args.file_id, principal);
+      authorizeScope(principal, target.workspaceId, "write");
+      const actorId = reqActor(args, principal);
+      return await store.acquireLease({
+        ...target,
+        agentId: actorId,
+        ttlMs: args.ttl_ms || 60000,
+      });
+    }
+
+    case "diff_unified": {
+      const oldText = args.old_text !== undefined ? args.old_text : args.text_a || "";
+      const newText = args.new_text !== undefined ? args.new_text : args.text_b || "";
+      const diff = formatUnifiedDiff(
+        oldText,
+        newText,
+        args.label_a || "original",
+        args.label_b || "modified",
+        args.context_lines || 3
+      );
+      return diff || "(Identical texts: zero differences)";
+    }
+
+    case "diff_revisions": {
+      const target = resolveFileTarget(args.file_id, principal);
+      authorizeScope(principal, target.workspaceId, "read");
+      const revA = args.from_revision !== undefined ? args.from_revision : args.rev_a;
+      const revB = args.to_revision !== undefined ? args.to_revision : args.rev_b;
+      return await store.diffRevisions({ ...target, revA, revB });
+    }
+
+    case "ide_rust_eval": {
+      return await store.evalRustScript(principal, args.script || "");
+    }
+
+    default:
+      return null;
+  }
+}
+
+export async function handleMcpRequest(req, res, deps = {}) {
+  const store = deps.store || getStore();
+  const env = deps.env || process.env;
+
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Mcp-Session-Id, Idempotency-Key");
+  res.setHeader("Vary", "Authorization");
+
+  if (req.method === "OPTIONS") return res.status(200).end();
+  if (req.method === "DELETE") return res.status(204).end();
+
   if (req.method === "GET") {
-    const accept = req.headers["accept"] || "";
+    const accept = req.headers?.["accept"] || "";
     if (accept.includes("text/html") && !accept.includes("application/json")) {
       res.setHeader("Location", "/");
       return res.status(302).end();
     }
     return res.status(200).json({
-      server: "IDE1.0 MCP Server (Vercel Serverless)",
-      version: "0.8.9",
+      server: "IDE1.0 MCP Server (Vercel Durable Postgres)",
+      version: SERVER_VERSION,
       status: "operational",
-      protocolVersion: "2024-11-05",
-      endpoints: {
-        mcp: "/api/v1/mcp",
-        health: "/api/v1/health",
-        events: "/api/v1/events"
-      },
-      tools: TOOLS.map(t => ({ name: t.name, description: t.description }))
+      protocolVersion: MCP_PROTOCOL_VERSION,
+      auth: "Bearer token or short-lived HMAC JWT required for tools/call and resources/*",
+      endpoints: { mcp: "/api/v1/mcp", health: "/api/v1/health", events: "/api/v1/events" },
+      tools: TOOLS.map((t) => ({ name: t.name, description: t.description })),
     });
   }
 
-  // POST: MCP JSON-RPC 2.0 Handler
-  if (req.method === "POST") {
-    let body = req.body;
-    if (typeof body === "string") {
-      try {
-        body = JSON.parse(body);
-      } catch (e) {
-        return res.status(400).json({
-          jsonrpc: "2.0",
-          error: { code: -32700, message: "Parse error" },
-          id: null
-        });
-      }
-    }
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
 
-    const { id, method, params } = body || {};
+  try {
+    enforcePayloadSize(req);
+  } catch (err) {
+    return res.status(err.statusCode || 413).json({
+      jsonrpc: "2.0",
+      error: { code: -32600, message: err.message },
+      id: null,
+    });
+  }
 
-    if (!method) {
-      return res.status(400).json({
-        jsonrpc: "2.0",
-        error: { code: -32600, message: "Invalid Request: missing method" },
-        id: id || null
-      });
-    }
-
+  let body = req.body;
+  if (typeof body === "string") {
     try {
-      switch (method) {
-        case "initialize":
-          return res.status(200).json({
-            jsonrpc: "2.0",
-            id,
-            result: {
-              protocolVersion: "2024-11-05",
-              capabilities: {
-                tools: { listChanged: false },
-                resources: { subscribe: false, listChanged: false },
-                prompts: { listChanged: false }
-              },
-              serverInfo: {
-                name: "ide1-mcp-server",
-                version: "0.8.9"
-              }
-            }
-          });
-
-        case "ping":
-          return res.status(200).json({ jsonrpc: "2.0", id, result: {} });
-
-        case "tools/list":
-          return res.status(200).json({ jsonrpc: "2.0", id, result: { tools: TOOLS } });
-
-        case "resources/list": {
-          const files = coordinator.headlessListFiles();
-          const resources = files.map(f => ({
-            uri: `file:///workspace/${f.fileId}`,
-            name: f.fileId,
-            mimeType: "text/plain"
-          }));
-          return res.status(200).json({ jsonrpc: "2.0", id, result: { resources } });
-        }
-
-        case "resources/read": {
-          const uri = params?.uri || "";
-          const fileId = uri.replace(/^file:\/\/\/workspace\//, "");
-          const content = coordinator.headlessRead(fileId);
-          if (content === null) {
-            return res.status(200).json({
-              jsonrpc: "2.0",
-              id,
-              error: { code: -32001, message: `Resource '${uri}' not found` }
-            });
-          }
-          return res.status(200).json({
-            jsonrpc: "2.0",
-            id,
-            result: { contents: [{ uri, mimeType: "text/plain", text: content }] }
-          });
-        }
-
-        case "prompts/list":
-          return res.status(200).json({
-            jsonrpc: "2.0",
-            id,
-            result: {
-              prompts: [
-                {
-                  name: "review_code",
-                  description: "Review open file changes and suggest improvements",
-                  arguments: [{ name: "file_id", description: "Target document ID", required: true }]
-                }
-              ]
-            }
-          });
-
-        case "tools/call": {
-          const { name, arguments: args } = params || {};
-          let textResult = "";
-
-          switch (name) {
-            case "headless_coedit": {
-              const outcome = coordinator.headlessEdit({
-                fileId: args.file_id,
-                author: args.author,
-                baseRevision: args.base_revision,
-                opId: args.op_id,
-                newText: args.new_text,
-                mode: args.mode
-              });
-              textResult = JSON.stringify(outcome, null, 2);
-              break;
-            }
-
-            case "headless_read": {
-              const content = coordinator.headlessRead(args.file_id, args.revision);
-              if (content === null) {
-                textResult = `File '${args.file_id}' not found`;
-              } else {
-                textResult = content;
-              }
-              break;
-            }
-
-            case "headless_history": {
-              const hist = coordinator.headlessHistory(args.file_id);
-              textResult = JSON.stringify(hist, null, 2);
-              break;
-            }
-
-            case "headless_list_files": {
-              const list = coordinator.headlessListFiles();
-              textResult = JSON.stringify(list, null, 2);
-              break;
-            }
-
-            case "diff_unified": {
-              const linesA = (args.text_a || "").split("\n");
-              const linesB = (args.text_b || "").split("\n");
-              textResult = formatUnifiedDiff(linesA, linesB, args.label_a || "original", args.label_b || "modified");
-              if (!textResult) {
-                textResult = "(Identical texts: zero differences)";
-              }
-              break;
-            }
-
-            case "diff_revisions": {
-              textResult = coordinator.headlessDiff(args.file_id, args.rev_a, args.rev_b);
-              break;
-            }
-
-            case "ide_rust_eval": {
-              textResult = coordinator.evalRustScript(args.script || "");
-              break;
-            }
-
-            case "ide_open_file": {
-              const parts = (args.file_id || "").split(":");
-              const ws = parts.length > 1 ? parts[0] : "default";
-              const p = parts.length > 1 ? parts.slice(1).join(":") : args.file_id;
-              const f = coordinator.registerFile(ws, p, args.content || "", args.language || "plain");
-              textResult = JSON.stringify(f, null, 2);
-              break;
-            }
-
-            case "ide_edit_lines": {
-              const content = coordinator.headlessRead(args.file_id);
-              if (content === null) {
-                textResult = `Error: file '${args.file_id}' not found`;
-                break;
-              }
-              const lines = content.split("\n");
-              const s = Math.max(0, (args.start_line || 1) - 1);
-              const e = Math.min(lines.length, args.end_line || lines.length);
-              const replLines = (args.replacement || "").split("\n");
-              lines.splice(s, e - s, ...replLines);
-              const newContent = lines.join("\n");
-              const outcome = coordinator.headlessEdit({
-                fileId: args.file_id,
-                author: "ide_edit_lines",
-                newText: newContent
-              });
-              textResult = JSON.stringify(outcome, null, 2);
-              break;
-            }
-
-            case "ide_replace_all": {
-              const content = coordinator.headlessRead(args.file_id);
-              if (content === null) {
-                textResult = `Error: file '${args.file_id}' not found`;
-                break;
-              }
-              const newContent = content.split(args.find).join(args.replace);
-              const outcome = coordinator.headlessEdit({
-                fileId: args.file_id,
-                author: "ide_replace_all",
-                newText: newContent
-              });
-              textResult = JSON.stringify(outcome, null, 2);
-              break;
-            }
-
-            default:
-              return res.status(200).json({
-                jsonrpc: "2.0",
-                id,
-                error: { code: -32601, message: `Tool '${name}' not found` }
-              });
-          }
-
-          return res.status(200).json({
-            jsonrpc: "2.0",
-            id,
-            result: {
-              content: [{ type: "text", text: textResult }]
-            }
-          });
-        }
-
-        default:
-          return res.status(200).json({
-            jsonrpc: "2.0",
-            id,
-            error: { code: -32601, message: `Method '${method}' not found` }
-          });
-      }
-    } catch (err) {
-      return res.status(500).json({
-        jsonrpc: "2.0",
-        id,
-        error: { code: -32603, message: err.message || "Internal error" }
-      });
+      body = JSON.parse(body);
+    } catch {
+      return res.status(400).json({ jsonrpc: "2.0", error: { code: -32700, message: "Parse error" }, id: null });
     }
   }
 
-  return res.status(405).json({ error: "Method not allowed" });
+  const { id, method, params } = body || {};
+  if (!method) {
+    return res.status(400).json({
+      jsonrpc: "2.0",
+      error: { code: -32600, message: "Invalid Request: missing method" },
+      id: id ?? null,
+    });
+  }
+
+  if (method === "notifications/initialized" || method === "notifications/cancelled" || method === "cancelled") {
+    return res.status(202).end();
+  }
+
+  if (method === "initialize") {
+    const sessionId = req.headers?.["mcp-session-id"] || crypto.randomUUID();
+    res.setHeader("Mcp-Session-Id", sessionId);
+    return res.status(200).json({
+      jsonrpc: "2.0",
+      id: id ?? null,
+      result: {
+        protocolVersion: MCP_PROTOCOL_VERSION,
+        capabilities: {
+          tools: { listChanged: false },
+          resources: { subscribe: false, listChanged: false },
+          prompts: { listChanged: false },
+        },
+        serverInfo: { name: "ide10-mcp", version: SERVER_VERSION },
+      },
+    });
+  }
+
+  if (method === "ping") {
+    return res.status(200).json({ jsonrpc: "2.0", id: id ?? null, result: {} });
+  }
+
+  if (method === "tools/list") {
+    return res.status(200).json({ jsonrpc: "2.0", id: id ?? null, result: { tools: TOOLS } });
+  }
+
+  if (method === "prompts/list") {
+    return res.status(200).json({
+      jsonrpc: "2.0",
+      id: id ?? null,
+      result: {
+        prompts: [
+          {
+            name: "review_code",
+            description: "Review pending conflict proposals or open files",
+            arguments: [{ name: "file_id", description: "Target document ID", required: true }],
+          },
+        ],
+      },
+    });
+  }
+
+  // Strictly authenticate & rate-limit all state/data access methods (P0-03)
+  let principal;
+  try {
+    principal = authenticateRequest(req, env);
+    await store.enforceRateLimit(principal.tenantId);
+  } catch (err) {
+    const status = err.statusCode || 401;
+    return res.status(status).json({
+      jsonrpc: "2.0",
+      id: id ?? null,
+      error: { code: -32001, message: `${err.code || "AUTH_ERROR"}: ${err.message}` },
+    });
+  }
+
+  try {
+    if (method === "resources/list") {
+      const files = await store.listFiles(principal);
+      const resources = [
+        { uri: "ide10://files", name: "Workspace Open Documents", mimeType: "application/json" },
+        ...files.map((f) => ({ uri: `ide10://file/${f.file_id}`, name: f.file_id, mimeType: "text/plain" })),
+      ];
+      return res.status(200).json({ jsonrpc: "2.0", id: id ?? null, result: { resources } });
+    }
+
+    if (method === "resources/read") {
+      const uri = params?.uri || "";
+      if (uri === "ide10://files") {
+        const files = await store.listFiles(principal);
+        return res.status(200).json({
+          jsonrpc: "2.0",
+          id: id ?? null,
+          result: { contents: [{ uri, mimeType: "application/json", text: JSON.stringify(files, null, 2) }] },
+        });
+      }
+      const rawId = uri.startsWith("ide10://file/")
+        ? uri.slice("ide10://file/".length)
+        : uri.replace(/^file:\/\/\/workspace\//, "");
+      const target = resolveFileTarget(rawId, principal);
+      authorizeScope(principal, target.workspaceId, "read");
+      const doc = await store.readFile(target);
+      return res.status(200).json({
+        jsonrpc: "2.0",
+        id: id ?? null,
+        result: { contents: [{ uri, mimeType: "text/plain", text: doc.content }] },
+      });
+    }
+
+    if (method === "tools/call") {
+      const { name, arguments: args } = params || {};
+      if (!name) {
+        return res.status(200).json({
+          jsonrpc: "2.0",
+          id: id ?? null,
+          error: { code: -32602, message: "Missing tool name" },
+        });
+      }
+      const outcome = await callMcpTool(store, principal, name, args || {});
+      if (outcome === null) {
+        return res.status(200).json({
+          jsonrpc: "2.0",
+          id: id ?? null,
+          error: { code: -32601, message: `Tool '${name}' not found` },
+        });
+      }
+      const text = typeof outcome === "string" ? outcome : JSON.stringify(outcome, null, 2);
+      const isErr = Boolean(outcome && typeof outcome === "object" && outcome.ok === false);
+      return res.status(200).json({
+        jsonrpc: "2.0",
+        id: id ?? null,
+        result: {
+          content: [{ type: "text", text }],
+          structured_data: outcome,
+          isError: isErr,
+        },
+      });
+    }
+
+    return res.status(200).json({
+      jsonrpc: "2.0",
+      id: id ?? null,
+      error: { code: -32601, message: `Method '${method}' not found` },
+    });
+  } catch (err) {
+    if (err instanceof AuthError) {
+      return res.status(err.statusCode).json({
+        jsonrpc: "2.0",
+        id: id ?? null,
+        error: { code: -32001, message: `${err.code}: ${err.message}` },
+      });
+    }
+    if (err instanceof StoreError) {
+      if (err.statusCode === 503 || err.statusCode === 429) {
+        return res.status(err.statusCode).json({
+          jsonrpc: "2.0",
+          id: id ?? null,
+          error: { code: -32000, message: `${err.code}: ${err.message}` },
+        });
+      }
+      return res.status(200).json({
+        jsonrpc: "2.0",
+        id: id ?? null,
+        result: {
+          content: [{ type: "text", text: `Error [${err.code}]: ${err.message}` }],
+          structured_data: { ok: false, code: err.code, message: err.message },
+          isError: true,
+        },
+      });
+    }
+    return res.status(500).json({
+      jsonrpc: "2.0",
+      id: id ?? null,
+      error: { code: -32603, message: err.message || "Internal server error" },
+    });
+  }
+}
+
+export default async function handler(req, res) {
+  return handleMcpRequest(req, res);
 }

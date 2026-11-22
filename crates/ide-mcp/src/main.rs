@@ -25,9 +25,8 @@ fn main() {
 
     if let Some(pos) = args.iter().position(|a| a == "--eval") {
         if let Some(code) = args.get(pos + 1) {
-            let mut server = McpServer::default();
-            let res =
-                ide_mcp::rust_console::RustConsoleEvaluator::eval(&mut server.workspace, code);
+            let server = McpServer::default();
+            let res = ide_mcp::rust_console::RustConsoleEvaluator::eval(&server.store, code);
             println!("{}", res.summary);
             for s in res.steps {
                 println!(
