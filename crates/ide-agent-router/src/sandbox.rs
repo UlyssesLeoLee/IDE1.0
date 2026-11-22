@@ -131,8 +131,11 @@ impl WorkerSandbox {
             ));
         }
 
-        // 拦截绝对路径或带有 Windows 盘符冒号的前缀
-        if p.is_absolute() {
+        // 统一将 Windows 反斜杠分隔符归一为 '/'，保证 Linux 与 Windows 下同样能识别 `..\`、`\Abs` 等穿越模式
+        let normalized = p_str.replace('\\', "/");
+
+        // 拦截绝对路径（含 `/`、`\` 开头）或带有 Windows 盘符冒号的前缀
+        if p.is_absolute() || normalized.starts_with('/') {
             return Err(SandboxError::PathTraversalDetected(format!(
                 "Absolute path is forbidden: {}",
                 p_str
@@ -140,7 +143,7 @@ impl WorkerSandbox {
         }
 
         let mut sanitized = PathBuf::new();
-        for comp in p.components() {
+        for comp in Path::new(&normalized).components() {
             match comp {
                 Component::Normal(part) => {
                     let part_str = part.to_string_lossy();
