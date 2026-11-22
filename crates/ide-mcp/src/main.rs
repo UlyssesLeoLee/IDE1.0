@@ -9,7 +9,7 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
 
     if args.iter().any(|a| a == "--version" || a == "-v") {
-        println!("ide10-mcp v0.8.8");
+        println!("ide10-mcp v0.8.9");
         return;
     }
 

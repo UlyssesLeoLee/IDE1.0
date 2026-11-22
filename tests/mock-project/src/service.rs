@@ -3,7 +3,7 @@ pub fn status() -> &'static str {
 }
 
 pub fn version() -> &'static str {
-    "0.8.8"
+    "0.8.9"
 }
 
 pub fn health_check() -> bool {
