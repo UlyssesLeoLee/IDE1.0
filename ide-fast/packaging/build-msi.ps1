@@ -69,23 +69,41 @@ if ($LASTEXITCODE) { throw "candle failed" }
 $msi = Join-Path $Out "IDE1.0_${ver}_x64.msi"
 & "$wix\light.exe" -nologo -cultures:en-us -sice:ICE91 -sice:ICE60 -out $msi $wixobj
 if ($LASTEXITCODE) { throw "light failed" }
+
+# 验证 MSI 解包产物完整性与可启动性门禁
+Write-Host "=== Running MSI Extraction & Smoke Test ==="
+$msiExtractDir = Join-Path $env:TEMP "ide10_msi_extract_$PID"
+if (Test-Path $msiExtractDir) { Remove-Item $msiExtractDir -Recurse -Force -ErrorAction SilentlyContinue }
+$msiProc = Start-Process -FilePath "msiexec.exe" -ArgumentList @("/a", "`"$msi`"", "/qn", "TARGETDIR=`"$msiExtractDir`"") -Wait -PassThru
+if ($msiProc.ExitCode -ne 0) {
+    Remove-Item $msiExtractDir -Recurse -Force -ErrorAction SilentlyContinue
+    throw "msiexec /a extraction failed with exit code $($msiProc.ExitCode)"
+}
+$extractedExe = Get-ChildItem -Path $msiExtractDir -Filter "IDE1.0.exe" -Recurse | Select-Object -First 1
+if (-not $extractedExe) {
+    Remove-Item $msiExtractDir -Recurse -Force -ErrorAction SilentlyContinue
+    throw "MSI extraction check failed: IDE1.0.exe not found inside $msi"
+}
+& $extractedExe.FullName --smoke-test
+$extractSmokeCode = $LASTEXITCODE
+Remove-Item $msiExtractDir -Recurse -Force -ErrorAction SilentlyContinue
+if ($extractSmokeCode -ne 0) {
+    throw "MSI-extracted IDE1.0.exe failed --smoke-test with exit code $extractSmokeCode"
+}
+Write-Host "=== MSI Extraction & Smoke Test PASSED ==="
+
 $portableExe = Join-Path $Out "IDE1.0-$ver-windows-x64.exe"
 Copy-Item $exe $portableExe -Force
-$setupExe = Join-Path $Out "IDE1.0_Setup_${ver}_x64.exe"
-Copy-Item $exe $setupExe -Force
 
 $channel = if ($ver -match "-") { "dev" } else { "stable" }
 $msiName = [System.IO.Path]::GetFileName($msi)
 $exeName = [System.IO.Path]::GetFileName($portableExe)
-$setupName = [System.IO.Path]::GetFileName($setupExe)
 $msiHash = (Get-FileHash -Algorithm SHA256 $msi).Hash.ToLowerInvariant()
 $exeHash = (Get-FileHash -Algorithm SHA256 $portableExe).Hash.ToLowerInvariant()
-$setupHash = (Get-FileHash -Algorithm SHA256 $setupExe).Hash.ToLowerInvariant()
-$sumsContent = "version: $ver channel: $channel`n$setupHash  $setupName`n$msiHash  $msiName`n$exeHash  $exeName`n"
+$sumsContent = "version: $ver channel: $channel`n$msiHash  $msiName`n$exeHash  $exeName`n"
 $sumsPath = Join-Path $Out "SHA256SUMS.txt"
 [System.IO.File]::WriteAllText($sumsPath, $sumsContent, [System.Text.Encoding]::ASCII)
 
-Write-Host "Setup: $setupExe"
 Write-Host "MSI: $msi"
 Write-Host "Portable: $portableExe"
 Write-Host "Checksums: $sumsPath"

@@ -10,11 +10,11 @@
     <!-- 彻底移除 WixUI_InstallDir 与任何 Windows 原生对话框，杜绝原生标题栏与 Back/Next/Cancel 按钮 -->
     <!-- 安装开始前安全终止可能残留或被占用的 IDE1.0 实例 -->
     <CustomAction Id="KillRunningIDE" Directory="TARGETDIR" ExeCommand="[SystemFolder]taskkill.exe /F /IM IDE1.0.exe /IM ide-fast.exe /FI &quot;STATUS eq RUNNING&quot;" Return="ignore" />
-    <!-- 安装完成自动拉起旗舰真 3D 赛璐珞安装与首选配置向导 (0 原生控件残留) -->
-    <CustomAction Id="Launch3DSetup" FileKey="IdeFastExe" ExeCommand="--setup" Return="asyncNoWait" />
+    <!-- 安装/升级/修复完成自动拉起 IDE1.0 主程序（卸载或自动化传 IDE10_NO_LAUNCH=1 时跳过） -->
+    <CustomAction Id="LaunchIDE" FileKey="IdeFastExe" ExeCommand="" Return="asyncNoWait" />
     <InstallExecuteSequence>
       <Custom Action="KillRunningIDE" Before="InstallValidate" />
-      <Custom Action="Launch3DSetup" After="InstallFinalize">NOT Installed</Custom>
+      <Custom Action="LaunchIDE" After="InstallFinalize">NOT REMOVE="ALL" AND NOT IDE10_NO_LAUNCH</Custom>
     </InstallExecuteSequence>
 
     <Directory Id="TARGETDIR" Name="SourceDir">
@@ -24,6 +24,7 @@
         </Directory>
       </Directory>
       <Directory Id="ProgramMenuFolder" />
+      <Directory Id="DesktopFolder" />
     </Directory>
 
     <DirectoryRef Id="INSTALLFOLDER">
@@ -49,10 +50,19 @@
       </Component>
     </DirectoryRef>
 
+    <!-- 桌面快捷方式 -->
+    <DirectoryRef Id="DesktopFolder">
+      <Component Id="DesktopShortcut" Guid="*">
+        <Shortcut Id="IdeFastDesktopShortcut" Name="IDE1.0" Target="[INSTALLFOLDER]IDE1.0.exe" WorkingDirectory="INSTALLFOLDER" Icon="ProductIcon" Description="IDE1.0 - High-Performance Text and Code Editor" />
+        <RegistryValue Root="HKCU" Key="Software\ide1\IDE1.0" Name="desktop_shortcut" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+
     <Feature Id="Main" Title="IDE1.0" Level="1">
       <ComponentRef Id="MainExe" />
       <ComponentRef Id="LogsFolderComponent" />
       <ComponentRef Id="StartMenuShortcut" />
+      <ComponentRef Id="DesktopShortcut" />
     </Feature>
   </Product>
 </Wix>

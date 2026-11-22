@@ -703,6 +703,7 @@ impl App {
                 if self.installer.launch_on_finish && !self.installer.dry_run {
                     launch_installed_binary(&self.installer.target_dir);
                 }
+                self.force_exit = true;
                 ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
             } else {
                 self.installer.open = false;
