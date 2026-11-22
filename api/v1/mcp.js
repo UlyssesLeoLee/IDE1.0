@@ -13,7 +13,7 @@ import { formatUnifiedDiff, threeWayMerge } from "./_merge.js";
 import { getStore, StoreError } from "./_store.js";
 
 export const MCP_PROTOCOL_VERSION = "2024-11-05";
-export const SERVER_VERSION = "0.9.0";
+export const SERVER_VERSION = "0.9.1";
 
 export const TOOLS = [
   {
@@ -233,10 +233,14 @@ export const TOOLS = [
   },
   {
     name: "ide_rust_eval",
-    description: "Inspect workspace context via safe read-only Blender-style ide::context / ide::data queries.",
+    description:
+      "Execute Blender-style ide::context / ide::data / ide::ops Rust scripts to inspect and programmatically modify shared documents under workspace ACL & Postgres CAS.",
     inputSchema: {
       type: "object",
-      properties: { script: { type: "string" } },
+      properties: {
+        script: { type: "string" },
+        agent_id: { type: "string" },
+      },
       required: ["script"],
     },
   },
@@ -439,7 +443,7 @@ async function callMcpTool(store, principal, name, args = {}) {
     }
 
     case "ide_rust_eval": {
-      return await store.evalRustScript(principal, args.script || "");
+      return await store.evalRustScript(principal, args.script || "", args.agent_id || args.author || null);
     }
 
     default:

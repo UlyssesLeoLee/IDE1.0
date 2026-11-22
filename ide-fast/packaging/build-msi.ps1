@@ -64,10 +64,10 @@ Write-Host "=== Launch Smoke Test PASSED ==="
 New-Item -ItemType Directory -Force $Out | Out-Null
 $wixobj = Join-Path $Out "ide-fast.wixobj"
 $icon = Join-Path $PSScriptRoot "ide-fast.ico"
-& "$wix\candle.exe" -nologo -arch x64 "-dVersion=$wixVer" "-dExePath=$exe" "-dIconPath=$icon" -out $wixobj "$PSScriptRoot\ide-fast.wxs"
+& "$wix\candle.exe" -nologo -arch x64 -ext WixUtilExtension "-dVersion=$wixVer" "-dExePath=$exe" "-dIconPath=$icon" -out $wixobj "$PSScriptRoot\ide-fast.wxs"
 if ($LASTEXITCODE) { throw "candle failed" }
 $msi = Join-Path $Out "IDE1.0_${ver}_x64.msi"
-& "$wix\light.exe" -nologo -cultures:en-us -sice:ICE91 -sice:ICE60 -out $msi $wixobj
+& "$wix\light.exe" -nologo -ext WixUtilExtension -cultures:en-us -sice:ICE91 -sice:ICE60 -out $msi $wixobj
 if ($LASTEXITCODE) { throw "light failed" }
 
 # 验证 MSI 解包产物完整性与可启动性门禁

@@ -4830,6 +4830,63 @@ pub const CMD_T: &[Row] = &[
             "Plugin command failed (editor unaffected)",
         ],
     ),
+    ("日志", ["日志", "ログ", "Log"]),
+    (
+        "部分旧版本文件受权限保护未能完全清除，请手动移除",
+        [
+            "部分旧版本文件受权限保护未能完全清除，请手动移除",
+            "一部の旧バージョンファイルは保護されており削除できませんでした。手動で削除してください",
+            "Some legacy version files are protected and could not be removed; please delete manually",
+        ],
+    ),
+    (
+        "将自动卸载清理旧版本目录",
+        [
+            "将自动卸载清理旧版本目录",
+            "旧バージョンフォルダーを自動アンインストールします",
+            "Legacy installation will be automatically removed",
+        ],
+    ),
+    (
+        "架构: x86_64 Windows (Native)",
+        [
+            "架构: x86_64 Windows (Native)",
+            "アーキテクチャ: x86_64 Windows (Native)",
+            "Arch: x86_64 Windows (Native)",
+        ],
+    ),
+    (
+        "后台无阻塞拉取更新包，完成校验后即可极速重启应用...",
+        [
+            "后台无阻塞拉取更新包，完成校验后即可极速重启应用...",
+            "バックグラウンドで更新を取得中です。検証完了後に再起動して適用できます...",
+            "Fetching update package asynchronously; verify and restart cleanly once ready...",
+        ],
+    ),
+    (
+        "安全校验版本号、签名清单与可用下载包...",
+        [
+            "安全校验版本号、签名清单与可用下载包...",
+            "バージョン・署名マニフェスト・配布パッケージを安全に検証しています...",
+            "Verifying release version, signature manifest and available assets...",
+        ],
+    ),
+    (
+        "正在下载并校验数字签名与 SHA-256 (DOWNLOADING)",
+        [
+            "正在下载并校验数字签名与 SHA-256 (DOWNLOADING)",
+            "署名と SHA-256 をダウンロード・検証中 (DOWNLOADING)",
+            "Downloading & Verifying Signature / SHA-256",
+        ],
+    ),
+    (
+        "正在连接校验官方发行源 (CHECKING RELEASE)",
+        [
+            "正在连接校验官方发行源 (CHECKING RELEASE)",
+            "公式リリースソースへ接続して確認中 (CHECKING RELEASE)",
+            "Connecting to Official Release Feed (CHECKING)",
+        ],
+    ),
 ];
 
 #[cfg(test)]

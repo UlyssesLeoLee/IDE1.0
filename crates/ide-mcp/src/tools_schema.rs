@@ -233,10 +233,13 @@ fn coordination_and_disk_tools() -> Vec<Value> {
         ),
         tool_def(
             "ide_rust_eval",
-            "Execute Blender-style ide::context / ide::data / ide::ops scripts against the shared DocumentStore.",
+            "Execute Blender-style ide::context / ide::data / ide::ops Rust scripts to inspect and programmatically modify shared documents.",
             json!({
                 "type": "object",
-                "properties": { "script": { "type": "string" } },
+                "properties": {
+                    "script": { "type": "string" },
+                    "agent_id": { "type": "string" }
+                },
                 "required": ["script"]
             }),
         ),

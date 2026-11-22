@@ -15,7 +15,7 @@ use egui::{vec2, Color32, Rect, Stroke, StrokeKind, Vec2};
 use std::sync::mpsc::{channel, Receiver, TryRecvError};
 
 #[derive(Default)]
-enum Phase {
+pub(super) enum Phase {
     #[default]
     Idle,
     Checking,
@@ -33,7 +33,7 @@ enum Msg {
 
 pub(super) struct UpdState {
     pub open: bool,
-    phase: Phase,
+    pub(super) phase: Phase,
     rx: Option<Receiver<Msg>>,
     /// 这次检查是启动时自动做的: 没有新版本 / 出错就不打扰
     silent: bool,
@@ -246,6 +246,9 @@ impl App {
         Self::render_comic_backdrop(ctx, "update_comic_modal_backdrop");
 
         let busy = self.upd.rx.is_some();
+        if self.upd.open && matches!(self.upd.phase, Phase::Checking | Phase::Downloading(_)) {
+            ctx.request_repaint_after(std::time::Duration::from_millis(33));
+        }
         let ch = Channel::from_code(&self.cfg.update_channel).unwrap_or_default();
         let mut actions = UpdActions::default();
         let (badge_bg, badge_label) = self.upd_badge();
@@ -389,6 +392,16 @@ impl App {
         );
 
         match &self.upd.phase {
+            Phase::Checking => {
+                Self::render_upd_progress_card(
+                    ui,
+                    crate::i18n::trz("正在连接校验官方发行源 (CHECKING RELEASE)"),
+                    crate::i18n::trz("安全校验版本号、签名清单与可用下载包..."),
+                    Color32::from_rgb(2, 132, 199),
+                    Color32::from_rgb(56, 189, 248),
+                    Color32::from_rgb(125, 211, 252),
+                );
+            }
             Phase::Available(c) | Phase::Downloading(c) | Phase::Ready(c, _) => {
                 let signed = crate::updkey::is_configured(&crate::updkey::UPDATE_PUBKEY);
                 let asset_desc = match &c.asset {
@@ -411,9 +424,24 @@ impl App {
                     UiIcon::CheckCircle,
                     Color32::from_rgb(16, 185, 129),
                 );
+                if matches!(self.upd.phase, Phase::Downloading(_)) {
+                    Self::render_upd_progress_card(
+                        ui,
+                        crate::i18n::trz("正在下载并校验数字签名与 SHA-256 (DOWNLOADING)"),
+                        crate::i18n::trz("后台无阻塞拉取更新包，完成校验后即可极速重启应用..."),
+                        Color32::from_rgb(14, 165, 233),
+                        Color32::from_rgb(56, 189, 248),
+                        Color32::from_rgb(186, 230, 253),
+                    );
+                }
                 let notes = update::truncate_notes(&c.release.notes, update::NOTES_MAX_CHARS);
                 if !notes.is_empty() {
-                    Self::render_upd_notes_box(ui, &notes);
+                    let max_h = if matches!(self.upd.phase, Phase::Downloading(_)) {
+                        96.0
+                    } else {
+                        160.0
+                    };
+                    Self::render_upd_notes_box(ui, &notes, max_h);
                 }
             }
             _ => {
@@ -430,9 +458,68 @@ impl App {
         }
     }
 
-    fn render_upd_notes_box(ui: &mut egui::Ui, notes: &str) {
+    fn render_upd_progress_card(
+        ui: &mut egui::Ui,
+        title: &str,
+        subtitle: &str,
+        accent_primary: Color32,
+        accent_bright: Color32,
+        accent_glow: Color32,
+    ) {
+        let (card_rect, _) =
+            ui.allocate_exact_size(vec2(ui.available_width(), 72.0), egui::Sense::hover());
+        let p = ui.painter();
+        paint_comic_hard_shadow_rect(
+            p,
+            card_rect,
+            Color32::from_rgb(20, 26, 38),
+            2.0,
+            vec2(3.0, 3.0),
+        );
+        p.rect_filled(
+            Rect::from_min_size(card_rect.min, vec2(card_rect.width(), 3.0)),
+            0.0,
+            accent_bright,
+        );
+        let time = ui.input(|i| i.time) as f32;
+        let pulse_r = 4.0 + 1.0 * (time * 5.0).sin().abs();
+        p.circle_filled(
+            egui::pos2(card_rect.left() + 18.0, card_rect.top() + 18.0),
+            pulse_r,
+            accent_bright,
+        );
+        p.with_clip_rect(card_rect.shrink2(vec2(12.0, 4.0))).text(
+            egui::pos2(card_rect.left() + 30.0, card_rect.top() + 18.0),
+            egui::Align2::LEFT_CENTER,
+            title,
+            egui::FontId::proportional(11.5),
+            Color32::WHITE,
+        );
+        let track_rect = Rect::from_min_max(
+            egui::pos2(card_rect.left() + 14.0, card_rect.top() + 31.0),
+            egui::pos2(card_rect.right() - 14.0, card_rect.top() + 47.0),
+        );
+        crate::app::installer_ui::cards::paint_comic_progress_bar(
+            p,
+            track_rect,
+            None,
+            accent_primary,
+            accent_bright,
+            accent_glow,
+            time,
+        );
+        p.with_clip_rect(card_rect.shrink2(vec2(12.0, 4.0))).text(
+            egui::pos2(card_rect.left() + 14.0, card_rect.top() + 59.0),
+            egui::Align2::LEFT_CENTER,
+            subtitle,
+            egui::FontId::proportional(10.0),
+            Color32::from_rgb(148, 163, 184),
+        );
+    }
+
+    fn render_upd_notes_box(ui: &mut egui::Ui, notes: &str, height: f32) {
         let (notes_rect, _) =
-            ui.allocate_exact_size(vec2(ui.available_width(), 160.0), egui::Sense::hover());
+            ui.allocate_exact_size(vec2(ui.available_width(), height), egui::Sense::hover());
         paint_comic_hard_shadow_rect(
             ui.painter(),
             notes_rect,

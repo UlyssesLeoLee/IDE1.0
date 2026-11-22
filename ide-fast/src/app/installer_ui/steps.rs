@@ -114,6 +114,7 @@ impl App {
 
     fn close_wizard(&mut self, ui: &mut egui::Ui, standalone: bool) {
         if standalone {
+            self.force_exit = true;
             ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
         } else {
             self.installer.open = false;
@@ -695,13 +696,28 @@ impl App {
             }
         }
 
-        ui.label(
-            egui::RichText::new(crate::i18n::trz(
+        let dir_meta_note = if let Some(legacy) = &self.installer.legacy_cleanup_dir {
+            format!(
+                "{} | {}: {}",
+                crate::i18n::trz("架构: x86_64 Windows (Native)"),
+                crate::i18n::trz("将自动卸载清理旧版本目录"),
+                legacy
+            )
+        } else {
+            crate::i18n::trz(
                 "所需空间: ~85 MB  |  架构: x86_64 Windows (Native)  |  零第三方依赖 · 秒速起航",
-            ))
-            .monospace()
-            .size(10.5)
-            .color(Color32::from_rgb(180, 195, 215)),
+            )
+            .to_string()
+        };
+        ui.label(
+            egui::RichText::new(dir_meta_note)
+                .monospace()
+                .size(10.5)
+                .color(if self.installer.legacy_cleanup_dir.is_some() {
+                    Color32::from_rgb(251, 191, 36)
+                } else {
+                    Color32::from_rgb(180, 195, 215)
+                }),
         );
 
         ui.add_space(2.0);

@@ -331,7 +331,12 @@ fn handle_rust_eval(store: &DocumentStore, args: &Value) -> Result<Value, String
         .get("script")
         .and_then(Value::as_str)
         .ok_or("Missing script")?;
-    let res = RustConsoleEvaluator::eval(store, script);
+    let agent_id = args
+        .get("agent_id")
+        .or_else(|| args.get("author"))
+        .and_then(Value::as_str)
+        .unwrap_or("console");
+    let res = RustConsoleEvaluator::eval_with_agent(store, script, agent_id);
     let steps_json: Vec<Value> = res
         .steps
         .iter()

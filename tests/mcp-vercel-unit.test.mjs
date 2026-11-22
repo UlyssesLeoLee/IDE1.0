@@ -13,8 +13,10 @@ import {
   formatUnifiedDiff,
   nemaSemanticMerge,
   parseNemaStrict,
+  splitLines,
   threeWayMerge,
 } from "../api/v1/_merge.js";
+import { evalRustScriptWithStore, parseArgs, splitStatements } from "../api/v1/_rust_eval.js";
 import { handleMcpRequest } from "../api/v1/mcp.js";
 
 test("P1-02: threeWayMerge handles multi-insert, delete, and line drift without conflicts", () => {
@@ -330,4 +332,82 @@ test("diffLines + formatUnifiedDiff handles trailing lines consistently", () => 
   const u = formatUnifiedDiff("a\nb\nc\n", "a\nb2\nc\n", "rev1", "rev2");
   assert.ok(u.includes("-b\n+b2"));
   assert.equal(diffLines(["a\n"], ["a\n"]).coarse, false);
+});
+
+test("Blender-style ide_rust_eval parses semicolons/escapes & enforces ACL", async () => {
+  const script = `
+    // comment line
+    ide::ops::open("ws_ok:src/m.rs", "rust", "let x = 1; let y = 2;\\nlet z = 3;\\n");
+    ide::ops::insert("ws_ok:src/m.rs", 2, "// mid;");
+    ide::ops::append("ws_ok:src/m.rs", "let w = 4;");
+    ide::ops::replace_all("ws_ok:src/m.rs", "let w = 4;", "const W: i32 = 4;");
+  `;
+  const stmts = splitStatements(script);
+  assert.equal(stmts.length, 4);
+  const args = parseArgs('"ws_ok:src/m.rs", "rust", "a; b;\\nc"');
+  assert.deepEqual(args, ["ws_ok:src/m.rs", "rust", "a; b;\nc"]);
+
+  // Minimal in-memory store mock implementing PgDurableStore contract for _rust_eval
+  const docs = new Map();
+  const mockStore = {
+    async listFiles() {
+      return [];
+    },
+    async openFile({ workspaceId, filePath, fileId, content, language }) {
+      const rec = { file_id: fileId, workspace_id: workspaceId, filePath, language, content, current_revision: 1, content_hash: "h1" };
+      docs.set(fileId, rec);
+      return { ok: true, status: "CREATED", file_id: fileId, current_revision: 1, content_hash: "h1" };
+    },
+    async readFile({ fileId, startLine, endLine }) {
+      const d = docs.get(fileId);
+      const lines = splitLines(d.content);
+      let out = d.content;
+      if (startLine || endLine) {
+        const s = Math.max(0, (Number(startLine) || 1) - 1);
+        const e = Math.min(lines.length, Number(endLine) || lines.length);
+        out = lines.slice(s, e).join("");
+      }
+      return { ...d, total_lines: lines.length, content: out };
+    },
+    async editLines({ fileId, startLine, endLine, replacement }) {
+      const d = docs.get(fileId);
+      const lines = splitLines(d.content);
+      const s = Math.max(0, Math.min(lines.length, (Number(startLine) || 1) - 1));
+      const e = Number(endLine) < Number(startLine) ? s : Math.max(s, Math.min(lines.length, Number(endLine) || s));
+      const repl = replacement && !replacement.endsWith("\n") ? `${replacement}\n` : String(replacement ?? "");
+      d.content = lines.slice(0, s).join("") + repl + lines.slice(e).join("");
+      d.current_revision += 1;
+      return { ok: true, status: "COMMITTED", revision: d.current_revision, content_hash: `h${d.current_revision}`, content: d.content };
+    },
+    async replaceAll({ fileId, find, replace }) {
+      const d = docs.get(fileId);
+      const count = d.content.split(find).length - 1;
+      d.content = d.content.split(find).join(replace);
+      d.current_revision += 1;
+      return { ok: true, status: "COMMITTED", revision: d.current_revision, content_hash: `h${d.current_revision}`, replacements: count };
+    },
+    async coedit({ fileId, newText }) {
+      const d = docs.get(fileId);
+      d.content = newText;
+      d.current_revision += 1;
+      return { ok: true, status: "COMMITTED", revision: d.current_revision, content_hash: `h${d.current_revision}` };
+    },
+  };
+
+  const rwPrincipal = { actorId: "coder", tenantId: "t1", workspaces: ["ws_ok"], files: ["*"], scopes: ["read", "write"] };
+  const res = await evalRustScriptWithStore(mockStore, rwPrincipal, script, "agent-py");
+  assert.equal(res.ok, true);
+  assert.equal(res.steps.length, 4);
+  const finalDoc = docs.get("ws_ok:src/m.rs");
+  assert.equal(finalDoc.current_revision, 4);
+  assert.ok(finalDoc.content.includes("let x = 1; let y = 2;"));
+  assert.ok(finalDoc.content.includes("// mid;"));
+  assert.ok(finalDoc.content.includes("const W: i32 = 4;"));
+
+  // Read-only principal MUST fail closed with 403 when trying write ops
+  const roPrincipal = { actorId: "ro", tenantId: "t1", workspaces: ["ws_ok"], files: ["*"], scopes: ["read"] };
+  await assert.rejects(
+    () => evalRustScriptWithStore(mockStore, roPrincipal, 'ide::ops::edit("ws_ok:src/m.rs", 1, 1, "hijack")'),
+    { statusCode: 403, code: "INSUFFICIENT_SCOPE" }
+  );
 });

@@ -1598,42 +1598,87 @@ impl App {
         let hint = self.file_dialog_loading.as_ref().unwrap().hint.clone();
         let progress = self.file_dialog_loading.as_ref().unwrap().progress;
 
+        Self::render_comic_backdrop(ctx, "file_dialog_loading_backdrop");
         egui::Window::new(&title)
+            .id(egui::Id::new("file_dialog_loading_comic_window"))
+            .title_bar(false)
+            .frame(egui::Frame::NONE)
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
-            .fixed_size(egui::vec2(380.0, 150.0))
+            .fixed_size(egui::vec2(440.0, 176.0))
             .show(ctx, |ui| {
-                ui.spacing_mut().item_spacing = egui::vec2(0.0, 10.0);
-                ui.add_space(2.0);
-
-                ui.horizontal(|ui| {
-                    ui.spinner();
+                let rect = ui.max_rect();
+                let p = ui.painter();
+                crate::app::installer_ui::art::paint_comic_hard_shadow_rect(
+                    p,
+                    rect,
+                    Color32::from_rgb(18, 22, 32),
+                    2.0,
+                    egui::vec2(4.0, 4.0),
+                );
+                p.rect_filled(
+                    egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), 4.0)),
+                    0.0,
+                    Color32::from_rgb(2, 132, 199),
+                );
+                let inner = rect.shrink2(egui::vec2(18.0, 14.0));
+                ui.scope_builder(egui::UiBuilder::new().max_rect(inner), |ui| {
+                    ui.spacing_mut().item_spacing = egui::vec2(0.0, 8.0);
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            egui::RichText::new(&title)
+                                .strong()
+                                .size(14.0)
+                                .color(Color32::WHITE),
+                        );
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.label(
+                                egui::RichText::new(format!("{:.0}%", progress * 100.0))
+                                    .monospace()
+                                    .strong()
+                                    .size(13.0)
+                                    .color(Color32::from_rgb(56, 189, 248)),
+                            );
+                        });
+                    });
                     ui.label(
                         egui::RichText::new(&note)
-                            .strong()
-                            .size(13.0)
+                            .size(12.0)
                             .color(Color32::from_rgb(250, 204, 21)),
                     );
-                });
-
-                ui.add(
-                    egui::ProgressBar::new(progress)
-                        .animate(true)
-                        .show_percentage(),
-                );
-
-                ui.label(
-                    egui::RichText::new(&hint)
-                        .size(11.5)
-                        .color(Color32::from_rgb(203, 213, 225)),
-                );
-
-                ui.separator();
-                ui.horizontal(|ui| {
-                    if ui.button(crate::i18n::trz("取消")).clicked() {
-                        cancel = true;
-                    }
+                    let (bar_rect, _) = ui.allocate_exact_size(
+                        egui::vec2(ui.available_width(), 20.0),
+                        egui::Sense::hover(),
+                    );
+                    let time = ui.input(|i| i.time) as f32;
+                    crate::app::installer_ui::cards::paint_comic_progress_bar(
+                        ui.painter(),
+                        bar_rect,
+                        Some(progress),
+                        Color32::from_rgb(2, 132, 199),
+                        Color32::from_rgb(56, 189, 248),
+                        Color32::from_rgb(125, 211, 252),
+                        time,
+                    );
+                    ui.label(
+                        egui::RichText::new(&hint)
+                            .size(11.0)
+                            .color(Color32::from_rgb(148, 163, 184)),
+                    );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if crate::app::installer_ui::cards::comic_action_button(
+                            ui,
+                            crate::i18n::trz("取消"),
+                            egui::vec2(92.0, 30.0),
+                            false,
+                            Color32::from_rgb(30, 41, 59),
+                        )
+                        .clicked()
+                        {
+                            cancel = true;
+                        }
+                    });
                 });
             });
 

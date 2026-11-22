@@ -41,15 +41,13 @@ impl App {
     /// 执行单条或分号/换行分隔的多条 Blender-Style Rust 控制台语句
     pub fn eval_rust_console_str(&mut self, script: &str) -> String {
         let mut results = Vec::new();
-        for raw_line in script.lines() {
-            for stmt in Self::split_statements(raw_line) {
-                let s = stmt.trim();
-                if s.is_empty() || s.starts_with("//") {
-                    continue;
-                }
-                let out = self.eval_single_rust_stmt(s);
-                results.push(out);
+        for stmt in Self::split_statements(script) {
+            let s = stmt.trim();
+            if s.is_empty() {
+                continue;
             }
+            let out = self.eval_single_rust_stmt(s);
+            results.push(out);
         }
         if results.is_empty() {
             "Empty script (no statements executed)".into()
@@ -58,85 +56,112 @@ impl App {
         }
     }
 
-    fn split_statements(line: &str) -> Vec<String> {
+    fn split_statements(script: &str) -> Vec<String> {
         let mut stmts = Vec::new();
         let mut cur = String::new();
         let mut in_quote = false;
         let mut quote_char = ' ';
         let mut escaped = false;
+        let mut chars = script.chars().peekable();
 
-        for ch in line.chars() {
+        while let Some(ch) = chars.next() {
             if escaped {
                 cur.push(ch);
                 escaped = false;
                 continue;
             }
-            if ch == '\\' {
-                cur.push(ch);
-                escaped = true;
+            if in_quote {
+                if ch == '\\' {
+                    cur.push(ch);
+                    escaped = true;
+                } else {
+                    if ch == quote_char {
+                        in_quote = false;
+                    }
+                    cur.push(ch);
+                }
                 continue;
             }
-            if in_quote {
-                if ch == quote_char {
-                    in_quote = false;
+            if ch == '/' && chars.peek() == Some(&'/') && cur.trim().is_empty() {
+                for c in chars.by_ref() {
+                    if c == '\n' {
+                        break;
+                    }
                 }
-                cur.push(ch);
-            } else if ch == '"' || ch == '\'' {
+                continue;
+            }
+            if ch == '"' || ch == '\'' {
                 in_quote = true;
                 quote_char = ch;
                 cur.push(ch);
-            } else if ch == ';' {
-                stmts.push(std::mem::take(&mut cur));
+            } else if ch == ';' || ch == '\n' || ch == '\r' {
+                if !cur.trim().is_empty() {
+                    stmts.push(cur.trim().to_string());
+                }
+                cur.clear();
             } else {
                 cur.push(ch);
             }
         }
         if !cur.trim().is_empty() {
-            stmts.push(cur);
+            stmts.push(cur.trim().to_string());
         }
         stmts
     }
 
-    fn parse_two_str_args(inner: &str) -> (String, String) {
-        let mut first = String::new();
-        let mut second = String::new();
-        let mut in_first = true;
+    fn parse_args_list(inner: &str) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut cur = String::new();
         let mut in_quote = false;
         let mut quote_char = ' ';
         let mut escaped = false;
 
         for ch in inner.chars() {
             if escaped {
-                if in_first {
-                    first.push(ch);
-                } else {
-                    second.push(ch);
+                match ch {
+                    'n' => cur.push('\n'),
+                    'r' => cur.push('\r'),
+                    't' => cur.push('\t'),
+                    '\\' => cur.push('\\'),
+                    '"' => cur.push('"'),
+                    '\'' => cur.push('\''),
+                    other => cur.push(other),
                 }
                 escaped = false;
                 continue;
             }
-            if ch == '\\' {
+            if in_quote && ch == '\\' {
                 escaped = true;
                 continue;
             }
-            if in_quote {
-                if ch == quote_char {
-                    in_quote = false;
-                } else if in_first {
-                    first.push(ch);
-                } else {
-                    second.push(ch);
-                }
-            } else if ch == '"' || ch == '\'' {
+            if !in_quote && (ch == '"' || ch == '\'') {
                 in_quote = true;
                 quote_char = ch;
-            } else if ch == ',' && in_first {
-                in_first = false;
-            } else if !in_first {
-                second.push(ch);
+                continue;
             }
+            if in_quote && ch == quote_char {
+                in_quote = false;
+                continue;
+            }
+            if ch == ',' && !in_quote {
+                out.push(cur.trim().to_string());
+                cur.clear();
+                continue;
+            }
+            cur.push(ch);
         }
-        (first.trim().to_string(), second.trim().to_string())
+        if !cur.trim().is_empty() || (!out.is_empty() && inner.trim_end().ends_with(',')) {
+            out.push(cur.trim().to_string());
+        }
+        out
+    }
+
+    fn parse_two_str_args(inner: &str) -> (String, String) {
+        let parts = Self::parse_args_list(inner);
+        (
+            parts.first().cloned().unwrap_or_default(),
+            parts.get(1).cloned().unwrap_or_default(),
+        )
     }
 
     fn eval_single_rust_stmt(&mut self, stmt: &str) -> String {
@@ -154,6 +179,9 @@ impl App {
                     ide::ops::open(\"path\")                   - 打开指定路径文件\n\
                     ide::ops::new_doc(\"title\", \"content\")    - 创建并切换到新文档\n\
                     ide::ops::edit(start, end, \"lines\")      - 替换当前文档指定行 (1-based)\n\
+                    ide::ops::insert(line, \"text\")           - 在指定 1-based 行前插入文本\n\
+                    ide::ops::append(\"text\")                 - 在当前文档末尾追加文本\n\
+                    ide::ops::delete_lines(start, end)       - 删除 1-based 起止行范围\n\
                     ide::ops::replace_all(\"from\", \"to\")      - 全文替换当前文档文本\n\
                     ide::ops::diff_docs(idx_a, idx_b)        - 比对两份已打开文档的差异 (Myers Diff)\n\
                     ide::ops::switch_tab(idx)                - 切换到指定标签索引\n\
@@ -282,21 +310,24 @@ impl App {
 
         if clean.starts_with("ide::ops::edit(") && clean.ends_with(')') {
             let inner = &clean["ide::ops::edit(".len()..clean.len() - 1];
-            let parts: Vec<&str> = inner.splitn(3, ',').collect();
+            let parts = Self::parse_args_list(inner);
             if parts.len() < 3 {
                 return "ide::ops::edit: requires (start_line, end_line, \"replacement_text\")"
                     .into();
             }
-            let start = match parts[0].trim().parse::<usize>() {
+            let start = match parts[0].parse::<usize>() {
                 Ok(n) => n,
                 Err(_) => return format!("ide::ops::edit: invalid start line: {}", parts[0]),
             };
-            let end = match parts[1].trim().parse::<usize>() {
+            let end = match parts[1].parse::<usize>() {
                 Ok(n) => n,
                 Err(_) => return format!("ide::ops::edit: invalid end line: {}", parts[1]),
             };
-            let repl = parts[2].trim().trim_matches('"').trim_matches('\'');
-            let repl_lines: Vec<String> = repl.lines().map(String::from).collect();
+            let repl = &parts[2];
+            let mut repl_lines: Vec<String> = repl.lines().map(String::from).collect();
+            if repl_lines.is_empty() && !repl.is_empty() {
+                repl_lines.push(repl.clone());
+            }
 
             if self.docs.is_empty() {
                 return "ide::ops::edit: no open document".into();
@@ -313,6 +344,91 @@ impl App {
             cur.dirty = true;
             return format!(
                 "ide::ops::edit: replaced lines {}..={} in active doc, total lines now {}",
+                start,
+                end,
+                cur.lines.len()
+            );
+        }
+
+        if clean.starts_with("ide::ops::insert(") && clean.ends_with(')') {
+            let inner = &clean["ide::ops::insert(".len()..clean.len() - 1];
+            let parts = Self::parse_args_list(inner);
+            if parts.len() < 2 {
+                return "ide::ops::insert: requires (line, \"text\")".into();
+            }
+            let line = match parts[0].parse::<usize>() {
+                Ok(n) => n,
+                Err(_) => return format!("ide::ops::insert: invalid line: {}", parts[0]),
+            };
+            if self.docs.is_empty() {
+                return "ide::ops::insert: no open document".into();
+            }
+            let ins_lines: Vec<String> = if parts[1].is_empty() {
+                vec![String::new()]
+            } else {
+                parts[1].lines().map(String::from).collect()
+            };
+            let cur = self.cur();
+            let idx = line.saturating_sub(1).min(cur.lines.len());
+            cur.lines.splice(idx..idx, ins_lines);
+            cur.dirty = true;
+            return format!(
+                "ide::ops::insert: inserted at L{}, total lines now {}",
+                line,
+                cur.lines.len()
+            );
+        }
+
+        if clean.starts_with("ide::ops::append(") && clean.ends_with(')') {
+            let inner = &clean["ide::ops::append(".len()..clean.len() - 1];
+            let parts = Self::parse_args_list(inner);
+            let Some(text) = parts.first() else {
+                return "ide::ops::append: requires (\"text\")".into();
+            };
+            if self.docs.is_empty() {
+                return "ide::ops::append: no open document".into();
+            }
+            let add_lines: Vec<String> = if text.is_empty() {
+                vec![String::new()]
+            } else {
+                text.lines().map(String::from).collect()
+            };
+            let cur = self.cur();
+            cur.lines.extend(add_lines);
+            cur.dirty = true;
+            return format!(
+                "ide::ops::append: appended to active doc, total lines now {}",
+                cur.lines.len()
+            );
+        }
+
+        if clean.starts_with("ide::ops::delete_lines(") && clean.ends_with(')') {
+            let inner = &clean["ide::ops::delete_lines(".len()..clean.len() - 1];
+            let parts = Self::parse_args_list(inner);
+            if parts.len() < 2 {
+                return "ide::ops::delete_lines: requires (start_line, end_line)".into();
+            }
+            let start = match parts[0].parse::<usize>() {
+                Ok(n) if n >= 1 => n,
+                _ => return format!("ide::ops::delete_lines: invalid start line: {}", parts[0]),
+            };
+            let end = match parts[1].parse::<usize>() {
+                Ok(n) if n >= start => n,
+                _ => return format!("ide::ops::delete_lines: invalid end line: {}", parts[1]),
+            };
+            if self.docs.is_empty() {
+                return "ide::ops::delete_lines: no open document".into();
+            }
+            let cur = self.cur();
+            let s_idx = start.saturating_sub(1).min(cur.lines.len());
+            let e_idx = end.min(cur.lines.len());
+            cur.lines.splice(s_idx..e_idx, std::iter::empty());
+            if cur.lines.is_empty() {
+                cur.lines.push(String::new());
+            }
+            cur.dirty = true;
+            return format!(
+                "ide::ops::delete_lines: removed L{}..={}, total lines now {}",
                 start,
                 end,
                 cur.lines.len()
@@ -679,6 +795,18 @@ mod tests {
         let collab = app.eval_rust_console_str("ide::ops::collab_count(10000)");
         assert!(collab.contains("10000"));
         assert_eq!(app.collab.agent_count, 10000);
+
+        // insert / append / delete_lines
+        let ins_out = app.eval_rust_console_str(
+            "ide::ops::insert(1, \"// header;\"); ide::ops::append(\"// footer\");",
+        );
+        assert!(ins_out.contains("inserted at L1"));
+        assert!(ins_out.contains("appended to active doc"));
+        let txt = app.eval_rust_console_str("ide::data::read()");
+        assert!(txt.contains("// header;"));
+        assert!(txt.contains("// footer"));
+        let del_out = app.eval_rust_console_str("ide::ops::delete_lines(1, 1)");
+        assert!(del_out.contains("removed L1..=1"));
 
         // diff docs
         app.new_doc();

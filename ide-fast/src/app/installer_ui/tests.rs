@@ -770,6 +770,7 @@ fn test_dry_run_finishes_without_background_thread_and_real_job_is_isolated() {
             remove_shortcuts: false,
             remove_path_and_reg: false,
             remove_user_data: false,
+            legacy_cleanup_dir: None,
         };
         let handle = std::thread::spawn(move || {
             super::deploy::run_deploy_job(InstallerMode::Uninstall, &plan)
@@ -778,5 +779,87 @@ fn test_dry_run_finishes_without_background_thread_and_real_job_is_isolated() {
         assert!(!dir.join("IDE1.0.exe").exists(), "IDE binary removed");
         assert!(dir.join("notes.txt").exists(), "user files never deleted");
         assert!(outcome.deferred_self_cleanup_dir.is_none());
+        assert!(outcome.log_path.is_some(), "uninstall must emit log_path");
     }
+}
+
+#[test]
+fn test_append_installer_log_and_legacy_dir_collection() {
+    let tmp = TempDirGuard::new("installer_log_legacy");
+    let new_dir = tmp.path().join("ProgramFiles_IDE10");
+    let old_dir = tmp.path().join("LocalAppData_IDE10");
+    let empty_dir = tmp.path().join("Empty_Other");
+    std::fs::create_dir_all(&new_dir).unwrap();
+    std::fs::create_dir_all(&old_dir).unwrap();
+    std::fs::create_dir_all(&empty_dir).unwrap();
+    std::fs::write(new_dir.join("IDE1.0.exe"), b"MZ").unwrap();
+    std::fs::write(old_dir.join("ide-fast.exe"), b"MZ").unwrap();
+
+    let log_file = super::deploy::append_installer_log(&new_dir, "ERROR", "simulated copy error")
+        .expect("installer log must be written");
+    assert!(log_file.is_file());
+    let log_body = std::fs::read_to_string(&log_file).unwrap();
+    assert!(log_body.contains("[ERROR] simulated copy error"));
+
+    let old_str = old_dir.to_string_lossy().to_string();
+    let collected = super::deploy::collect_legacy_install_dirs(
+        &new_dir,
+        Some(&old_str),
+        &[new_dir.clone(), old_dir.clone(), empty_dir],
+    );
+    assert_eq!(collected.len(), 1);
+    assert!(super::deploy::paths_equal_ci(&collected[0], &old_dir));
+
+    // MSI 从新目录启动 `--setup` 而注册表指向旧目录时，自动进入安装并标记清理旧目录
+    let new_exe = new_dir.join("IDE1.0.exe");
+    let ex = ExistingInstall {
+        install_dir: old_str.clone(),
+        installed_version: Some("0.8.9".into()),
+        has_desktop_shortcut: true,
+        has_start_menu_shortcut: true,
+        has_path_entry: true,
+        has_uninstall_reg: true,
+    };
+    let mut s = InstallerState::default();
+    s.apply_open_mode(InstallerLaunchMode::Auto, Some(ex), Some(&new_exe), None);
+    assert_eq!(s.mode, InstallerMode::Install);
+    assert_eq!(s.target_dir, new_dir.to_string_lossy().to_string());
+    assert_eq!(s.legacy_cleanup_dir.as_deref(), Some(old_str.as_str()));
+}
+
+#[test]
+fn test_stylized_progress_bars_in_update_and_cards() {
+    let ctx = egui::Context::default();
+    let mut a = App::build(vec![], None, Trace::new(), Settings::default(), false);
+    a.upd.open = true;
+    a.upd.phase = crate::app::updateui::Phase::Checking;
+    let mut out = ctx.run_ui(Default::default(), |_| {
+        a.upd_window(&ctx);
+    });
+    out.textures_delta.clear();
+
+    // 验证确定与不确定两种风格化进度条均能零 panic 渲染
+    let mut out2 = ctx.run_ui(Default::default(), |ui| {
+        let r1 = egui::Rect::from_min_size(egui::pos2(10.0, 10.0), egui::vec2(260.0, 18.0));
+        let r2 = egui::Rect::from_min_size(egui::pos2(10.0, 40.0), egui::vec2(260.0, 18.0));
+        cards::paint_comic_progress_bar(
+            ui.painter(),
+            r1,
+            Some(0.65),
+            Color32::from_rgb(2, 132, 199),
+            Color32::from_rgb(56, 189, 248),
+            Color32::from_rgb(125, 211, 252),
+            1.2,
+        );
+        cards::paint_comic_progress_bar(
+            ui.painter(),
+            r2,
+            None,
+            Color32::from_rgb(2, 132, 199),
+            Color32::from_rgb(56, 189, 248),
+            Color32::from_rgb(125, 211, 252),
+            2.4,
+        );
+    });
+    out2.textures_delta.clear();
 }

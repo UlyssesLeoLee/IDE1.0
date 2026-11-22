@@ -12,6 +12,7 @@ import {
   splitLines,
   threeWayMerge,
 } from "./_merge.js";
+import { evalRustScriptWithStore } from "./_rust_eval.js";
 
 const { Pool } = pg;
 
@@ -770,7 +771,11 @@ export class PgDurableStore {
         deriveCandidateFn: (baseContent) => {
           const lines = splitLines(baseContent);
           const s = Math.max(0, Math.min(lines.length, (Number(startLine) || 1) - 1));
-          const e = Math.max(s, Math.min(lines.length, Number(endLine) || s));
+          const rawEnd = Number(endLine);
+          const e =
+            Number.isFinite(rawEnd) && rawEnd < (Number(startLine) || 1)
+              ? s
+              : Math.max(s, Math.min(lines.length, Number.isFinite(rawEnd) ? rawEnd : s));
           const normalizedRepl =
             replacement && !replacement.endsWith("\n") ? `${replacement}\n` : String(replacement ?? "");
           const next = lines.slice(0, s).join("") + normalizedRepl + lines.slice(e).join("");
@@ -887,17 +892,8 @@ export class PgDurableStore {
     return res.rows;
   }
 
-  async evalRustScript(principal, script) {
-    const clean = String(script || "").trim();
-    if (clean === "ide::context::status()" || clean === "ide::context::status();") {
-      const files = await this.listFiles(principal);
-      return `ide::context: active_documents=${files.length}, tenant=${principal.tenantId}, backend="IDE1.0 Durable MCP (Postgres)"`;
-    }
-    if (/^ide::data::(docs|files)\(\);?$/i.test(clean)) {
-      const files = await this.listFiles(principal);
-      return JSON.stringify(files, null, 2);
-    }
-    return `Safe read-only console executed in tenant '${principal.tenantId}'`;
+  async evalRustScript(principal, script, agentId = null) {
+    return await evalRustScriptWithStore(this, principal, script, agentId);
   }
 }
 

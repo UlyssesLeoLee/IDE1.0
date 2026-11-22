@@ -97,6 +97,10 @@ pub struct InstallerState {
     pub remove_path_and_reg: bool,
     pub remove_user_data: bool,
     pub deferred_self_cleanup_dir: Option<String>,
+    /// 检测到需要随本次部署自动卸载清理的旧版本安装目录
+    pub legacy_cleanup_dir: Option<String>,
+    /// 本次部署/修复/卸载写入的诊断日志路径
+    pub log_path: Option<String>,
     /// 测试/预览干跑标记：开启时绝不读写注册表、快捷方式、PATH 或删除主机文件
     pub dry_run: bool,
     pub install_progress: f32,
@@ -138,6 +142,8 @@ impl Default for InstallerState {
             remove_path_and_reg: true,
             remove_user_data: false,
             deferred_self_cleanup_dir: None,
+            legacy_cleanup_dir: None,
+            log_path: None,
             dry_run: false,
             install_progress: 0.0,
             status_msg: None,
@@ -169,6 +175,8 @@ impl InstallerState {
         self.status_msg = None;
         self.deploy_rx = None;
         self.deferred_self_cleanup_dir = None;
+        self.legacy_cleanup_dir = None;
+        self.log_path = None;
         self.existing = existing.clone();
 
         match launch_mode {
@@ -194,7 +202,28 @@ impl InstallerState {
                 self.desktop_shortcut = true;
             }
             InstallerLaunchMode::Auto => {
+                let cur_parent = cur_exe
+                    .and_then(|p| p.parent())
+                    .filter(|p| !p.as_os_str().is_empty());
                 if let Some(ex) = &existing {
+                    let cur_is_different_installed = cur_parent.is_some_and(|parent| {
+                        !deploy::paths_equal_ci(parent, std::path::Path::new(&ex.install_dir))
+                            && deploy::dir_has_ide_binary(parent)
+                    });
+                    if cur_is_different_installed {
+                        // 当前从新安装的 MSI 目录拉起 `--setup`，旧目录仍残留历史版本：
+                        // 将默认目标锁定为当前所在新目录，并记录旧目录以便安装时自动卸载清理
+                        if let Some(parent) = cur_parent {
+                            self.target_dir = parent.to_string_lossy().to_string();
+                        }
+                        self.legacy_cleanup_dir = Some(ex.install_dir.clone());
+                        self.existing = None;
+                        self.mode = InstallerMode::Install;
+                        self.step = InstallerStep::Agreement;
+                        self.agreement_scrolled_to_bottom = false;
+                        self.agreement_accepted = false;
+                        return;
+                    }
                     self.step = InstallerStep::Options;
                     self.mode = InstallerMode::Maintenance;
                     self.target_dir = ex.install_dir.clone();
@@ -222,6 +251,8 @@ impl InstallerState {
                         if let Some(lad) = local_app_data {
                             self.target_dir = lad.join("IDE1.0").to_string_lossy().to_string();
                         }
+                    } else if let Some(parent) = cur_parent {
+                        self.target_dir = parent.to_string_lossy().to_string();
                     }
                 }
             }
@@ -358,11 +389,13 @@ impl App {
                 let scheduled =
                     deploy::trigger_deferred_self_cleanup_if_needed(&mut self.installer);
                 if scheduled || standalone {
+                    self.force_exit = true;
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 } else {
                     self.installer.open = false;
                 }
             } else if standalone {
+                self.force_exit = true;
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             } else {
                 self.installer.open = false;

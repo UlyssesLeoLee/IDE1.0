@@ -247,75 +247,15 @@ impl App {
             pos2(card_rect.left() + 16.0, card_rect.top() + 41.0),
             pos2(card_rect.right() - 16.0, card_rect.top() + 59.0),
         );
-        bp.rect_filled(track_rect, 9.0, Color32::from_rgb(11, 17, 32));
-        bp.rect_stroke(
+        paint_comic_progress_bar(
+            bp,
             track_rect,
-            9.0,
-            Stroke::new(1.5, Color32::from_rgb(38, 49, 68)),
-            egui::StrokeKind::Inside,
+            Some(progress),
+            accent_primary,
+            accent_bright,
+            accent_glow,
+            time,
         );
-
-        for frac in [0.25_f32, 0.50, 0.75] {
-            let tx = track_rect.left() + track_rect.width() * frac;
-            bp.line_segment(
-                [
-                    pos2(tx, track_rect.top() + 3.0),
-                    pos2(tx, track_rect.bottom() - 3.0),
-                ],
-                Stroke::new(1.0, Color32::from_rgb(30, 41, 59)),
-            );
-        }
-
-        let inner = track_rect.shrink(2.0);
-        let fill_w = inner.width() * progress;
-        if fill_w > 0.5 {
-            let fill_rect = Rect::from_min_size(inner.min, vec2(fill_w, inner.height()));
-            let fill_round = (inner.height() * 0.5).min(fill_w * 0.5);
-            bp.rect_filled(fill_rect, fill_round, accent_primary);
-
-            let clip_p = bp.with_clip_rect(fill_rect);
-            clip_p.rect_filled(
-                Rect::from_min_size(
-                    fill_rect.min,
-                    vec2(fill_rect.width(), fill_rect.height() * 0.42),
-                ),
-                fill_round,
-                Color32::from_rgba_unmultiplied(
-                    accent_glow.r(),
-                    accent_glow.g(),
-                    accent_glow.b(),
-                    72,
-                ),
-            );
-            let stripe_step = 18.0_f32;
-            let stripe_shift = (time * 48.0) % stripe_step;
-            let mut sx = fill_rect.left() - fill_rect.height() - stripe_step + stripe_shift;
-            while sx < fill_rect.right() + stripe_step {
-                clip_p.line_segment(
-                    [
-                        pos2(sx, fill_rect.bottom() + 2.0),
-                        pos2(sx + fill_rect.height() * 0.85, fill_rect.top() - 2.0),
-                    ],
-                    Stroke::new(
-                        3.0,
-                        Color32::from_rgba_unmultiplied(
-                            accent_glow.r(),
-                            accent_glow.g(),
-                            accent_glow.b(),
-                            70,
-                        ),
-                    ),
-                );
-                sx += stripe_step;
-            }
-            clip_p.line_segment(
-                [
-                    pos2(fill_rect.right() - 1.0, fill_rect.top()),
-                    pos2(fill_rect.right() - 1.0, fill_rect.bottom()),
-                ],
-                Stroke::new(2.0, accent_glow),
-            );
-        }
 
         let dir_icon_rect = Rect::from_center_size(
             pos2(card_rect.left() + 22.0, card_rect.top() + 78.0),
@@ -467,6 +407,7 @@ impl App {
                                     crate::i18n::trz("无法启动后台部署线程")
                                 )),
                                 deferred_self_cleanup_dir: None,
+                                log_path: None,
                             },
                         );
                         return;
@@ -483,6 +424,7 @@ impl App {
                             crate::i18n::trz("后台部署线程异常退出，请重试").to_string(),
                         ),
                         deferred_self_cleanup_dir: None,
+                        log_path: None,
                     },
                 ),
                 _ => ui
@@ -496,11 +438,13 @@ impl App {
     fn finish_deploy(&mut self, mode: InstallerMode, outcome: DeployOutcome) {
         self.installer.deploy_rx = None;
         self.installer.status_msg = outcome.status_msg;
+        self.installer.log_path = outcome.log_path;
         if outcome.deferred_self_cleanup_dir.is_some() {
             self.installer.deferred_self_cleanup_dir = outcome.deferred_self_cleanup_dir;
         }
         match mode {
             InstallerMode::Install | InstallerMode::Maintenance | InstallerMode::Repair => {
+                self.installer.legacy_cleanup_dir = None;
                 self.sync_tray_after_install();
             }
             InstallerMode::Uninstall => {
@@ -827,6 +771,7 @@ impl App {
         if finish_clicked {
             let scheduled = trigger_deferred_self_cleanup_if_needed(&mut self.installer);
             if standalone || scheduled {
+                self.force_exit = true;
                 ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
             } else {
                 self.installer.open = false;
@@ -1059,8 +1004,75 @@ pub(super) fn launch_installed_binary(target_dir: &str) {
     let _ = std::process::Command::new(run_exe).spawn();
 }
 
+/// 追加一条安装/修复/卸载运行或报错日志到 `<target_dir>\logs\installer.log`（不可写时降级到全局日志目录）
+pub(super) fn append_installer_log(target_dir: &Path, level: &str, msg: &str) -> Option<PathBuf> {
+    use std::io::Write;
+    let trace_line = format!("[installer:{level}] {msg}");
+    crate::diag_log::record_trace_step(&trace_line);
+
+    let line = format!(
+        "[{}] [v{}] [{}] {}\n",
+        chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+        env!("CARGO_PKG_VERSION"),
+        level,
+        msg
+    );
+
+    let mut candidates = Vec::new();
+    if !target_dir.as_os_str().is_empty() {
+        candidates.push(target_dir.join("logs").join("installer.log"));
+    }
+    candidates.push(crate::diag_log::get_log_dir().join("installer.log"));
+
+    for log_path in candidates {
+        if let Some(parent) = log_path.parent() {
+            if std::fs::create_dir_all(parent).is_err() {
+                continue;
+            }
+        }
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_path)
+        {
+            if f.write_all(line.as_bytes()).is_ok() {
+                return Some(log_path);
+            }
+        }
+    }
+    None
+}
+
+/// 收集除当前 `target_dir` 外需要自动卸载清理的旧版本安装目录（去重且忽略不存在或不含 IDE 二进制的目录）
+pub(super) fn collect_legacy_install_dirs(
+    target_dir: &Path,
+    legacy_hint: Option<&str>,
+    extra_candidates: &[PathBuf],
+) -> Vec<PathBuf> {
+    let mut result: Vec<PathBuf> = Vec::new();
+    let mut push_if_legacy = |cand: &Path| {
+        if cand.as_os_str().is_empty()
+            || paths_equal_ci(cand, target_dir)
+            || !dir_has_ide_binary(cand)
+        {
+            return;
+        }
+        if !result.iter().any(|existing| paths_equal_ci(existing, cand)) {
+            result.push(cand.to_path_buf());
+        }
+    };
+
+    if let Some(hint) = legacy_hint {
+        push_if_legacy(Path::new(hint));
+    }
+    for cand in extra_candidates {
+        push_if_legacy(cand);
+    }
+    result
+}
+
 #[cfg(windows)]
-fn register_uninstall_entry(target_str: &str, dest_str: &str) {
+fn register_uninstall_entry(target_str: &str, dest_str: &str) -> Result<(), String> {
     let uninstall_cmd = format!("\"{dest_str}\" --uninstall");
     let modify_cmd = format!("\"{dest_str}\" --setup");
     for reg_args in [
@@ -1164,8 +1176,20 @@ fn register_uninstall_entry(target_str: &str, dest_str: &str) {
             "/f",
         ][..],
     ] {
-        let _ = headless_cmd("reg").args(reg_args).output();
+        let out = headless_cmd("reg")
+            .args(reg_args)
+            .output()
+            .map_err(|e| format!("reg {} failed: {e}", reg_args.get(3).unwrap_or(&"")))?;
+        if !out.status.success() {
+            return Err(format!(
+                "reg {} exited {:?}: {}",
+                reg_args.get(3).unwrap_or(&""),
+                out.status.code(),
+                String::from_utf8_lossy(&out.stderr).trim()
+            ));
+        }
     }
+    Ok(())
 }
 
 /// 部署任务快照: 后台线程只持有纯数据，绝不触碰 UI 状态 (界面线程零阻塞)
@@ -1177,6 +1201,7 @@ pub(super) struct DeployPlan {
     pub remove_shortcuts: bool,
     pub remove_path_and_reg: bool,
     pub remove_user_data: bool,
+    pub legacy_cleanup_dir: Option<String>,
 }
 
 impl DeployPlan {
@@ -1188,6 +1213,7 @@ impl DeployPlan {
             remove_shortcuts: inst.remove_shortcuts,
             remove_path_and_reg: inst.remove_path_and_reg,
             remove_user_data: inst.remove_user_data,
+            legacy_cleanup_dir: inst.legacy_cleanup_dir.clone(),
         }
     }
 }
@@ -1197,6 +1223,7 @@ impl DeployPlan {
 pub struct DeployOutcome {
     pub status_msg: Option<String>,
     pub deferred_self_cleanup_dir: Option<String>,
+    pub log_path: Option<String>,
 }
 
 /// 在后台线程执行真实系统部署 / 修复 / 卸载 (调用方保证非 dry_run)
@@ -1288,15 +1315,20 @@ fn stop_other_ide_instances_in_dir(target_dir: &str) {
 }
 
 #[cfg(windows)]
-fn create_shortcut(lnk: &Path, dest: &str, dir: &str) {
-    let _ = run_ps_static(
+fn create_shortcut(lnk: &Path, dest: &str, dir: &str) -> Result<(), String> {
+    if let Some(parent) = lnk.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    run_ps_static(
         PS_CREATE_SHORTCUT,
         &[
             ("IDE10_LNK", &lnk.to_string_lossy()),
             ("IDE10_DEST", dest),
             ("IDE10_DIR", dir),
         ],
-    );
+    )
+    .map(|_| ())
+    .ok_or_else(|| format!("create_shortcut failed for {}", lnk.display()))
 }
 
 #[cfg(windows)]
@@ -1312,17 +1344,98 @@ fn grant_logs_dir_permissions(dir: &Path) {
         .output();
 }
 
+#[cfg(windows)]
+fn uninstall_legacy_directories(target: &Path, plan: &DeployPlan, out: &mut DeployOutcome) {
+    let mut extras = Vec::new();
+    if let Some(lad) = std::env::var_os("LOCALAPPDATA") {
+        extras.push(PathBuf::from(lad).join("IDE1.0"));
+    }
+    let pf = PathBuf::from(r"C:\Program Files\IDE1.0");
+    extras.push(pf);
+    if let Ok(reg_out) = headless_cmd("reg")
+        .args(["query", UNINSTALL_REG_KEY])
+        .output()
+    {
+        if reg_out.status.success() {
+            if let Some((loc, _)) =
+                parse_reg_query_uninstall(&String::from_utf8_lossy(&reg_out.stdout))
+            {
+                extras.push(PathBuf::from(loc));
+            }
+        }
+    }
+
+    let legacy_dirs =
+        collect_legacy_install_dirs(target, plan.legacy_cleanup_dir.as_deref(), &extras);
+    let cur_exe = std::env::current_exe().ok();
+    for legacy in legacy_dirs {
+        let legacy_str = legacy.to_string_lossy().to_string();
+        let _ = append_installer_log(
+            target,
+            "INFO",
+            &format!("Auto-uninstalling legacy installation at {legacy_str}"),
+        );
+        stop_other_ide_instances_in_dir(&legacy_str);
+        let rep = remove_ide_files_in_dir(&legacy, cur_exe.as_deref());
+        let _ = append_installer_log(
+            target,
+            if rep.permission_denied { "WARN" } else { "INFO" },
+            &format!(
+                "Legacy cleanup for {legacy_str}: removed_files={}, dir_removed={}, permission_denied={}",
+                rep.removed_files, rep.dir_removed, rep.permission_denied
+            ),
+        );
+        let legacy_for_path = legacy_str.clone();
+        let _ = update_user_path(|cur| {
+            if path_contains_dir(cur, &legacy_for_path) {
+                remove_dir_from_path_str(cur, &legacy_for_path)
+            } else {
+                cur.to_string()
+            }
+        });
+        if rep.permission_denied && out.status_msg.is_none() {
+            out.status_msg = Some(format!(
+                "{}: {legacy_str}",
+                crate::i18n::trz("部分旧版本文件受权限保护未能完全清除，请手动移除")
+            ));
+        }
+    }
+}
+
 /// 执行真正的系统物理部署与快捷方式/PATH/注册表配置 (install 与 repair 共用)
 fn execute_physical_deployment(plan: &DeployPlan, out: &mut DeployOutcome) {
-    #[cfg(windows)]
-    stop_other_ide_instances_in_dir(&plan.target_dir);
-
     let target = Path::new(&plan.target_dir);
+    if let Some(p) = append_installer_log(
+        target,
+        "INFO",
+        &format!("Starting deployment to {}", target.display()),
+    ) {
+        out.log_path = Some(p.to_string_lossy().to_string());
+    }
+
+    #[cfg(windows)]
+    {
+        stop_other_ide_instances_in_dir(&plan.target_dir);
+        uninstall_legacy_directories(target, plan, out);
+    }
+
     if let Err(e) = std::fs::create_dir_all(target) {
-        out.status_msg = Some(format!(
+        let msg = format!(
             "{}: {e}",
             crate::i18n::trz("无法创建安装目录（可能需要管理员权限）")
-        ));
+        );
+        if let Some(p) =
+            append_installer_log(target, "ERROR", &format!("create_dir_all failed: {e}"))
+        {
+            out.log_path = Some(p.to_string_lossy().to_string());
+            out.status_msg = Some(format!(
+                "{msg} ({}: {})",
+                crate::i18n::trz("日志"),
+                p.display()
+            ));
+        } else {
+            out.status_msg = Some(msg);
+        }
         return;
     }
 
@@ -1331,6 +1444,9 @@ fn execute_physical_deployment(plan: &DeployPlan, out: &mut DeployOutcome) {
     #[cfg(windows)]
     {
         grant_logs_dir_permissions(&logs_dir);
+    }
+    if let Some(p) = append_installer_log(target, "INFO", "Target & logs directory prepared") {
+        out.log_path = Some(p.to_string_lossy().to_string());
     }
 
     let dest_exe = target.join("IDE1.0.exe");
@@ -1342,9 +1458,30 @@ fn execute_physical_deployment(plan: &DeployPlan, out: &mut DeployOutcome) {
                 } else {
                     crate::i18n::trz("复制主程序到目标目录失败")
                 };
+                let _ = append_installer_log(
+                    target,
+                    "ERROR",
+                    &format!(
+                        "copy {} -> {} failed: {e}",
+                        cur_exe.display(),
+                        dest_exe.display()
+                    ),
+                );
                 out.status_msg = Some(format!("{hint}: {e}"));
+            } else {
+                let _ = append_installer_log(
+                    target,
+                    "INFO",
+                    &format!("Copied {} -> {}", cur_exe.display(), dest_exe.display()),
+                );
             }
-            let _ = std::fs::copy(&cur_exe, target.join("ide-fast.exe"));
+            if let Err(e) = std::fs::copy(&cur_exe, target.join("ide-fast.exe")) {
+                let _ = append_installer_log(
+                    target,
+                    "WARN",
+                    &format!("copy auxiliary ide-fast.exe failed: {e}"),
+                );
+            }
         }
     }
     #[cfg(windows)]
@@ -1355,30 +1492,55 @@ fn execute_physical_deployment(plan: &DeployPlan, out: &mut DeployOutcome) {
         if plan.desktop_shortcut {
             if let Some(user_prof) = std::env::var_os("USERPROFILE") {
                 let desk = PathBuf::from(user_prof).join("Desktop").join("IDE1.0.lnk");
-                create_shortcut(&desk, &dest_str, &target_str);
+                if let Err(e) = create_shortcut(&desk, &dest_str, &target_str) {
+                    let _ = append_installer_log(target, "WARN", &e);
+                }
             }
         }
 
         if let Some(app_data) = std::env::var_os("APPDATA") {
             let start_m =
                 PathBuf::from(app_data).join(r"Microsoft\Windows\Start Menu\Programs\IDE1.0.lnk");
-            create_shortcut(&start_m, &dest_str, &target_str);
+            if let Err(e) = create_shortcut(&start_m, &dest_str, &target_str) {
+                let _ = append_installer_log(target, "WARN", &e);
+            }
         }
 
         if plan.add_path {
             let ok = update_user_path(|cur| add_dir_to_path_str(cur, &target_str));
-            if !ok && out.status_msg.is_none() {
-                out.status_msg =
-                    Some(crate::i18n::trz("未能更新用户 PATH，请手动添加安装目录").to_string());
+            if !ok {
+                let _ = append_installer_log(target, "ERROR", "Failed updating user PATH");
+                if out.status_msg.is_none() {
+                    out.status_msg =
+                        Some(crate::i18n::trz("未能更新用户 PATH，请手动添加安装目录").to_string());
+                }
             }
         }
 
-        register_uninstall_entry(&target_str, &dest_str);
+        if let Err(e) = register_uninstall_entry(&target_str, &dest_str) {
+            let _ = append_installer_log(target, "WARN", &e);
+        }
+    }
+
+    if let Some(msg) = out.status_msg.clone() {
+        if let Some(ref lp) = out.log_path {
+            out.status_msg = Some(format!("{msg} ({}: {lp})", crate::i18n::trz("日志")));
+        }
+    } else if let Some(p) =
+        append_installer_log(target, "INFO", "Deployment completed successfully")
+    {
+        out.log_path = Some(p.to_string_lossy().to_string());
     }
 }
 
 /// 修复安装：先安全停止旧进程，再重部署主程序并重建快捷方式、PATH 与注册表
 fn execute_physical_repair(plan: &DeployPlan, out: &mut DeployOutcome) {
+    let target = Path::new(&plan.target_dir);
+    let _ = append_installer_log(
+        target,
+        "INFO",
+        &format!("Starting repair at {}", target.display()),
+    );
     #[cfg(windows)]
     stop_other_ide_instances_in_dir(&plan.target_dir);
     execute_physical_deployment(plan, out);
@@ -1386,6 +1548,14 @@ fn execute_physical_repair(plan: &DeployPlan, out: &mut DeployOutcome) {
 
 /// 卸载安装：停止其它实例、移除快捷方式、PATH、注册表项与程序二进制（支持可选删配置与自删除延迟清理）
 fn execute_physical_uninstall(plan: &DeployPlan, out: &mut DeployOutcome) {
+    let target = Path::new(&plan.target_dir);
+    if let Some(p) = append_installer_log(
+        target,
+        "INFO",
+        &format!("Starting uninstall from {}", target.display()),
+    ) {
+        out.log_path = Some(p.to_string_lossy().to_string());
+    }
     #[cfg(windows)]
     {
         stop_other_ide_instances_in_dir(&plan.target_dir);
@@ -1393,27 +1563,50 @@ fn execute_physical_uninstall(plan: &DeployPlan, out: &mut DeployOutcome) {
         if plan.remove_shortcuts {
             if let Some(user_prof) = std::env::var_os("USERPROFILE") {
                 let desk = PathBuf::from(user_prof).join("Desktop").join("IDE1.0.lnk");
-                let _ = std::fs::remove_file(desk);
+                if let Err(e) = std::fs::remove_file(&desk) {
+                    if e.kind() != std::io::ErrorKind::NotFound {
+                        let _ = append_installer_log(
+                            target,
+                            "WARN",
+                            &format!("remove desktop shortcut failed: {e}"),
+                        );
+                    }
+                }
             }
             if let Some(app_data) = std::env::var_os("APPDATA") {
                 let start_m = PathBuf::from(app_data)
                     .join(r"Microsoft\Windows\Start Menu\Programs\IDE1.0.lnk");
-                let _ = std::fs::remove_file(start_m);
+                if let Err(e) = std::fs::remove_file(&start_m) {
+                    if e.kind() != std::io::ErrorKind::NotFound {
+                        let _ = append_installer_log(
+                            target,
+                            "WARN",
+                            &format!("remove start menu shortcut failed: {e}"),
+                        );
+                    }
+                }
             }
         }
 
         if plan.remove_path_and_reg {
-            let target = plan.target_dir.clone();
+            let target_str = plan.target_dir.clone();
             let ok = update_user_path(|cur| {
-                if path_contains_dir(cur, &target) {
-                    remove_dir_from_path_str(cur, &target)
+                if path_contains_dir(cur, &target_str) {
+                    remove_dir_from_path_str(cur, &target_str)
                 } else {
                     cur.to_string()
                 }
             });
-            if !ok && out.status_msg.is_none() {
-                out.status_msg =
-                    Some(crate::i18n::trz("未能更新用户 PATH，请手动移除安装目录").to_string());
+            if !ok {
+                let _ = append_installer_log(
+                    target,
+                    "ERROR",
+                    "Failed removing directory from user PATH during uninstall",
+                );
+                if out.status_msg.is_none() {
+                    out.status_msg =
+                        Some(crate::i18n::trz("未能更新用户 PATH，请手动移除安装目录").to_string());
+                }
             }
 
             for reg_key in [UNINSTALL_REG_KEY, SHORTCUT_REG_KEY] {
@@ -1422,11 +1615,16 @@ fn execute_physical_uninstall(plan: &DeployPlan, out: &mut DeployOutcome) {
         }
 
         let cur_exe = std::env::current_exe().ok();
-        let report = remove_ide_files_in_dir(Path::new(&plan.target_dir), cur_exe.as_deref());
+        let report = remove_ide_files_in_dir(target, cur_exe.as_deref());
         if report.deferred_self {
             out.deferred_self_cleanup_dir = Some(plan.target_dir.clone());
         }
         if report.permission_denied {
+            let _ = append_installer_log(
+                target,
+                "ERROR",
+                "Permission denied deleting protected files during uninstall",
+            );
             out.status_msg =
                 Some(crate::i18n::trz("部分受保护程序文件需要管理员权限才能删除").to_string());
         }

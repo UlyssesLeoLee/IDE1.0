@@ -32,25 +32,33 @@ pub struct RustConsoleEvaluator;
 impl RustConsoleEvaluator {
     /// 在单一权威 `DocumentStore` 上执行一段符合 Blender `ide::*` 规范的脚本。
     pub fn eval(store: &DocumentStore, script: &str) -> ScriptResult {
+        Self::eval_with_agent(store, script, "console")
+    }
+
+    /// 指定代理身份执行 Blender 风格 Rust 脚本，保留完整协同归属与历史记录。
+    pub fn eval_with_agent(store: &DocumentStore, script: &str, agent_id: &str) -> ScriptResult {
+        let actor = if agent_id.trim().is_empty() {
+            "console"
+        } else {
+            agent_id.trim()
+        };
         let mut steps = Vec::new();
         let mut all_ok = true;
 
-        for raw_line in script.lines() {
-            for stmt in raw_line.split(';') {
-                let s = stmt.trim();
-                if s.is_empty() || s.starts_with("//") {
-                    continue;
-                }
-                let (ok, out) = Self::eval_statement(store, s);
-                if !ok {
-                    all_ok = false;
-                }
-                steps.push(ScriptStep {
-                    expr: s.to_string(),
-                    ok,
-                    output: out,
-                });
+        for stmt in Self::split_statements(script) {
+            let s = stmt.trim();
+            if s.is_empty() {
+                continue;
             }
+            let (ok, out) = Self::eval_statement(store, s, actor);
+            if !ok {
+                all_ok = false;
+            }
+            steps.push(ScriptStep {
+                expr: s.to_string(),
+                ok,
+                output: out,
+            });
         }
 
         let summary = if steps.is_empty() {
@@ -72,7 +80,61 @@ impl RustConsoleEvaluator {
         }
     }
 
-    fn eval_statement(store: &DocumentStore, stmt: &str) -> (bool, String) {
+    /// 引号与注释感知的语句切分器：保留字符串字面量内的分号与换行，跳过单行 `//` 注释。
+    pub fn split_statements(script: &str) -> Vec<String> {
+        let mut stmts = Vec::new();
+        let mut cur = String::new();
+        let mut in_quote = false;
+        let mut quote_char = ' ';
+        let mut escaped = false;
+        let mut chars = script.chars().peekable();
+
+        while let Some(ch) = chars.next() {
+            if escaped {
+                cur.push(ch);
+                escaped = false;
+                continue;
+            }
+            if in_quote {
+                if ch == '\\' {
+                    cur.push(ch);
+                    escaped = true;
+                } else {
+                    if ch == quote_char {
+                        in_quote = false;
+                    }
+                    cur.push(ch);
+                }
+                continue;
+            }
+            if ch == '/' && chars.peek() == Some(&'/') && cur.trim().is_empty() {
+                for c in chars.by_ref() {
+                    if c == '\n' {
+                        break;
+                    }
+                }
+                continue;
+            }
+            if ch == '"' || ch == '\'' {
+                in_quote = true;
+                quote_char = ch;
+                cur.push(ch);
+            } else if ch == ';' || ch == '\n' || ch == '\r' {
+                if !cur.trim().is_empty() {
+                    stmts.push(cur.trim().to_string());
+                }
+                cur.clear();
+            } else {
+                cur.push(ch);
+            }
+        }
+        if !cur.trim().is_empty() {
+            stmts.push(cur.trim().to_string());
+        }
+        stmts
+    }
+
+    fn eval_statement(store: &DocumentStore, stmt: &str, actor: &str) -> (bool, String) {
         let clean = stmt.trim().trim_end_matches(';');
         if clean.eq_ignore_ascii_case("ide::context::help()")
             || clean.eq_ignore_ascii_case("ide::ops::help()")
@@ -108,16 +170,38 @@ impl RustConsoleEvaluator {
         }
 
         if let Some(args) = Self::strip_call(clean, "ide::data::read") {
-            let arg = args.trim().trim_matches('"');
-            return match store.read_doc(arg, None, None) {
+            let parts = Self::parse_args(args);
+            let Some(file_id) = parts.first().filter(|s| !s.is_empty()) else {
+                return (false, "ide::data::read requires 1 arg: (file_id)".into());
+            };
+            return match store.read_doc(file_id, None, None) {
                 Ok(v) => (true, v["content"].as_str().unwrap_or("").to_string()),
                 Err(e) => (false, e),
             };
         }
 
+        if let Some(args) = Self::strip_call(clean, "ide::data::lines") {
+            let parts = Self::parse_args(args);
+            if parts.len() < 3 {
+                return (
+                    false,
+                    "ide::data::lines requires 3 args: (file_id, start_line, end_line)".into(),
+                );
+            }
+            let s = parts[1].parse::<usize>().ok();
+            let e = parts[2].parse::<usize>().ok();
+            return match store.read_doc(&parts[0], s, e) {
+                Ok(v) => (true, v["content"].as_str().unwrap_or("").to_string()),
+                Err(err) => (false, err),
+            };
+        }
+
         if let Some(args) = Self::strip_call(clean, "ide::data::history") {
-            let arg = args.trim().trim_matches('"');
-            return match store.doc_history(arg) {
+            let parts = Self::parse_args(args);
+            let Some(file_id) = parts.first().filter(|s| !s.is_empty()) else {
+                return (false, "ide::data::history requires 1 arg: (file_id)".into());
+            };
+            return match store.doc_history(file_id) {
                 Ok(v) => (
                     true,
                     serde_json::to_string_pretty(&v["history"]).unwrap_or_default(),
@@ -126,10 +210,10 @@ impl RustConsoleEvaluator {
             };
         }
 
-        Self::eval_ops_statement(store, clean)
+        Self::eval_ops_statement(store, clean, actor)
     }
 
-    fn eval_ops_statement(store: &DocumentStore, clean: &str) -> (bool, String) {
+    fn eval_ops_statement(store: &DocumentStore, clean: &str, actor: &str) -> (bool, String) {
         if let Some(args) = Self::strip_call(clean, "ide::ops::open") {
             let parts = Self::parse_args(args);
             if parts.len() < 3 {
@@ -138,7 +222,7 @@ impl RustConsoleEvaluator {
                     "ide::ops::open requires 3 args: (file_id, language, content)".into(),
                 );
             }
-            let v = store.open_doc(&parts[0], &parts[2], &parts[1], "rust_script", "console");
+            let v = store.open_doc(&parts[0], &parts[2], &parts[1], "rust_script", actor);
             return (
                 v["ok"] != false,
                 format!(
@@ -160,13 +244,24 @@ impl RustConsoleEvaluator {
                         .into(),
                 );
             }
-            let s: usize = parts[1].parse().unwrap_or(1);
-            let e: usize = parts[2].parse().unwrap_or(s);
+            let Ok(s) = parts[1].parse::<usize>() else {
+                return (
+                    false,
+                    format!("ide::ops::edit: invalid start_line '{}'", parts[1]),
+                );
+            };
+            let Ok(e) = parts[2].parse::<usize>() else {
+                return (
+                    false,
+                    format!("ide::ops::edit: invalid end_line '{}'", parts[2]),
+                );
+            };
+            let base_rev = parts.get(4).and_then(|v| v.parse::<u64>().ok());
             let req = EditRequest {
                 file_id: parts[0].clone(),
                 provider: "rust_script".into(),
-                agent_id: "console".into(),
-                base_revision: None,
+                agent_id: actor.into(),
+                base_revision: base_rev,
                 base_content_hash: None,
                 fencing_token: None,
                 start_line: s,
@@ -189,6 +284,217 @@ impl RustConsoleEvaluator {
             };
         }
 
+        if let Some(args) = Self::strip_call(clean, "ide::ops::insert") {
+            let parts = Self::parse_args(args);
+            if parts.len() < 3 {
+                return (
+                    false,
+                    "ide::ops::insert requires 3 args: (file_id, line, text)".into(),
+                );
+            }
+            let Ok(line) = parts[1].parse::<usize>() else {
+                return (
+                    false,
+                    format!("ide::ops::insert: invalid line '{}'", parts[1]),
+                );
+            };
+            let (base_rev, prev_content) = match store.snapshot_doc(&parts[0]) {
+                Ok(snap) => snap,
+                Err(err) => return (false, err),
+            };
+            let existing_lines = prev_content.lines().count();
+            let mut insertion = parts[2].clone();
+            let target_line = if line == 0 { 1 } else { line };
+            if target_line > existing_lines
+                && !prev_content.is_empty()
+                && !prev_content.ends_with('\n')
+                && !insertion.starts_with('\n')
+            {
+                insertion = format!("\n{insertion}");
+            }
+            let req = EditRequest {
+                file_id: parts[0].clone(),
+                provider: "rust_script".into(),
+                agent_id: actor.into(),
+                base_revision: Some(base_rev),
+                base_content_hash: None,
+                fencing_token: None,
+                start_line: target_line,
+                end_line: 0,
+                replacement: insertion,
+                op_id: Some(next_console_op("insert")),
+                summary: Some(format!("ide::ops::insert @L{target_line}")),
+            };
+            return match store.edit_doc(req) {
+                Ok(v) => (
+                    v["ok"] == true,
+                    format!(
+                        "Inserted at L{} -> rev {} (status={}, hash={})",
+                        target_line,
+                        v["revision"],
+                        v["status"].as_str().unwrap_or("?"),
+                        v["content_hash"].as_str().unwrap_or("?")
+                    ),
+                ),
+                Err(err) => (false, err),
+            };
+        }
+
+        if let Some(args) = Self::strip_call(clean, "ide::ops::append") {
+            let parts = Self::parse_args(args);
+            if parts.len() < 2 {
+                return (
+                    false,
+                    "ide::ops::append requires 2 args: (file_id, text)".into(),
+                );
+            }
+            let (base_rev, mut next_content, base_hash) =
+                match store.snapshot_doc_with_hash(&parts[0]) {
+                    Ok(snap) => snap,
+                    Err(err) => return (false, err),
+                };
+            if !next_content.is_empty() && !next_content.ends_with('\n') {
+                next_content.push('\n');
+            }
+            next_content.push_str(&parts[1]);
+            if !next_content.is_empty() && !next_content.ends_with('\n') {
+                next_content.push('\n');
+            }
+            return match store.coedit_concurrent(crate::merge::FullCoEditRequest {
+                file_id: parts[0].clone(),
+                author: format!("rust_script/{actor}"),
+                new_text: next_content,
+                base_revision: Some(base_rev),
+                base_content_hash: Some(base_hash),
+                fencing_token: None,
+                op_id: Some(next_console_op("append")),
+                mode: Some(crate::merge::CollabMode::Git),
+            }) {
+                Ok(v) => (
+                    v["ok"] == true,
+                    format!(
+                        "Appended -> rev {} (status={}, hash={})",
+                        v["revision"],
+                        v["status"].as_str().unwrap_or("?"),
+                        v["content_hash"].as_str().unwrap_or("?")
+                    ),
+                ),
+                Err(err) => (false, err),
+            };
+        }
+
+        if let Some(args) = Self::strip_call(clean, "ide::ops::delete_lines") {
+            let parts = Self::parse_args(args);
+            if parts.len() < 3 {
+                return (
+                    false,
+                    "ide::ops::delete_lines requires 3 args: (file_id, start_line, end_line)"
+                        .into(),
+                );
+            }
+            let Ok(s) = parts[1].parse::<usize>() else {
+                return (
+                    false,
+                    format!("ide::ops::delete_lines: invalid start_line '{}'", parts[1]),
+                );
+            };
+            let Ok(e) = parts[2].parse::<usize>() else {
+                return (
+                    false,
+                    format!("ide::ops::delete_lines: invalid end_line '{}'", parts[2]),
+                );
+            };
+            if s == 0 || e < s {
+                return (
+                    false,
+                    "ide::ops::delete_lines requires 1 <= start_line <= end_line".into(),
+                );
+            }
+            return match store.edit_doc(EditRequest {
+                file_id: parts[0].clone(),
+                provider: "rust_script".into(),
+                agent_id: actor.into(),
+                base_revision: None,
+                base_content_hash: None,
+                fencing_token: None,
+                start_line: s,
+                end_line: e,
+                replacement: String::new(),
+                op_id: Some(next_console_op("delete")),
+                summary: Some(format!("ide::ops::delete_lines L{s}..L{e}")),
+            }) {
+                Ok(v) => (
+                    v["ok"] == true,
+                    format!(
+                        "Deleted L{}..L{} -> rev {} (status={}, hash={})",
+                        s,
+                        e,
+                        v["revision"],
+                        v["status"].as_str().unwrap_or("?"),
+                        v["content_hash"].as_str().unwrap_or("?")
+                    ),
+                ),
+                Err(err) => (false, err),
+            };
+        }
+
+        if let Some(args) = Self::strip_call(clean, "ide::ops::coedit") {
+            let parts = Self::parse_args(args);
+            if parts.len() < 2 {
+                return (
+                    false,
+                    "ide::ops::coedit requires (file_id, [base_rev], new_text)".into(),
+                );
+            }
+            let (base_rev, new_text) = if parts.len() >= 3 {
+                let Ok(r) = parts[1].parse::<u64>() else {
+                    return (
+                        false,
+                        format!("ide::ops::coedit: invalid base_revision '{}'", parts[1]),
+                    );
+                };
+                (Some(r), parts[2].clone())
+            } else {
+                let cur_rev = store.snapshot_doc(&parts[0]).map(|(r, _)| r).ok();
+                (cur_rev, parts[1].clone())
+            };
+            return match store.coedit_concurrent(crate::merge::FullCoEditRequest {
+                file_id: parts[0].clone(),
+                author: format!("rust_script/{actor}"),
+                new_text,
+                base_revision: base_rev,
+                base_content_hash: None,
+                fencing_token: None,
+                op_id: Some(next_console_op("coedit")),
+                mode: Some(crate::merge::CollabMode::Git),
+            }) {
+                Ok(v) => {
+                    if v["ok"] == true {
+                        (
+                            true,
+                            format!(
+                                "Coedit committed rev {} (status={}, auto_merged={}, hash={})",
+                                v["revision"],
+                                v["status"].as_str().unwrap_or("?"),
+                                v["auto_merged"].as_bool().unwrap_or(false),
+                                v["content_hash"].as_str().unwrap_or("?")
+                            ),
+                        )
+                    } else {
+                        (
+                            false,
+                            format!(
+                                "CONFLICT (HEAD unchanged at rev {}): proposal_id={}",
+                                v["head_revision"],
+                                v["proposal_id"].as_str().unwrap_or("?")
+                            ),
+                        )
+                    }
+                }
+                Err(err) => (false, err),
+            };
+        }
+
         if let Some(args) = Self::strip_call(clean, "ide::ops::replace_all") {
             let parts = Self::parse_args(args);
             if parts.len() < 3 {
@@ -200,7 +506,7 @@ impl RustConsoleEvaluator {
             return match store.replace_all_atomic(crate::merge::ReplaceAllRequest {
                 file_id: parts[0].clone(),
                 provider: "rust_script".into(),
-                agent_id: "console".into(),
+                agent_id: actor.into(),
                 base_revision: None,
                 base_content_hash: None,
                 fencing_token: None,
@@ -316,17 +622,22 @@ impl RustConsoleEvaluator {
 
     fn help_text() -> &'static str {
         "=== IDE1.0 Blender-Style Rust Scripting API ===\n\
-         ide::context::status()                     - 查看工作区状态与打开文档数量\n\
-         ide::context::help()                       - 打印全部控制指令帮助\n\
-         ide::data::files()                         - 列出所有已加载文档及其版本\n\
-         ide::data::read(\"file_id\")                - 读取文档全部正文\n\
-         ide::data::history(\"file_id\")             - 查询文档历史版本与协作作者\n\
-         ide::ops::open(\"file_id\", \"lang\", \"txt\")  - 打开或创建新文档\n\
-         ide::ops::edit(\"file_id\", s, e, \"txt\")   - 按行修改文档 (1-based 行号)\n\
-         ide::ops::replace_all(\"file_id\", \"a\", \"b\")- 全文查找并替换为新版本\n\
-         ide::ops::diff(\"file_id\", rev_a, rev_b)  - 比对文档两版本间的 Unified Diff\n\
-         ide::ops::search(\"file_id\", \"needle\")    - 查找文本行命中\n\
-         ide::ops::outline(\"file_id\")              - 提取文档 Markdown 标题大纲"
+         ide::context::status()                         - 查看工作区状态与打开文档数量\n\
+         ide::context::help()                           - 打印全部控制指令帮助\n\
+         ide::data::files()                             - 列出所有已加载文档及其版本\n\
+         ide::data::read(\"file_id\")                    - 读取文档全部正文\n\
+         ide::data::lines(\"file_id\", s, e)             - 读取指定行范围 (1-based)\n\
+         ide::data::history(\"file_id\")                 - 查询文档历史版本与协作作者\n\
+         ide::ops::open(\"file_id\", \"lang\", \"txt\")      - 打开或创建新文档\n\
+         ide::ops::edit(\"file_id\", s, e, \"txt\" [,rev]) - 按行修改文档 (1-based 行号)\n\
+         ide::ops::insert(\"file_id\", line, \"txt\")      - 在指定 1-based 行前插入文本\n\
+         ide::ops::append(\"file_id\", \"txt\")            - 向文档末尾追加文本\n\
+         ide::ops::delete_lines(\"file_id\", s, e)       - 删除 1-based 起止行范围\n\
+         ide::ops::coedit(\"file_id\" [,base_rev], \"txt\")- 带 3-way 合并与冲突保护的协同提交\n\
+         ide::ops::replace_all(\"file_id\", \"a\", \"b\")    - 全文查找并替换为新版本\n\
+         ide::ops::diff(\"file_id\", rev_a, rev_b)      - 比对文档两版本间的 Unified Diff\n\
+         ide::ops::search(\"file_id\", \"needle\")        - 查找文本行命中\n\
+         ide::ops::outline(\"file_id\")                  - 提取文档 Markdown 标题大纲"
     }
 
     fn strip_call<'a>(s: &'a str, fn_name: &str) -> Option<&'a str> {
@@ -340,24 +651,38 @@ impl RustConsoleEvaluator {
         None
     }
 
-    fn parse_args(args_str: &str) -> Vec<String> {
+    pub fn parse_args(args_str: &str) -> Vec<String> {
         let mut out = Vec::new();
         let mut in_quote = false;
+        let mut quote_char = '"';
         let mut cur = String::new();
         let mut escape = false;
 
         for ch in args_str.chars() {
             if escape {
-                cur.push(ch);
+                match ch {
+                    'n' => cur.push('\n'),
+                    'r' => cur.push('\r'),
+                    't' => cur.push('\t'),
+                    '\\' => cur.push('\\'),
+                    '"' => cur.push('"'),
+                    '\'' => cur.push('\''),
+                    other => cur.push(other),
+                }
                 escape = false;
                 continue;
             }
-            if ch == '\\' {
+            if in_quote && ch == '\\' {
                 escape = true;
                 continue;
             }
-            if ch == '"' {
-                in_quote = !in_quote;
+            if !in_quote && (ch == '"' || ch == '\'') {
+                in_quote = true;
+                quote_char = ch;
+                continue;
+            }
+            if in_quote && ch == quote_char {
+                in_quote = false;
                 continue;
             }
             if ch == ',' && !in_quote {
@@ -367,7 +692,7 @@ impl RustConsoleEvaluator {
             }
             cur.push(ch);
         }
-        if !cur.trim().is_empty() {
+        if !cur.trim().is_empty() || !out.is_empty() && args_str.trim_end().ends_with(',') {
             out.push(cur.trim().to_string());
         }
         out
@@ -403,6 +728,31 @@ mod tests {
         assert!(res.steps[3]
             .output
             .contains("+pub fn solve() -> i32 { 42 }"));
+    }
+
+    #[test]
+    fn test_rust_script_blender_text_editing_escapes_and_semicolons() {
+        let store = DocumentStore::default();
+        let script = r#"
+            ide::ops::open("src/blender.rs", "rust", "let a = 1; let b = 2;\nlet c = 3;\n");
+            ide::ops::insert("src/blender.rs", 2, "// inserted comment;");
+            ide::ops::append("src/blender.rs", "let d = 4;\nlet e = 5;");
+            ide::ops::delete_lines("src/blender.rs", 3, 3);
+            ide::ops::replace_all("src/blender.rs", "let d = 4;", "const D: i32 = 4;");
+            ide::data::lines("src/blender.rs", 1, 4);
+        "#;
+
+        let res = RustConsoleEvaluator::eval_with_agent(&store, script, "agent-blender");
+        assert!(res.ok, "Blender-style script failed: {:?}", res.steps);
+        assert_eq!(res.steps.len(), 6);
+
+        let read = store.read_doc("src/blender.rs", None, None).unwrap();
+        let txt = read["content"].as_str().unwrap();
+        assert!(txt.contains("let a = 1; let b = 2;"));
+        assert!(txt.contains("// inserted comment;"));
+        assert!(!txt.contains("let c = 3;"));
+        assert!(txt.contains("const D: i32 = 4;"));
+        assert!(txt.contains("let e = 5;"));
     }
 
     #[test]

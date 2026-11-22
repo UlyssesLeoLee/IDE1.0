@@ -604,3 +604,110 @@ pub fn comic_agreement_card(
         false
     }
 }
+
+/// 美漫赛璐珞风格进度条（支持确定进度 `Some(0.0..=1.0)` 与不确定脉冲进度 `None`）
+pub fn paint_comic_progress_bar(
+    p: &egui::Painter,
+    track_rect: Rect,
+    progress: Option<f32>,
+    accent_primary: Color32,
+    accent_bright: Color32,
+    accent_glow: Color32,
+    time: f32,
+) {
+    let radius = (track_rect.height() * 0.5).min(10.0);
+    p.rect_filled(track_rect.translate(vec2(1.5, 1.5)), radius, Color32::BLACK);
+    p.rect_filled(track_rect, radius, Color32::from_rgb(11, 17, 32));
+    p.rect_stroke(
+        track_rect,
+        radius,
+        Stroke::new(1.8, Color32::BLACK),
+        StrokeKind::Inside,
+    );
+
+    for frac in [0.25_f32, 0.50, 0.75] {
+        let tx = track_rect.left() + track_rect.width() * frac;
+        p.line_segment(
+            [
+                pos2(tx, track_rect.top() + 3.0),
+                pos2(tx, track_rect.bottom() - 3.0),
+            ],
+            Stroke::new(1.0, Color32::from_rgb(38, 49, 68)),
+        );
+    }
+
+    let inner = track_rect.shrink(2.0);
+    if inner.width() <= 1.0 || inner.height() <= 1.0 {
+        return;
+    }
+
+    let fill_rect = match progress {
+        Some(v) => {
+            let clamped = v.clamp(0.0, 1.0);
+            let fill_w = inner.width() * clamped;
+            if fill_w <= 0.5 {
+                return;
+            }
+            Rect::from_min_size(inner.min, vec2(fill_w, inner.height()))
+        }
+        None => {
+            let shuttle_w = (inner.width() * 0.30).clamp(24.0, inner.width());
+            let travel = (inner.width() - shuttle_w).max(0.0);
+            let phase = (time * 1.15).sin() * 0.5 + 0.5;
+            Rect::from_min_size(
+                pos2(inner.left() + travel * phase, inner.top()),
+                vec2(shuttle_w, inner.height()),
+            )
+        }
+    };
+
+    let fill_round = (inner.height() * 0.5).min(fill_rect.width() * 0.5);
+    p.rect_filled(fill_rect, fill_round, accent_primary);
+
+    let clip_p = p.with_clip_rect(fill_rect);
+    clip_p.rect_filled(
+        Rect::from_min_size(
+            fill_rect.min,
+            vec2(fill_rect.width(), fill_rect.height() * 0.42),
+        ),
+        fill_round,
+        Color32::from_rgba_unmultiplied(accent_glow.r(), accent_glow.g(), accent_glow.b(), 72),
+    );
+    let stripe_step = 18.0_f32;
+    let stripe_shift = (time * 48.0) % stripe_step;
+    let mut sx = fill_rect.left() - fill_rect.height() - stripe_step + stripe_shift;
+    while sx < fill_rect.right() + stripe_step {
+        clip_p.line_segment(
+            [
+                pos2(sx, fill_rect.bottom() + 2.0),
+                pos2(sx + fill_rect.height() * 0.85, fill_rect.top() - 2.0),
+            ],
+            Stroke::new(
+                3.0,
+                Color32::from_rgba_unmultiplied(
+                    accent_glow.r(),
+                    accent_glow.g(),
+                    accent_glow.b(),
+                    72,
+                ),
+            ),
+        );
+        sx += stripe_step;
+    }
+    if progress.is_some() {
+        clip_p.line_segment(
+            [
+                pos2(fill_rect.right() - 1.0, fill_rect.top()),
+                pos2(fill_rect.right() - 1.0, fill_rect.bottom()),
+            ],
+            Stroke::new(2.0, accent_glow),
+        );
+    } else {
+        p.rect_stroke(
+            fill_rect,
+            fill_round,
+            Stroke::new(1.2, accent_bright),
+            StrokeKind::Inside,
+        );
+    }
+}

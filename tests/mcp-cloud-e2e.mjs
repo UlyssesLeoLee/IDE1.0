@@ -108,6 +108,10 @@ async function runCase(name, fn) {
   logLine(`PASS: ${name} (${ms} ms) -> ${JSON.stringify(detail)}`);
 }
 
+const EXPECTED_VERSION = JSON.parse(
+  fs.readFileSync(path.join(process.cwd(), "package.json"), "utf8")
+).version;
+
 async function main() {
   logLine(`Target MCP: ${TARGET_MCP}`);
   logLine(`Isolated Workspace: ${AUDIT_WS}`);
@@ -121,13 +125,13 @@ async function main() {
   assert.equal(healthJson.status, "ok");
   assert.equal(healthJson.db, "connected");
   assert.equal(healthJson.tls_verified, true);
-  assert.equal(healthJson.version, "0.9.0");
+  assert.equal(healthJson.version, EXPECTED_VERSION);
 
   const disc = await fetch(TARGET_MCP, { headers: { Accept: "application/json" } });
   assert.equal(disc.status, 200);
   const discJson = await disc.json();
   logLine(`Discovery: server="${discJson.server}", version=${discJson.version}, protocol=${discJson.protocolVersion}`);
-  assert.equal(discJson.version, "0.9.0");
+  assert.equal(discJson.version, EXPECTED_VERSION);
 
   const init = await rpcRaw("initialize", { protocolVersion: "2024-11-05", clientInfo: { name: "audit-e2e", version: "1.0" } });
   assert.equal(init.status, 200);
@@ -616,10 +620,45 @@ async function main() {
     return { rust_disk_git_test: "1 passed" };
   });
 
+  // Case 14: blender_style_rust_script_text_edit_and_acl (ide_rust_eval mutating real Postgres docs + 403 ACL)
+  await runCase("14. blender_style_rust_script_text_edit_and_acl", async () => {
+    const f = `${AUDIT_WS}:src/blender_script.rs`;
+    const rwJwt = agentJwt("blender-agent");
+    const roJwt = agentJwt("blender-ro", "audit_tenant", [AUDIT_WS], ["read"]);
+
+    const script = [
+      `ide::ops::open("${f}", "rust", "fn alpha() -> i32 { 1; }\\nfn beta() -> i32 { 2; }\\n")`,
+      `ide::ops::insert("${f}", 2, "// middle marker;")`,
+      `ide::ops::append("${f}", "fn gamma() -> i32 { 3; }")`,
+      `ide::ops::replace_all("${f}", "alpha()", "alpha_v2()")`,
+      `ide::data::read("${f}")`,
+    ].join(";\n");
+
+    const evalRes = await callTool("ide_rust_eval", { script, agent_id: "blender-py-style" }, rwJwt);
+    assert.equal(evalRes.isError, false, JSON.stringify(evalRes.data));
+    assert.equal(evalRes.data.ok, true);
+    assert.equal(evalRes.data.steps.length, 5);
+
+    const head = await callTool("headless_read", { file_id: f }, rwJwt);
+    assert.equal(head.data.current_revision, 4);
+    assert.ok(head.data.content.includes("alpha_v2()"));
+    assert.ok(head.data.content.includes("// middle marker;"));
+    assert.ok(head.data.content.includes("fn gamma() -> i32 { 3; }"));
+
+    // Read-only agent MUST be rejected with 403 when attempting text mutation via ide_rust_eval
+    const roEdit = await callTool(
+      "ide_rust_eval",
+      { script: `ide::ops::edit("${f}", 1, 1, "hijack")` },
+      roJwt
+    );
+    assert.equal(roEdit.httpStatus, 403);
+    return { final_revision: head.data.current_revision, steps: evalRes.data.steps.length, ro_write_status: roEdit.httpStatus };
+  });
+
   const logOutPath = path.join(process.cwd(), "docs", "MCP-CLOUD-E2E-LOG.txt");
   fs.mkdirSync(path.dirname(logOutPath), { recursive: true });
   fs.writeFileSync(logOutPath, `${logs.join("\n")}\n`, "utf8");
-  logLine(`\nALL 13 MANDATORY E2E CASES PASSED! Redacted transcript saved to ${logOutPath}`);
+  logLine(`\nALL 14 MANDATORY E2E CASES PASSED! Redacted transcript saved to ${logOutPath}`);
 }
 
 main().catch((err) => {

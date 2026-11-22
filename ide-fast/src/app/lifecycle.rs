@@ -398,20 +398,16 @@ impl App {
         } else {
             1.0
         };
-        p.rect_filled(bar_rect, 0.0, Color32::from_rgb(10, 14, 22));
-        p.rect_stroke(
+        let t = (current as f32) * 0.35;
+        crate::app::installer_ui::cards::paint_comic_progress_bar(
+            p,
             bar_rect,
-            0.0,
-            egui::Stroke::new(1.8, Color32::BLACK),
-            egui::StrokeKind::Inside,
+            Some(ratio),
+            Color32::from_rgb(2, 132, 199),
+            Color32::from_rgb(56, 189, 248),
+            Color32::from_rgb(125, 211, 252),
+            t,
         );
-        if ratio > 0.0 {
-            let fill_rect = egui::Rect::from_min_size(
-                bar_rect.min,
-                egui::vec2(bar_rect.width() * ratio, bar_rect.height()),
-            );
-            p.rect_filled(fill_rect, 0.0, Color32::from_rgb(0, 180, 216));
-        }
         let pct_text = format!(
             "{} / {} ({}%)",
             current,
@@ -422,7 +418,7 @@ impl App {
             bar_rect.center(),
             egui::Align2::CENTER_CENTER,
             pct_text,
-            egui::FontId::proportional(11.0),
+            egui::FontId::monospace(11.0),
             Color32::WHITE,
         );
     }

@@ -1,17 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- IDE1.0 安装包 (WiX v3)。构建: packaging/build-msi.ps1 (它会先用 cargo 构建 release 版)。 -->
-<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi" xmlns:util="http://schemas.microsoft.com/wix/UtilExtension">
   <Product Id="*" Name="IDE1.0" Language="1033" Version="$(var.Version)" Manufacturer="ide1" UpgradeCode="eeec6d8b-4609-4df9-999b-ddadc720c74e">
     <Package InstallerVersion="450" Compressed="yes" InstallScope="perMachine" Description="IDE1.0 - High-Performance Text and Code Editor" SummaryCodepage="1252" />
-    <MajorUpgrade DowngradeErrorMessage="A newer version of IDE1.0 is already installed." />
+    <MajorUpgrade AllowSameVersionUpgrades="yes" Schedule="afterInstallInitialize" DowngradeErrorMessage="A newer version of IDE1.0 is already installed." />
     <MediaTemplate EmbedCab="yes" />
     <Icon Id="ProductIcon" SourceFile="$(var.IconPath)" />
     <Property Id="ARPPRODUCTICON" Value="ProductIcon" />
     <!-- 彻底移除 WixUI_InstallDir 与任何 Windows 原生对话框，杜绝原生标题栏与 Back/Next/Cancel 按钮 -->
-    <!-- 安装开始前安全终止可能残留或被占用的 IDE1.0 实例 -->
-    <CustomAction Id="KillRunningIDE" Directory="TARGETDIR" ExeCommand="[SystemFolder]taskkill.exe /F /IM IDE1.0.exe /IM ide-fast.exe /FI &quot;STATUS eq RUNNING&quot;" Return="ignore" />
-    <!-- 安装/升级/修复完成自动拉起 IDE1.0 主程序（卸载或自动化传 IDE10_NO_LAUNCH=1 时跳过） -->
-    <CustomAction Id="LaunchIDE" FileKey="IdeFastExe" ExeCommand="" Return="asyncNoWait" />
+    <!-- 通过 WiX WixQuietExec64 无头安全终止可能残留或被占用的 IDE1.0 实例（零黑框闪烁） -->
+    <SetProperty Id="WixQuietExec64CmdLine" Value="&quot;[SystemFolder]taskkill.exe&quot; /F /IM IDE1.0.exe /IM ide-fast.exe" Before="KillRunningIDE" Sequence="execute" />
+    <CustomAction Id="KillRunningIDE" BinaryKey="WixCA" DllEntry="WixQuietExec64" Execute="immediate" Return="ignore" />
+    <!-- 安装/升级/修复完成自动拉起美漫 3D 赛璐珞安装配置向导（卸载或自动化传 IDE10_NO_LAUNCH=1 时跳过） -->
+    <CustomAction Id="LaunchIDE" FileKey="IdeFastExe" ExeCommand="--setup" Return="asyncNoWait" />
     <InstallExecuteSequence>
       <Custom Action="KillRunningIDE" Before="InstallValidate" />
       <Custom Action="LaunchIDE" After="InstallFinalize">NOT REMOVE="ALL" AND NOT IDE10_NO_LAUNCH</Custom>
