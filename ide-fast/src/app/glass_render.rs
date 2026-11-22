@@ -5,7 +5,7 @@
 use crate::view::ThemeColors;
 use eframe::egui::{self, Color32, Painter, Pos2, Rect, Stroke};
 
-/// 绘制水晶 / 玻璃背后的光学焦散层与晶面微光
+/// 绘制次世代水晶透明界面的光学焦散层、双曲色散光晕与晶面微光
 pub fn paint_caustic_backdrop(p: &Painter, rect: Rect, tc: &ThemeColors, time: f64) {
     if !tc.is_translucent() {
         return;
@@ -15,92 +15,62 @@ pub fn paint_caustic_backdrop(p: &Painter, rect: Rect, tc: &ThemeColors, time: f
         return;
     }
 
-    // 本体提高透明度到 60% (40% alpha 衬底，确保桌面穿透与对比度平衡)
+    // 1. 防眩光消光微透吸收底衬 (融合 Clear 玻璃的抗过曝托底): 消除高亮壁纸刺眼，保证代码极度清晰
     let body_base_tint = if tc.dark {
-        Color32::from_rgba_unmultiplied(16, 20, 28, 102)
+        Color32::from_rgba_unmultiplied(12, 16, 26, 88)
     } else {
-        Color32::from_rgba_unmultiplied(248, 250, 252, 102)
+        Color32::from_rgba_unmultiplied(240, 244, 252, 98)
     };
     p.rect_filled(rect, 0.0, body_base_tint);
 
-    if tc.crystal {
-        // --- 水晶主题: 纯净光学晶体折射弧光 + 棱镜色散 + 微细晶芒 ---
-        // 1. 左上象限: 棱镜青色大跨度焦散光晕 (15% 10%, 95% 60%)
-        let cyan_center = Pos2::new(rect.left() + w * 0.15, rect.top() + h * 0.10);
-        let cyan_radius = (w * 0.45).min(h * 0.55);
-        paint_radial_bloom(
-            p,
-            cyan_center,
-            cyan_radius,
-            Color32::from_rgba_unmultiplied(0, 240, 255, 18),
-        );
+    // 2. 左上象限: 棱镜青色大跨度焦散光晕 (融合 Clear 天蓝与 Crystal 纯青色散)
+    let cyan_center = Pos2::new(rect.left() + w * 0.15, rect.top() + h * 0.10);
+    let cyan_radius = (w * 0.48).min(h * 0.55);
+    paint_radial_bloom(
+        p,
+        cyan_center,
+        cyan_radius,
+        Color32::from_rgba_unmultiplied(0, 240, 255, 22),
+    );
 
-        // 2. 右下象限: 棱镜粉色大跨度焦散光晕 (85% 90%, 80% 65%)
-        let pink_center = Pos2::new(rect.left() + w * 0.85, rect.top() + h * 0.88);
-        let pink_radius = (w * 0.42).min(h * 0.50);
-        paint_radial_bloom(
-            p,
-            pink_center,
-            pink_radius,
-            Color32::from_rgba_unmultiplied(255, 105, 180, 15),
-        );
+    // 3. 右下象限: 棱镜粉红/紫罗兰大跨度焦散光晕 (融合 Clear 紫罗兰与 Crystal 洋红色散)
+    let pink_center = Pos2::new(rect.left() + w * 0.85, rect.top() + h * 0.88);
+    let pink_radius = (w * 0.45).min(h * 0.50);
+    paint_radial_bloom(
+        p,
+        pink_center,
+        pink_radius,
+        Color32::from_rgba_unmultiplied(255, 105, 180, 18),
+    );
 
-        // 3. 晶面大跨度微透反光带 (135° 对角线柔和反光)
-        let sheen_color = Color32::from_rgba_unmultiplied(255, 255, 255, 10);
-        p.line_segment(
-            [
-                Pos2::new(rect.left() + w * 0.05, rect.top() + h * 0.25),
-                Pos2::new(rect.left() + w * 0.75, rect.top() + h * 0.95),
-            ],
-            Stroke::new(2.0, sheen_color),
-        );
+    // 4. 晶面大跨度微透反光带 (135° 对角线柔和反光)
+    let sheen_color = Color32::from_rgba_unmultiplied(255, 255, 255, 12);
+    p.line_segment(
+        [
+            Pos2::new(rect.left() + w * 0.05, rect.top() + h * 0.20),
+            Pos2::new(rect.left() + w * 0.75, rect.top() + h * 0.90),
+        ],
+        Stroke::new(2.0, sheen_color),
+    );
 
-        // 4. 水晶切割星芒微光 (Tauri crystal-shimmer 粒子闪烁)
-        let sparkles = [(0.20, 0.25, 0.0), (0.78, 0.18, 2.1), (0.65, 0.82, 4.3)];
-        for &(px, py, phase) in &sparkles {
-            let cx = rect.left() + w * px;
-            let cy = rect.top() + h * py;
-            let pulse = ((time * 0.85 + phase).sin() * 0.5 + 0.5) as f32; // 0.0 .. 1.0
-            if pulse > 0.08 {
-                let alpha = (pulse * 140.0) as u8;
-                let cyan_alpha = (pulse * 90.0) as u8;
-                let halo_c = Color32::from_rgba_unmultiplied(0, 240, 255, cyan_alpha);
-                let core_c = Color32::from_rgba_unmultiplied(255, 255, 255, alpha);
-                p.circle_filled(Pos2::new(cx, cy), 3.0, halo_c);
-                p.circle_filled(Pos2::new(cx, cy), 1.2, core_c);
-            }
+    // 5. 水晶微晶星芒闪烁
+    paint_crystal_sparkles(p, rect, w, h, time);
+}
+
+fn paint_crystal_sparkles(p: &Painter, rect: Rect, w: f32, h: f32, time: f64) {
+    let sparkles = [(0.20, 0.25, 0.0), (0.78, 0.18, 2.1), (0.65, 0.82, 4.3)];
+    for &(px, py, phase) in &sparkles {
+        let cx = rect.left() + w * px;
+        let cy = rect.top() + h * py;
+        let pulse = ((time * 0.85 + phase).sin() * 0.5 + 0.5) as f32;
+        if pulse > 0.08 {
+            let alpha = (pulse * 140.0) as u8;
+            let cyan_alpha = (pulse * 90.0) as u8;
+            let halo_c = Color32::from_rgba_unmultiplied(0, 240, 255, cyan_alpha);
+            let core_c = Color32::from_rgba_unmultiplied(255, 255, 255, alpha);
+            p.circle_filled(Pos2::new(cx, cy), 3.0, halo_c);
+            p.circle_filled(Pos2::new(cx, cy), 1.2, core_c);
         }
-    } else if tc.clear {
-        // --- 透明玻璃主题: 亚克力天蓝色散 + 紫罗兰漫反射 ---
-        // 1. 顶部居中: 蔚蓝光照层 (50% -12%)
-        let sky_center = Pos2::new(rect.center().x, rect.top());
-        let sky_radius = (w * 0.55).min(h * 0.45);
-        paint_radial_bloom(
-            p,
-            sky_center,
-            sky_radius,
-            Color32::from_rgba_unmultiplied(56, 189, 248, 24),
-        );
-
-        // 2. 右下角: 紫罗兰柔光 (100% 100%)
-        let purple_center = Pos2::new(rect.right(), rect.bottom());
-        let purple_radius = (w * 0.45).min(h * 0.40);
-        paint_radial_bloom(
-            p,
-            purple_center,
-            purple_radius,
-            Color32::from_rgba_unmultiplied(168, 85, 247, 18),
-        );
-
-        // 3. 玻璃材质通透斜光
-        let glass_sheen = Color32::from_rgba_unmultiplied(255, 255, 255, 8);
-        p.line_segment(
-            [
-                Pos2::new(rect.left(), rect.top() + h * 0.15),
-                Pos2::new(rect.left() + w * 0.65, rect.top() + h * 0.80),
-            ],
-            Stroke::new(1.5, glass_sheen),
-        );
     }
 }
 
@@ -125,7 +95,7 @@ fn paint_radial_bloom(p: &Painter, center: Pos2, max_radius: f32, color: Color32
     }
 }
 
-/// 绘制晶面切面边框与双内阴影折射高光 (对齐 Tauri 的 `--glass-specular` 与 facet border)
+/// 绘制次世代晶面切面边框与双内阴影折射高光
 pub fn paint_facet_borders(p: &Painter, rect: Rect, tc: &ThemeColors) {
     if !tc.is_translucent() {
         p.rect_stroke(
@@ -137,56 +107,31 @@ pub fn paint_facet_borders(p: &Painter, rect: Rect, tc: &ThemeColors) {
         return;
     }
 
-    if tc.crystal {
-        // 水晶切面高光:
-        // - 顶边: 1.5px 纯净切面强反射 (rgba(255, 255, 255, 0.68))
-        // - 左边: 1.0px 侧切面次高光 (rgba(255, 255, 255, 0.48))
-        // - 底边: 1.0px 棱镜青折射边缘 (rgba(0, 240, 255, 0.35))
-        // - 右边: 1.0px 棱镜粉折射边缘 (rgba(255, 105, 180, 0.30))
-        let top_c = Color32::from_rgba_unmultiplied(255, 255, 255, 175);
-        let left_c = Color32::from_rgba_unmultiplied(255, 255, 255, 125);
-        let bottom_c = Color32::from_rgba_unmultiplied(0, 240, 255, 90);
-        let right_c = Color32::from_rgba_unmultiplied(255, 105, 180, 75);
+    // 次世代水晶玻璃切面高光:
+    // - 顶边: 1.5px 纯净切面强反射 (rgba(255, 255, 255, 0.75))
+    // - 左边: 1.0px 侧切面次高光 (rgba(255, 255, 255, 0.52))
+    // - 底边: 1.0px 棱镜青折射边缘 (rgba(0, 240, 255, 0.40))
+    // - 右边: 1.0px 棱镜粉折射边缘 (rgba(255, 105, 180, 0.35))
+    let top_c = Color32::from_rgba_unmultiplied(255, 255, 255, 190);
+    let left_c = Color32::from_rgba_unmultiplied(255, 255, 255, 132);
+    let bottom_c = Color32::from_rgba_unmultiplied(0, 240, 255, 102);
+    let right_c = Color32::from_rgba_unmultiplied(255, 105, 180, 88);
 
-        p.hline(rect.x_range(), rect.top() + 0.5, Stroke::new(1.0, top_c));
-        p.vline(rect.left() + 0.5, rect.y_range(), Stroke::new(1.0, left_c));
-        p.hline(
-            rect.x_range(),
-            rect.bottom() - 0.5,
-            Stroke::new(1.0, bottom_c),
-        );
-        p.vline(
-            rect.right() - 0.5,
-            rect.y_range(),
-            Stroke::new(1.0, right_c),
-        );
-    } else if tc.clear {
-        // 经典玻璃微反光:
-        // - 顶边: 1.5px 镜面反光 (rgba(255, 255, 255, 0.85))
-        // - 左边: 1.0px 棱镜淡青色散 (rgba(56, 189, 248, 0.38))
-        // - 底边: 1.0px 玻璃幽暗收口 (rgba(255, 255, 255, 0.22))
-        // - 右边: 1.0px 棱镜淡粉色散 (rgba(216, 180, 254, 0.32))
-        let top_c = Color32::from_rgba_unmultiplied(255, 255, 255, 195);
-        let left_c = Color32::from_rgba_unmultiplied(56, 189, 248, 95);
-        let bottom_c = Color32::from_rgba_unmultiplied(255, 255, 255, 55);
-        let right_c = Color32::from_rgba_unmultiplied(216, 180, 254, 80);
-
-        p.hline(rect.x_range(), rect.top() + 0.5, Stroke::new(1.0, top_c));
-        p.vline(rect.left() + 0.5, rect.y_range(), Stroke::new(1.0, left_c));
-        p.hline(
-            rect.x_range(),
-            rect.bottom() - 0.5,
-            Stroke::new(1.0, bottom_c),
-        );
-        p.vline(
-            rect.right() - 0.5,
-            rect.y_range(),
-            Stroke::new(1.0, right_c),
-        );
-    }
+    p.hline(rect.x_range(), rect.top() + 0.5, Stroke::new(1.0, top_c));
+    p.vline(rect.left() + 0.5, rect.y_range(), Stroke::new(1.0, left_c));
+    p.hline(
+        rect.x_range(),
+        rect.bottom() - 0.5,
+        Stroke::new(1.0, bottom_c),
+    );
+    p.vline(
+        rect.right() - 0.5,
+        rect.y_range(),
+        Stroke::new(1.0, right_c),
+    );
 }
 
-/// 字符级通透光学折射光晕 (取代粗暴的大黑底涂抹，保持通透见底)
+/// 字符级通透光学折射光晕与防眩光对比度托底 (融合玻璃护眼托底与水晶棱镜双色辉光)
 pub fn paint_text_halo(
     p: &Painter,
     pos: Pos2,
@@ -196,21 +141,23 @@ pub fn paint_text_halo(
     if !tc.is_translucent() {
         return;
     }
-    // 水晶主题: 纯净折射色散微辉光，字形晶莹剔透，严禁黑块涂抹
-    if tc.crystal {
-        let prism_glow = Color32::from_rgba_unmultiplied(0, 240, 255, 30);
-        let pink_glow = Color32::from_rgba_unmultiplied(255, 105, 180, 20);
-        p.galley(Pos2::new(pos.x - 0.75, pos.y), galley.clone(), prism_glow);
-        p.galley(Pos2::new(pos.x + 0.75, pos.y), galley.clone(), pink_glow);
-    } else if tc.clear {
-        // 玻璃主题: 极细微高透环境阴影 (仅 14% 极低透明度)，柔和托底而不遮挡后方桌面
-        let soft_subtle = if tc.dark {
-            Color32::from_rgba_unmultiplied(0, 0, 0, 36)
-        } else {
-            Color32::from_rgba_unmultiplied(255, 255, 255, 45)
-        };
-        p.galley(Pos2::new(pos.x + 0.5, pos.y + 0.5), galley, soft_subtle);
-    }
+    // 1. 来自玻璃的柔和护眼对比度托底 (消除高噪或高亮壁纸下的文字发虚)
+    let contrast_shadow = if tc.dark {
+        Color32::from_rgba_unmultiplied(0, 0, 0, 48)
+    } else {
+        Color32::from_rgba_unmultiplied(255, 255, 255, 60)
+    };
+    p.galley(
+        Pos2::new(pos.x + 0.5, pos.y + 0.5),
+        galley.clone(),
+        contrast_shadow,
+    );
+
+    // 2. 来自水晶的纯净棱镜双色辉光 (左青微偏 -0.75px，右粉微偏 +0.75px，形成晶莹微色散)
+    let prism_glow = Color32::from_rgba_unmultiplied(0, 240, 255, 32);
+    let pink_glow = Color32::from_rgba_unmultiplied(255, 105, 180, 22);
+    p.galley(Pos2::new(pos.x - 0.75, pos.y), galley.clone(), prism_glow);
+    p.galley(Pos2::new(pos.x + 0.75, pos.y), galley, pink_glow);
 }
 
 /// 发光水晶胶囊药丸 (用于状态栏模式、标签页选中项、标题栏按钮)
@@ -241,6 +188,16 @@ pub fn paint_glowing_pill(
         Stroke::new(1.0, border),
         egui::StrokeKind::Inside,
     );
+    // 顶部晶钻高光微线 (1px)
+    if rect.width() > 14.0 {
+        p.line_segment(
+            [
+                Pos2::new(rect.left() + 4.0, rect.top() + 1.0),
+                Pos2::new(rect.right() - 4.0, rect.top() + 1.0),
+            ],
+            Stroke::new(1.0, Color32::from_white_alpha(120)),
+        );
+    }
 }
 
 #[cfg(test)]

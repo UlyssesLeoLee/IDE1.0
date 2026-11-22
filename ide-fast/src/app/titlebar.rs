@@ -6,7 +6,7 @@
 
 use super::*;
 use egui::viewport::ResizeDirection as Dir;
-use egui::{pos2, Stroke, StrokeKind};
+use egui::{pos2, Painter, Stroke, StrokeKind};
 
 /// 标题栏高度 (逻辑点)
 const BAR_H: f32 = 30.0;
@@ -883,283 +883,302 @@ fn win_button(ui: &mut egui::Ui, kind: WinBtn, tc: &crate::view::ThemeColors) ->
     let p = ui.painter();
 
     let (content_rect, col, stroke_w) = if tc.retro16 {
-        // Retro 16-Bit 街机矩形按键: 0px 像素倒角, 3D 棱角, 悬停金色/品红
-        let (bg, outer_border, (top_left, bot_right), icon_col) = if active {
-            let bg = if kind == WinBtn::Close {
-                Color32::from_rgb(180, 0, 75)
-            } else {
-                Color32::from_rgb(14, 11, 28)
-            };
-            (
-                bg,
-                Color32::BLACK,
-                (Color32::from_rgb(10, 7, 23), Color32::from_rgb(79, 62, 145)),
-                Color32::WHITE,
-            )
-        } else if hovered {
-            if kind == WinBtn::Close {
-                (
-                    Color32::from_rgb(255, 42, 133),
-                    Color32::BLACK,
-                    (
-                        Color32::from_rgb(255, 105, 180),
-                        Color32::from_rgb(139, 0, 58),
-                    ),
-                    Color32::WHITE,
-                )
-            } else {
-                (
-                    Color32::from_rgb(39, 30, 77),
-                    Color32::from_rgb(255, 215, 0),
-                    (
-                        Color32::from_rgb(255, 215, 0),
-                        Color32::from_rgb(22, 15, 46),
-                    ),
-                    Color32::from_rgb(255, 215, 0),
-                )
-            }
-        } else {
-            (
-                Color32::from_rgb(22, 17, 45),
-                Color32::from_rgb(45, 35, 84),
-                (Color32::from_rgb(79, 62, 145), Color32::from_rgb(10, 7, 23)),
-                tc.fg.gamma_multiply(0.85),
-            )
-        };
-
-        p.rect_filled(rect, 0.0, bg);
-        p.rect_stroke(
-            rect,
-            0.0,
-            Stroke::new(1.0, outer_border),
-            StrokeKind::Inside,
-        );
-
-        let inner = rect.shrink(1.0);
-        p.line_segment(
-            [inner.left_top(), inner.right_top()],
-            Stroke::new(1.0, top_left),
-        );
-        p.line_segment(
-            [inner.left_top(), inner.left_bottom()],
-            Stroke::new(1.0, top_left),
-        );
-        p.line_segment(
-            [inner.left_bottom(), inner.right_bottom()],
-            Stroke::new(1.0, bot_right),
-        );
-        p.line_segment(
-            [inner.right_top(), inner.right_bottom()],
-            Stroke::new(1.0, bot_right),
-        );
-
-        let offset = if active {
-            Vec2::new(1.0, 1.0)
-        } else {
-            Vec2::ZERO
-        };
-        (rect.translate(offset), icon_col, 1.5)
+        win_button_retro16(p, rect, kind, hovered, active, tc)
     } else if tc.comic {
-        // Comic 3渲2: 美漫赛璐珞 2px 粗黑边框 + 实体纯黑硬边投影
-        let btn_rect = rect.shrink2(Vec2::new(3.0, 2.0));
-        let shadow_offset = if active {
-            Vec2::ZERO
-        } else {
-            Vec2::new(1.5, 1.5)
-        };
-        if !active {
-            p.rect_filled(btn_rect.translate(shadow_offset), 2.0, Color32::BLACK);
-        }
-        let draw_rect = if active {
-            btn_rect.translate(Vec2::new(1.5, 1.5))
-        } else {
-            btn_rect
-        };
-
-        let (bg, border_col, icon_col) = if active {
-            if kind == WinBtn::Close {
-                (
-                    Color32::from_rgb(204, 31, 72),
-                    Color32::BLACK,
-                    Color32::WHITE,
-                )
-            } else {
-                (
-                    Color32::from_rgb(255, 170, 0),
-                    Color32::BLACK,
-                    Color32::BLACK,
-                )
-            }
-        } else if hovered {
-            if kind == WinBtn::Close {
-                (
-                    Color32::from_rgb(255, 51, 102),
-                    Color32::BLACK,
-                    Color32::WHITE,
-                )
-            } else {
-                (
-                    Color32::from_rgb(255, 204, 0),
-                    Color32::BLACK,
-                    Color32::BLACK,
-                )
-            }
-        } else {
-            (Color32::from_rgb(37, 40, 56), Color32::BLACK, tc.fg)
-        };
-
-        p.rect_filled(draw_rect, 2.0, bg);
-        p.rect_stroke(
-            draw_rect,
-            2.0,
-            Stroke::new(1.5, border_col),
-            StrokeKind::Inside,
-        );
-        (draw_rect, icon_col, 2.0)
-    } else if tc.crystal {
-        // Crystal 水晶透明: 6px 晶钻胶囊 + 顶沿 1px 晶面白光切面反射
-        let btn_rect = rect.shrink2(Vec2::new(4.0, 3.0));
-        let round = 6.0;
-        let (bg, border_col, icon_col) = if active {
-            if kind == WinBtn::Close {
-                (
-                    Color32::from_rgba_unmultiplied(220, 40, 80, 200),
-                    tc.mat_prism_pink,
-                    Color32::WHITE,
-                )
-            } else {
-                (
-                    Color32::from_rgba_unmultiplied(255, 105, 180, 80),
-                    tc.mat_prism_pink,
-                    Color32::WHITE,
-                )
-            }
-        } else if hovered {
-            if kind == WinBtn::Close {
-                (
-                    Color32::from_rgba_unmultiplied(255, 60, 100, 180),
-                    Color32::from_rgba_unmultiplied(255, 105, 180, 220),
-                    Color32::WHITE,
-                )
-            } else {
-                (
-                    Color32::from_rgba_unmultiplied(255, 255, 255, 55),
-                    tc.mat_prism_cyan,
-                    Color32::WHITE,
-                )
-            }
-        } else {
-            (
-                Color32::from_rgba_unmultiplied(255, 255, 255, 14),
-                Color32::from_rgba_unmultiplied(255, 255, 255, 45),
-                Color32::from_white_alpha(210),
-            )
-        };
-
-        p.rect_filled(btn_rect, round, bg);
-        p.rect_stroke(
-            btn_rect,
-            round,
-            Stroke::new(1.0, border_col),
-            StrokeKind::Inside,
-        );
-
-        let facet_col = if hovered || active {
-            Color32::WHITE
-        } else {
-            Color32::from_white_alpha(150)
-        };
-        let hline_min_x = btn_rect.left() + 4.0;
-        let hline_max_x = btn_rect.right() - 4.0;
-        if hline_max_x > hline_min_x {
-            p.line_segment(
-                [
-                    pos2(hline_min_x, btn_rect.top() + 1.0),
-                    pos2(hline_max_x, btn_rect.top() + 1.0),
-                ],
-                Stroke::new(1.0, facet_col),
-            );
-        }
-        (btn_rect, icon_col, 1.3)
-    } else if tc.clear {
-        // Clear 玻璃透明: 7px 磨砂圆角胶囊
-        let btn_rect = rect.shrink2(Vec2::new(3.0, 3.0));
-        let round = 7.0;
-        let (bg, border_col, icon_col) = if active {
-            if kind == WinBtn::Close {
-                (
-                    Color32::from_rgba_unmultiplied(200, 35, 35, 200),
-                    Color32::from_rgba_unmultiplied(255, 255, 255, 180),
-                    Color32::WHITE,
-                )
-            } else {
-                (
-                    Color32::from_rgba_unmultiplied(255, 255, 255, 100),
-                    Color32::from_rgba_unmultiplied(255, 255, 255, 180),
-                    Color32::WHITE,
-                )
-            }
-        } else if hovered {
-            if kind == WinBtn::Close {
-                (
-                    Color32::from_rgba_unmultiplied(215, 45, 45, 180),
-                    Color32::from_rgba_unmultiplied(255, 255, 255, 140),
-                    Color32::WHITE,
-                )
-            } else {
-                (
-                    Color32::from_rgba_unmultiplied(255, 255, 255, 65),
-                    Color32::from_rgba_unmultiplied(255, 255, 255, 120),
-                    Color32::WHITE,
-                )
-            }
-        } else {
-            (
-                Color32::from_rgba_unmultiplied(255, 255, 255, 12),
-                Color32::from_rgba_unmultiplied(255, 255, 255, 30),
-                Color32::from_white_alpha(190),
-            )
-        };
-
-        p.rect_filled(btn_rect, round, bg);
-        p.rect_stroke(
-            btn_rect,
-            round,
-            Stroke::new(1.0, border_col),
-            StrokeKind::Inside,
-        );
-        (btn_rect, icon_col, 1.2)
+        win_button_comic(p, rect, kind, hovered, active, tc)
+    } else if tc.is_translucent() {
+        win_button_translucent(p, rect, kind, hovered, active, tc)
     } else {
-        // Dark / Light / 现代默认
-        if hovered {
-            let c = if kind == WinBtn::Close {
-                Color32::from_rgb(196, 43, 28)
-            } else {
-                ui.visuals().widgets.hovered.weak_bg_fill
-            };
-            p.rect_filled(rect, 0.0, c);
-        } else if active {
-            let c = if kind == WinBtn::Close {
-                Color32::from_rgb(158, 35, 22)
-            } else {
-                ui.visuals().widgets.active.weak_bg_fill
-            };
-            p.rect_filled(rect, 0.0, c);
-        }
-
-        let col = if (hovered || active) && kind == WinBtn::Close {
-            Color32::WHITE
-        } else {
-            ui.visuals().widgets.inactive.fg_stroke.color
-        };
-        (rect, col, 1.2)
+        win_button_default(ui, p, rect, kind, hovered, active)
     };
 
     let st = egui::Stroke::new(stroke_w, col);
     let c = content_rect.center();
+    win_button_glyph(p, kind, c, st, col, tc.retro16);
+    resp.tip(trz(match kind {
+        WinBtn::Minimize => "最小化",
+        WinBtn::Maximize => "最大化",
+        WinBtn::Restore => "还原",
+        WinBtn::Close => "关闭",
+    }))
+}
+
+fn win_button_retro16_palette(
+    kind: WinBtn,
+    hovered: bool,
+    active: bool,
+    fg: Color32,
+) -> (Color32, Color32, (Color32, Color32), Color32) {
+    if active {
+        let bg = if kind == WinBtn::Close {
+            Color32::from_rgb(180, 0, 75)
+        } else {
+            Color32::from_rgb(14, 11, 28)
+        };
+        (
+            bg,
+            Color32::BLACK,
+            (Color32::from_rgb(10, 7, 23), Color32::from_rgb(79, 62, 145)),
+            Color32::WHITE,
+        )
+    } else if hovered {
+        if kind == WinBtn::Close {
+            (
+                Color32::from_rgb(255, 42, 133),
+                Color32::BLACK,
+                (
+                    Color32::from_rgb(255, 105, 180),
+                    Color32::from_rgb(139, 0, 58),
+                ),
+                Color32::WHITE,
+            )
+        } else {
+            (
+                Color32::from_rgb(39, 30, 77),
+                Color32::from_rgb(255, 215, 0),
+                (
+                    Color32::from_rgb(255, 215, 0),
+                    Color32::from_rgb(22, 15, 46),
+                ),
+                Color32::from_rgb(255, 215, 0),
+            )
+        }
+    } else {
+        (
+            Color32::from_rgb(22, 17, 45),
+            Color32::from_rgb(45, 35, 84),
+            (Color32::from_rgb(79, 62, 145), Color32::from_rgb(10, 7, 23)),
+            fg.gamma_multiply(0.85),
+        )
+    }
+}
+
+fn win_button_retro16(
+    p: &Painter,
+    rect: Rect,
+    kind: WinBtn,
+    hovered: bool,
+    active: bool,
+    tc: &crate::view::ThemeColors,
+) -> (Rect, Color32, f32) {
+    let (bg, outer_border, (top_left, bot_right), icon_col) =
+        win_button_retro16_palette(kind, hovered, active, tc.fg);
+
+    p.rect_filled(rect, 0.0, bg);
+    p.rect_stroke(
+        rect,
+        0.0,
+        Stroke::new(1.0, outer_border),
+        StrokeKind::Inside,
+    );
+
+    let inner = rect.shrink(1.0);
+    p.line_segment(
+        [inner.left_top(), inner.right_top()],
+        Stroke::new(1.0, top_left),
+    );
+    p.line_segment(
+        [inner.left_top(), inner.left_bottom()],
+        Stroke::new(1.0, top_left),
+    );
+    p.line_segment(
+        [inner.left_bottom(), inner.right_bottom()],
+        Stroke::new(1.0, bot_right),
+    );
+    p.line_segment(
+        [inner.right_top(), inner.right_bottom()],
+        Stroke::new(1.0, bot_right),
+    );
+
+    let offset = if active {
+        Vec2::new(1.0, 1.0)
+    } else {
+        Vec2::ZERO
+    };
+    (rect.translate(offset), icon_col, 1.5)
+}
+
+fn win_button_comic(
+    p: &Painter,
+    rect: Rect,
+    kind: WinBtn,
+    hovered: bool,
+    active: bool,
+    tc: &crate::view::ThemeColors,
+) -> (Rect, Color32, f32) {
+    let btn_rect = rect.shrink2(Vec2::new(3.0, 2.0));
+    let shadow_offset = if active {
+        Vec2::ZERO
+    } else {
+        Vec2::new(1.5, 1.5)
+    };
+    if !active {
+        p.rect_filled(btn_rect.translate(shadow_offset), 2.0, Color32::BLACK);
+    }
+    let draw_rect = if active {
+        btn_rect.translate(Vec2::new(1.5, 1.5))
+    } else {
+        btn_rect
+    };
+
+    let (bg, border_col, icon_col) = if active {
+        if kind == WinBtn::Close {
+            (
+                Color32::from_rgb(204, 31, 72),
+                Color32::BLACK,
+                Color32::WHITE,
+            )
+        } else {
+            (
+                Color32::from_rgb(255, 170, 0),
+                Color32::BLACK,
+                Color32::BLACK,
+            )
+        }
+    } else if hovered {
+        if kind == WinBtn::Close {
+            (
+                Color32::from_rgb(255, 51, 102),
+                Color32::BLACK,
+                Color32::WHITE,
+            )
+        } else {
+            (
+                Color32::from_rgb(255, 204, 0),
+                Color32::BLACK,
+                Color32::BLACK,
+            )
+        }
+    } else {
+        (Color32::from_rgb(37, 40, 56), Color32::BLACK, tc.fg)
+    };
+
+    p.rect_filled(draw_rect, 2.0, bg);
+    p.rect_stroke(
+        draw_rect,
+        2.0,
+        Stroke::new(1.5, border_col),
+        StrokeKind::Inside,
+    );
+    (draw_rect, icon_col, 2.0)
+}
+
+fn win_button_translucent(
+    p: &Painter,
+    rect: Rect,
+    kind: WinBtn,
+    hovered: bool,
+    active: bool,
+    tc: &crate::view::ThemeColors,
+) -> (Rect, Color32, f32) {
+    let btn_rect = rect.shrink2(Vec2::new(4.0, 3.0));
+    let round = 6.0;
+    let (bg, border_col, icon_col) = if active {
+        if kind == WinBtn::Close {
+            (
+                Color32::from_rgba_unmultiplied(225, 40, 75, 210),
+                tc.mat_prism_pink,
+                Color32::WHITE,
+            )
+        } else {
+            (
+                Color32::from_rgba_unmultiplied(0, 200, 255, 120),
+                tc.mat_prism_cyan,
+                Color32::WHITE,
+            )
+        }
+    } else if hovered {
+        if kind == WinBtn::Close {
+            (
+                Color32::from_rgba_unmultiplied(240, 50, 85, 190),
+                Color32::from_rgba_unmultiplied(255, 105, 180, 220),
+                Color32::WHITE,
+            )
+        } else {
+            (
+                Color32::from_rgba_unmultiplied(255, 255, 255, 52),
+                tc.mat_prism_cyan,
+                Color32::WHITE,
+            )
+        }
+    } else {
+        (
+            Color32::from_rgba_unmultiplied(255, 255, 255, 16),
+            Color32::from_rgba_unmultiplied(255, 255, 255, 55),
+            Color32::from_white_alpha(215),
+        )
+    };
+
+    p.rect_filled(btn_rect, round, bg);
+    p.rect_stroke(
+        btn_rect,
+        round,
+        Stroke::new(1.0, border_col),
+        StrokeKind::Inside,
+    );
+
+    let facet_col = if hovered || active {
+        Color32::WHITE
+    } else {
+        Color32::from_white_alpha(150)
+    };
+    let hline_min_x = btn_rect.left() + 4.0;
+    let hline_max_x = btn_rect.right() - 4.0;
+    if hline_max_x > hline_min_x {
+        p.line_segment(
+            [
+                pos2(hline_min_x, btn_rect.top() + 1.0),
+                pos2(hline_max_x, btn_rect.top() + 1.0),
+            ],
+            Stroke::new(1.0, facet_col),
+        );
+    }
+    (btn_rect, icon_col, 1.3)
+}
+
+fn win_button_default(
+    ui: &egui::Ui,
+    p: &Painter,
+    rect: Rect,
+    kind: WinBtn,
+    hovered: bool,
+    active: bool,
+) -> (Rect, Color32, f32) {
+    if hovered {
+        let c = if kind == WinBtn::Close {
+            Color32::from_rgb(196, 43, 28)
+        } else {
+            ui.visuals().widgets.hovered.weak_bg_fill
+        };
+        p.rect_filled(rect, 0.0, c);
+    } else if active {
+        let c = if kind == WinBtn::Close {
+            Color32::from_rgb(158, 35, 22)
+        } else {
+            ui.visuals().widgets.active.weak_bg_fill
+        };
+        p.rect_filled(rect, 0.0, c);
+    }
+
+    let col = if (hovered || active) && kind == WinBtn::Close {
+        Color32::WHITE
+    } else {
+        ui.visuals().widgets.inactive.fg_stroke.color
+    };
+    (rect, col, 1.2)
+}
+
+fn win_button_glyph(
+    p: &Painter,
+    kind: WinBtn,
+    c: Pos2,
+    st: Stroke,
+    col: Color32,
+    is_retro16: bool,
+) {
     match kind {
         WinBtn::Minimize => {
-            if tc.retro16 {
+            if is_retro16 {
                 p.rect_filled(Rect::from_center_size(c, Vec2::new(10.0, 2.0)), 0.0, col);
             } else {
                 p.line_segment([egui::pos2(c.x - 5.0, c.y), egui::pos2(c.x + 5.0, c.y)], st);
@@ -1212,12 +1231,6 @@ fn win_button(ui: &mut egui::Ui, kind: WinBtn, tc: &crate::view::ThemeColors) ->
             );
         }
     }
-    resp.tip(trz(match kind {
-        WinBtn::Minimize => "最小化",
-        WinBtn::Maximize => "最大化",
-        WinBtn::Restore => "还原",
-        WinBtn::Close => "关闭",
-    }))
 }
 
 #[cfg(test)]

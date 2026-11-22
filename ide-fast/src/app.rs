@@ -6352,26 +6352,54 @@ fn icon_of(kind: &str) -> &'static str {
     }
 }
 
-/// 字符级背景自适应对比度反色 (在透明玻璃/水晶穿透桌面时生效，以字为单位反色，杜绝黑色涂抹)
+/// 字符级背景自适应对比度反色 (在透明水晶/玻璃穿透桌面时生效，以字为单位反色，保护色相并强化明暗对比)
 pub fn adapt_char_color(c: Color32, is_light_bg: bool) -> Color32 {
     let luma = 0.2126 * (c.r() as f32 / 255.0)
         + 0.7152 * (c.g() as f32 / 255.0)
         + 0.0722 * (c.b() as f32 / 255.0);
     if is_light_bg {
-        // 后方内容偏亮：字符以字为单位反转为深色高对比色阶
+        // 后方内容偏亮：字符以字为单位反转为深色高对比色阶 (luma < 0.25)
         if luma > 0.45 {
-            Color32::from_rgb(
-                (c.r() as f32 * 0.22) as u8,
-                (c.g() as f32 * 0.22) as u8,
-                (c.b() as f32 * 0.32) as u8,
-            )
+            let max_c = c.r().max(c.g()).max(c.b()) as f32;
+            if max_c < 1.0 {
+                return c;
+            }
+            let is_neutral = (c.r() as i32 - c.g() as i32).abs() < 18
+                && (c.g() as i32 - c.b() as i32).abs() < 18;
+            if is_neutral {
+                // 中性字色（正文白字/浅灰字）反转为深邃石墨青灰 (24, 28, 38)，防眩光且极度护眼
+                Color32::from_rgb(24, 28, 38)
+            } else {
+                // 有色语法高亮词法单元：按色相权重缩放至深色宝石色阶，既满足 luma < 0.30 又保持色彩区分度
+                let r_ratio = c.r() as f32 / max_c;
+                let g_ratio = c.g() as f32 / max_c;
+                let b_ratio = c.b() as f32 / max_c;
+                let scale = 58.0;
+                Color32::from_rgb(
+                    (r_ratio * scale * 0.85).round().min(75.0) as u8,
+                    (g_ratio * scale * 0.85).round().min(75.0) as u8,
+                    (b_ratio * scale * 1.15).round().min(95.0) as u8,
+                )
+            }
         } else {
             c
         }
     } else {
-        // 后方内容偏暗：字符以字为单位保持或提亮至清晰色阶
+        // 后方内容偏暗：字符以字为单位保持或提亮至水晶高清晰色阶 (luma > 0.70)
         if luma < 0.45 {
-            Color32::from_rgb(c.r().max(200), c.g().max(200), c.b().max(215))
+            let max_c = c.r().max(c.g()).max(c.b()) as f32;
+            if max_c < 1.0 {
+                Color32::from_rgb(215, 225, 240)
+            } else {
+                let r_ratio = c.r() as f32 / max_c;
+                let g_ratio = c.g() as f32 / max_c;
+                let b_ratio = c.b() as f32 / max_c;
+                Color32::from_rgb(
+                    (200.0 + r_ratio * 45.0).round().min(255.0) as u8,
+                    (200.0 + g_ratio * 45.0).round().min(255.0) as u8,
+                    (215.0 + b_ratio * 40.0).round().min(255.0) as u8,
+                )
+            }
         } else {
             c
         }
@@ -6711,7 +6739,7 @@ impl App {
             .unwrap_or_else(|| crate::view::ThemeColors::builtin(self.dark));
         self.tc.retro16 = self.theme_id == "theme-retro16";
         self.tc.comic = self.theme_id == "theme-comic";
-        self.tc.crystal = self.theme_id == "theme-crystal";
+        self.tc.crystal = self.theme_id == "theme-crystal" || self.theme_id == "theme-clear";
         self.tc.clear = self.theme_id == "theme-clear";
         if self.tc.is_translucent() {
             let luma = editcore::theme_luminance::detect();

@@ -698,7 +698,6 @@ impl App {
                                 ui.separator();
                                 for (id, label_key) in [
                                     ("theme-crystal", "c.theme-crystal"),
-                                    ("theme-clear", "c.theme-clear"),
                                     ("theme-dark", "c.theme-dark"),
                                     ("theme-light", "c.theme-light"),
                                     ("theme-high-contrast", "c.theme-high-contrast"),
@@ -711,6 +710,9 @@ impl App {
                                         } else {
                                             id == "theme-light"
                                         }
+                                    } else if id == "theme-crystal" {
+                                        self.theme_id == "theme-crystal"
+                                            || self.theme_id == "theme-clear"
                                     } else {
                                         self.theme_id == id
                                     };

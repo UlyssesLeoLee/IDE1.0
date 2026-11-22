@@ -255,7 +255,7 @@ pub const T: &[Row] = &[
     ("c.goto-def", ["跳转到定义", "定義へジャンプ", "Go to Definition"]),
     ("sub.theme", ["主题", "テーマ", "Theme"]),
     ("c.theme-select", ["主题…", "テーマ選択…", "Theme…"]),
-    ("c.theme-crystal", ["水晶透明", "クリスタル透明", "Crystal"]),
+    ("c.theme-crystal", ["透明水晶", "透明クリスタル", "Transparent Crystal"]),
     ("c.theme-clear", ["透明玻璃", "透明ガラス", "Clear Glass"]),
     ("c.theme-dark", ["深色", "ダーク", "Dark"]),
     ("c.theme-light", ["浅色", "ライト", "Light"]),

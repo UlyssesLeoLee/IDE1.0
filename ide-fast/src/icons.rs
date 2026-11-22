@@ -393,17 +393,17 @@ pub fn paint_themed_quick_btn(
             tc.fg
         };
         (actual_rect, fg)
-    } else if tc.crystal {
-        // Crystal 水晶透明: 6px 晶钻胶囊 + 顶沿 1px 晶面白光切面反射 + 棱镜色散光晕
+    } else if tc.is_translucent() {
+        // 次世代水晶透明: 6px 晶钻胶囊 + 顶沿 1px 晶面白光切面反射 + 棱镜双色散光晕
         let round = 6.0;
         let bg = if active {
-            Color32::from_rgba_unmultiplied(255, 105, 180, 65) // 按下粉色散
+            Color32::from_rgba_unmultiplied(255, 105, 180, 75) // 按下粉色散
         } else if hovered {
             Color32::from_rgba_unmultiplied(255, 255, 255, 55)
         } else if highlighted {
-            Color32::from_rgba_unmultiplied(0, 240, 255, 40)
+            Color32::from_rgba_unmultiplied(0, 240, 255, 45)
         } else {
-            Color32::from_rgba_unmultiplied(255, 255, 255, 16)
+            Color32::from_rgba_unmultiplied(255, 255, 255, 18)
         };
 
         let border_col = if active {
@@ -411,9 +411,9 @@ pub fn paint_themed_quick_btn(
         } else if hovered {
             tc.mat_prism_cyan // 棱镜青色散高光
         } else if highlighted {
-            Color32::from_rgba_unmultiplied(0, 240, 255, 180)
+            Color32::from_rgba_unmultiplied(0, 240, 255, 190)
         } else {
-            Color32::from_rgba_unmultiplied(255, 255, 255, 50)
+            Color32::from_rgba_unmultiplied(255, 255, 255, 55)
         };
 
         painter.rect_filled(rect, round, bg);
@@ -447,44 +447,7 @@ pub fn paint_themed_quick_btn(
         } else if highlighted {
             Color32::from_rgb(0, 240, 255)
         } else {
-            Color32::from_white_alpha(220)
-        };
-        (rect, fg)
-    } else if tc.clear {
-        // Clear 玻璃透明: 7px 磨砂圆角胶囊 + 双向柔和半透明
-        let round = 7.0;
-        let bg = if active {
-            Color32::from_rgba_unmultiplied(255, 255, 255, 100)
-        } else if hovered {
-            Color32::from_rgba_unmultiplied(255, 255, 255, 65)
-        } else if highlighted {
-            Color32::from_rgba_unmultiplied(255, 255, 255, 45)
-        } else {
-            Color32::from_rgba_unmultiplied(255, 255, 255, 15)
-        };
-
-        let border_col = if active {
-            Color32::from_rgba_unmultiplied(255, 255, 255, 180)
-        } else if hovered {
-            Color32::from_rgba_unmultiplied(255, 255, 255, 120)
-        } else if highlighted {
-            Color32::from_rgba_unmultiplied(255, 255, 255, 95)
-        } else {
-            Color32::from_rgba_unmultiplied(255, 255, 255, 35)
-        };
-
-        painter.rect_filled(rect, round, bg);
-        painter.rect_stroke(
-            rect,
-            round,
-            Stroke::new(1.0, border_col),
-            StrokeKind::Inside,
-        );
-
-        let fg = if active || hovered {
-            Color32::WHITE
-        } else {
-            Color32::from_white_alpha(200)
+            Color32::from_white_alpha(225)
         };
         (rect, fg)
     } else {
