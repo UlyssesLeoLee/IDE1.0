@@ -380,6 +380,17 @@ async function callMcpTool(store, principal, name, args = {}) {
     }
 
     case "headless_resolve_proposal": {
+      const hasWriteScope =
+        principal.scopes.includes("*") ||
+        principal.scopes.includes("admin") ||
+        principal.scopes.includes("write");
+      if (!hasWriteScope) {
+        throw new AuthError(
+          403,
+          "INSUFFICIENT_SCOPE",
+          `Required scope 'write' missing for actor '${principal.actorId}'`
+        );
+      }
       const actorId = reqActor(args, principal);
       if (typeof args.resolved_content !== "string") {
         throw new StoreError(400, "MISSING_RESOLVED_CONTENT", "resolved_content string is required");
@@ -467,6 +478,11 @@ export async function handleMcpRequest(req, res, deps = {}) {
 
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
+  }
+
+  const reqSessionId = req.headers?.["mcp-session-id"];
+  if (reqSessionId) {
+    res.setHeader("Mcp-Session-Id", String(reqSessionId));
   }
 
   try {

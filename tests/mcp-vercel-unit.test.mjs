@@ -142,16 +142,58 @@ test("P0-03: JWT & static token auth, expiration, workspace ACL, and path safety
   });
 });
 
-test("P0-03: PgDurableStore listProposals filters by workspace/file ACL and resolveProposal enforces write auth", async () => {
-  const { PgDurableStore } = await import("../api/v1/_store.js");
+test("P0-03 & SEC-001: PgDurableStore listProposals filters by DB + ACL and resolveProposal enforces write auth", async () => {
+  const { PgDurableStore, buildPgSslConfig } = await import("../api/v1/_store.js");
+  // SEC-003: PostgreSQL TLS must verify certificates remotely and never disable verification
+  assert.equal(buildPgSslConfig("postgres://user:pass@localhost:5432/db"), false);
+  assert.deepEqual(buildPgSslConfig("postgres://user:pass@ep-cool.neon.tech/neondb"), {
+    rejectUnauthorized: true,
+  });
+  assert.deepEqual(
+    buildPgSslConfig("postgres://user:pass@ep-cool.neon.tech/neondb", {
+      PG_CA_CERT: "LINE1\\nLINE2",
+    }),
+    { rejectUnauthorized: true, ca: "LINE1\nLINE2" }
+  );
+
+  // SEC-002: Missing workspaces or scopes claims MUST fail closed with 403
+  assert.throws(
+    () =>
+      authenticateRequest(
+        { headers: { authorization: `Bearer ${signJwt({ sub: "a", tenant_id: "t1", scopes: ["read"] }, "s", 60)}` } },
+        { IDE_MCP_JWT_SECRET: "s" }
+      ),
+    { statusCode: 403, code: "MISSING_WORKSPACE_CLAIM" }
+  );
+  assert.throws(
+    () =>
+      authenticateRequest(
+        { headers: { authorization: `Bearer ${signJwt({ sub: "a", tenant_id: "t1", workspaces: ["ws_ok"] }, "s", 60)}` } },
+        { IDE_MCP_JWT_SECRET: "s" }
+      ),
+    { statusCode: 403, code: "MISSING_SCOPE_CLAIM" }
+  );
+  assert.throws(
+    () =>
+      authenticateRequest(
+        { headers: { authorization: "Bearer bad-static" } },
+        { IDE_MCP_TOKENS: JSON.stringify([{ token: "bad-static", actor_id: "x", tenant_id: "t1", workspaces: ["ws_ok"] }]) }
+      ),
+    { statusCode: 403, code: "MISSING_TOKEN_CLAIMS" }
+  );
+
+  let capturedParams = null;
   const rows = [
-    { proposal_id: "p1", workspace_id: "ws_ok", file_path: "src/a.rs", file_id: "ws_ok:src/a.rs", status: "PENDING_REVIEW" },
-    { proposal_id: "p2", workspace_id: "ws_other", file_path: "src/b.rs", file_id: "ws_other:src/b.rs", status: "PENDING_REVIEW" },
-    { proposal_id: "p3", workspace_id: "ws_ok", file_path: "src/secret.rs", file_id: "ws_ok:src/secret.rs", status: "PENDING_REVIEW" },
+    { proposal_id: "p1", tenant_id: "t1", workspace_id: "ws_ok", file_path: "src/a.rs", file_id: "ws_ok:src/a.rs", status: "PENDING_REVIEW" },
+    { proposal_id: "p2", tenant_id: "t1", workspace_id: "ws_other", file_path: "src/b.rs", file_id: "ws_other:src/b.rs", status: "PENDING_REVIEW" },
+    { proposal_id: "p3", tenant_id: "t1", workspace_id: "ws_ok", file_path: "src/secret.rs", file_id: "ws_ok:src/secret.rs", status: "PENDING_REVIEW" },
   ];
   const mockPool = {
-    async query(sql) {
-      if (String(sql).includes("FROM mcp_proposals")) return { rows };
+    async query(sql, params) {
+      if (String(sql).includes("FROM mcp_proposals")) {
+        capturedParams = params;
+        return { rows };
+      }
       return { rows: [] };
     },
     async connect() {
@@ -188,6 +230,7 @@ test("P0-03: PgDurableStore listProposals filters by workspace/file ACL and reso
     scopes: ["read", "write"],
   };
   const visible = await store.listProposals({ tenantId: "t1", principal });
+  assert.deepEqual(capturedParams[3], ["ws_ok"]);
   assert.deepEqual(visible.map((r) => r.proposal_id), ["p1"]);
 
   // Wrong-workspace resolveProposal MUST be rejected with 403

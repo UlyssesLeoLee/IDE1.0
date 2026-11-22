@@ -831,7 +831,16 @@ impl Session {
         pump(child.stdout.take().ok_or("没有标准输出")?, tx.clone());
         pump(child.stderr.take().ok_or("没有标准错误")?, tx);
         let stdin = child.stdin.take().ok_or("没有标准输入")?;
+        #[cfg(windows)]
         let mut session = Session {
+            kind,
+            child,
+            stdin,
+            rx,
+            tail: vec![],
+        };
+        #[cfg(not(windows))]
+        let session = Session {
             kind,
             child,
             stdin,
@@ -1251,6 +1260,15 @@ impl Terminal {
         self.track_cd(cmd, cwd);
     }
 
+    fn normalize_dir_path(candidate: PathBuf) -> PathBuf {
+        let mut resolved = candidate.canonicalize().unwrap_or(candidate);
+        let s = resolved.to_string_lossy().to_string();
+        if let Some(stripped) = s.strip_prefix(r"\\?\") {
+            resolved = PathBuf::from(stripped);
+        }
+        resolved
+    }
+
     fn track_cd(&mut self, cmd: &str, default_cwd: &std::path::Path) {
         let trimmed = cmd.trim();
         let target = trimmed
@@ -1275,15 +1293,7 @@ impl Terminal {
             } else {
                 base.join(clean)
             };
-            let mut resolved = if let Ok(canon) = candidate.canonicalize() {
-                canon
-            } else {
-                candidate
-            };
-            let s = resolved.to_string_lossy().to_string();
-            if let Some(stripped) = s.strip_prefix(r"\\?\") {
-                resolved = PathBuf::from(stripped);
-            }
+            let resolved = Self::normalize_dir_path(candidate);
             if resolved.exists() {
                 self.session_cwd = Some(resolved);
             }
@@ -1717,8 +1727,10 @@ mod tests {
     #[test]
     fn test_track_cd_and_session_directory() {
         let mut t = Terminal::new();
-        let base = std::env::temp_dir().join("ide_term_cd_test");
-        let _ = std::fs::create_dir_all(base.join("sub_dir"));
+        let raw_base =
+            std::env::temp_dir().join(format!("ide_term_cd_test_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(raw_base.join("sub_dir"));
+        let base = Terminal::normalize_dir_path(raw_base);
         t.start_session(&base);
         assert_eq!(t.session_cwd.as_ref(), Some(&base));
 

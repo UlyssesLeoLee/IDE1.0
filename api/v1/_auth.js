@@ -82,15 +82,21 @@ export function verifyJwt(token, secret) {
   if (!payload.tenant_id || !payload.sub) {
     throw new AuthError(401, "INVALID_TOKEN", "JWT missing required tenant_id or sub claim");
   }
+  if (!Array.isArray(payload.workspaces) || payload.workspaces.length === 0) {
+    throw new AuthError(403, "MISSING_WORKSPACE_CLAIM", "JWT missing explicit workspaces claim");
+  }
+  if (!Array.isArray(payload.scopes) || payload.scopes.length === 0) {
+    throw new AuthError(403, "MISSING_SCOPE_CLAIM", "JWT missing explicit scopes claim");
+  }
 
   return {
     actorId: String(payload.sub),
     tenantId: String(payload.tenant_id),
-    workspaces: Array.isArray(payload.workspaces) ? payload.workspaces.map(String) : ["*"],
+    workspaces: payload.workspaces.map(String),
     files: Array.isArray(payload.files ?? payload.allowed_files)
       ? (payload.files ?? payload.allowed_files).map(String)
       : ["*"],
-    scopes: Array.isArray(payload.scopes) ? payload.scopes.map(String) : ["read", "write"],
+    scopes: payload.scopes.map(String),
     defaultWorkspace: payload.default_workspace ? String(payload.default_workspace) : null,
     authMethod: "jwt",
   };
@@ -138,14 +144,26 @@ export function authenticateRequest(req, env = process.env) {
       if (entry.expires_at && Date.now() > Date.parse(entry.expires_at)) {
         throw new AuthError(401, "TOKEN_EXPIRED", "Static Bearer token has expired");
       }
+      if (
+        !Array.isArray(entry.workspaces) ||
+        entry.workspaces.length === 0 ||
+        !Array.isArray(entry.scopes) ||
+        entry.scopes.length === 0
+      ) {
+        throw new AuthError(
+          403,
+          "MISSING_TOKEN_CLAIMS",
+          "Static token missing explicit workspaces or scopes"
+        );
+      }
       return {
         actorId: String(entry.actor_id || entry.sub || "service-agent"),
         tenantId: String(entry.tenant_id || "default"),
-        workspaces: Array.isArray(entry.workspaces) ? entry.workspaces.map(String) : ["*"],
+        workspaces: entry.workspaces.map(String),
         files: Array.isArray(entry.files ?? entry.allowed_files)
           ? (entry.files ?? entry.allowed_files).map(String)
           : ["*"],
-        scopes: Array.isArray(entry.scopes) ? entry.scopes.map(String) : ["read", "write"],
+        scopes: entry.scopes.map(String),
         defaultWorkspace: entry.default_workspace ? String(entry.default_workspace) : null,
         authMethod: "bearer_token",
       };

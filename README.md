@@ -59,7 +59,10 @@ MCP endpoint: `https://ide1d0.vercel.app/mcp` (GET for discovery, POST for JSON-
 {
   "mcpServers": {
     "ide1d0-mcp": {
-      "url": "https://ide1d0.vercel.app/mcp"
+      "url": "https://ide1d0.vercel.app/mcp",
+      "headers": {
+        "Authorization": "Bearer ${IDE_MCP_TOKEN}"
+      }
     }
   }
 }
@@ -77,12 +80,18 @@ Local stdio variant (requires built binary):
 }
 ```
 
-### Claude Desktop (`%APPDATA%\Claude\claude_desktop_config.json`)
+### Claude Code / Claude Desktop (`claude mcp add` / `claude_desktop_config.json`)
 
 ```json
 {
   "mcpServers": {
-    "ide1d0": { "url": "https://ide1d0.vercel.app/mcp" }
+    "ide1d0": {
+      "type": "http",
+      "url": "https://ide1d0.vercel.app/mcp",
+      "headers": {
+        "Authorization": "Bearer ${IDE_MCP_TOKEN}"
+      }
+    }
   }
 }
 ```
@@ -92,9 +101,27 @@ Local stdio variant (requires built binary):
 ```json
 {
   "mcpServers": {
-    "ide1d0-mcp": { "url": "https://ide1d0.vercel.app/mcp" }
+    "ide1d0-mcp": {
+      "type": "http",
+      "url": "https://ide1d0.vercel.app/mcp",
+      "headers": {
+        "Authorization": "Bearer ${IDE_MCP_TOKEN}"
+      }
+    }
   }
 }
+```
+
+### Codex (`~/.codex/config.toml`)
+
+```bash
+codex mcp add ide1d0 --url https://ide1d0.vercel.app/mcp --bearer-token-env-var IDE_MCP_TOKEN
+```
+
+```toml
+[mcp_servers.ide1d0]
+url = "https://ide1d0.vercel.app/mcp"
+bearer_token_env_var = "IDE_MCP_TOKEN"
 ```
 
 ### VS Code / Roo Code / Cline
@@ -102,7 +129,12 @@ Local stdio variant (requires built binary):
 ```json
 {
   "mcpServers": {
-    "ide1d0-mcp": { "url": "https://ide1d0.vercel.app/mcp" }
+    "ide1d0-mcp": {
+      "url": "https://ide1d0.vercel.app/mcp",
+      "headers": {
+        "Authorization": "Bearer ${IDE_MCP_TOKEN}"
+      }
+    }
   }
 }
 ```
@@ -110,12 +142,16 @@ Local stdio variant (requires built binary):
 ### Verify connectivity
 
 ```bash
-# Discovery
-curl https://ide1d0.vercel.app/mcp
+# Real DB TLS & health probe
+curl -4 -sS https://ide1d0.vercel.app/api/v1/health
+
+# MCP Discovery
+curl -4 -sS https://ide1d0.vercel.app/mcp
 
 # Tool call �?Myers diff
-curl -X POST https://ide1d0.vercel.app/mcp \
+curl -4 -X POST https://ide1d0.vercel.app/mcp \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $IDE_MCP_TOKEN" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"diff_unified","arguments":{"text_a":"old\n","text_b":"new\n"}}}'
 ```
 

@@ -113,7 +113,16 @@ async function main() {
   logLine(`Isolated Workspace: ${AUDIT_WS}`);
   logLine(`Timestamp: ${new Date().toISOString()}`);
 
-  // Protocol handshake verification (P1-05)
+  // Protocol handshake & real DB TLS health check (MCP-001, SEC-003)
+  const healthRes = await fetch(`${BASE_URL}/api/v1/health`, { headers: { Accept: "application/json" } });
+  assert.equal(healthRes.status, 200);
+  const healthJson = await healthRes.json();
+  logLine(`Health: status=${healthJson.status}, version=${healthJson.version}, db=${healthJson.db}, tls_verified=${healthJson.tls_verified}, latency=${healthJson.db_latency_ms}ms`);
+  assert.equal(healthJson.status, "ok");
+  assert.equal(healthJson.db, "connected");
+  assert.equal(healthJson.tls_verified, true);
+  assert.equal(healthJson.version, "0.9.0");
+
   const disc = await fetch(TARGET_MCP, { headers: { Accept: "application/json" } });
   assert.equal(disc.status, 200);
   const discJson = await disc.json();
@@ -357,6 +366,14 @@ async function main() {
     const forbiddenFileRead = await callTool("headless_read", { file_id: anchorFile }, fileScopedJwt);
     assert.equal(forbiddenFileRead.httpStatus, 403);
 
+    // SEC-002 Fail-Closed JWT assertions (missing workspaces / scopes claims)
+    const missingWsJwt = signJwt({ sub: "no-ws", tenant_id: "audit_tenant", scopes: ["read"] }, jwtSecret, 300);
+    const missingWsRes = await callTool("headless_read", { file_id: triFile }, missingWsJwt);
+    assert.equal(missingWsRes.httpStatus, 403);
+    const missingScopeJwt = signJwt({ sub: "no-scope", tenant_id: "audit_tenant", workspaces: [AUDIT_WS] }, jwtSecret, 300);
+    const missingScopeRes = await callTool("headless_read", { file_id: triFile }, missingScopeJwt);
+    assert.equal(missingScopeRes.httpStatus, 403);
+
     // Fencing token validation
     const jwt = agentJwt("lease-holder");
     const lease = await callTool("headless_acquire_lease", { file_id: anchorFile, agent_id: "lease-holder", ttl_ms: 60000 }, jwt);
@@ -382,6 +399,8 @@ async function main() {
       roResolve: roResolve.httpStatus,
       wrongWsResolve: wrongWsResolve.httpStatus,
       forbiddenFile: forbiddenFileRead.httpStatus,
+      missingWsClaim: missingWsRes.httpStatus,
+      missingScopeClaim: missingScopeRes.httpStatus,
       crossTenant: crossTenant.data.code,
       badFencing: badFencing.data.code,
     };
@@ -430,22 +449,56 @@ async function main() {
     const beforeRev = beforeRead.data.current_revision;
     const beforeHash = beforeRead.data.content_hash;
     let redeployUrl = null;
+    let deploymentId = null;
+    let readyState = null;
     if (REDEPLOY) {
       logLine("Triggering live `vercel deploy --prod --yes` mid-test to destroy & respawn all serverless containers...");
       const resDeploy = spawnSync("vercel", ["deploy", "--prod", "--yes"], { shell: true, encoding: "utf8" });
       assert.equal(resDeploy.status, 0, `vercel deploy failed: ${resDeploy.stderr}`);
       const combined = `${resDeploy.stdout || ""}\n${resDeploy.stderr || ""}`;
-      const urls = combined.match(/https:\/\/[a-z0-9-]+\.vercel\.app/gi) || [];
-      redeployUrl = urls[0] || TARGET_MCP.replace(/\/mcp$/, "");
-      assert.ok(redeployUrl.startsWith("https://"), `Invalid redeployUrl extracted: ${redeployUrl}`);
-      logLine(`Fresh production deployment ready: ${redeployUrl}`);
+      const rawStdout = String(resDeploy.stdout || "");
+      const jsonStart = rawStdout.indexOf("{");
+      const jsonEnd = rawStdout.lastIndexOf("}");
+      if (jsonStart >= 0 && jsonEnd > jsonStart) {
+        try {
+          const parsed = JSON.parse(rawStdout.slice(jsonStart, jsonEnd + 1));
+          deploymentId = parsed.deployment?.id || null;
+          readyState = parsed.deployment?.readyState || null;
+          redeployUrl = parsed.deployment?.url || null;
+        } catch {
+          // fallback to regex below
+        }
+      }
+      if (!redeployUrl) {
+        const urls = combined.match(/https:\/\/[a-z0-9-]+\.vercel\.app/gi) || [];
+        redeployUrl = urls.find((u) => u.includes("lidian727")) || urls[0] || null;
+      }
+      if (!deploymentId) {
+        const did = combined.match(/dpl_[A-Za-z0-9]+/);
+        deploymentId = did ? did[0] : null;
+      }
+      assert.ok(deploymentId && deploymentId.startsWith("dpl_"), `Missing real deployment_id in deploy output`);
+      assert.equal(readyState, "READY", `Expected READY state, got ${readyState}`);
+      assert.ok(redeployUrl && redeployUrl.startsWith("https://"), `Invalid redeployUrl extracted: ${redeployUrl}`);
+      logLine(`Fresh production deployment ready: id=${deploymentId} state=${readyState} url=${redeployUrl}`);
     }
+    const postHealth = await fetch(`${BASE_URL}/api/v1/health`, { headers: { Accept: "application/json" } });
+    assert.equal(postHealth.status, 200);
+    const postHealthJson = await postHealth.json();
+    assert.equal(postHealthJson.db, "connected");
     const afterRead = await callTool("headless_read", { file_id: anchorFile }, AUDIT_TOKEN);
     const hist = await callTool("headless_history", { file_id: anchorFile }, AUDIT_TOKEN);
     assert.equal(afterRead.data.current_revision, beforeRev);
     assert.equal(afterRead.data.content_hash, beforeHash);
     assert.equal(hist.data.length, beforeRev);
-    return { persisted_revision: afterRead.data.current_revision, history_len: hist.data.length, redeployed: REDEPLOY, redeployUrl };
+    return {
+      persisted_revision: afterRead.data.current_revision,
+      history_len: hist.data.length,
+      redeployed: REDEPLOY,
+      deploymentId,
+      readyState,
+      redeployUrl,
+    };
   });
 
   // Case 10: stale_revision_rebase_or_reject

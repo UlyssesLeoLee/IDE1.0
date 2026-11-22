@@ -13,11 +13,15 @@ pub fn curl_path() -> PathBuf {
 
 /// curl 命令; Windows 下 GUI 进程里跑要加 CREATE_NO_WINDOW, 否则会弹控制台
 pub fn curl_command() -> Command {
-    let mut cmd = Command::new(curl_path());
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
+        let mut cmd = Command::new(curl_path());
         cmd.creation_flags(0x0800_0000);
+        cmd
     }
-    cmd
+    #[cfg(not(windows))]
+    {
+        Command::new(curl_path())
+    }
 }

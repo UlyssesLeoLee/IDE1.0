@@ -1573,7 +1573,7 @@ mod tests {
                 l.lang.as_str(),
                 l.view.geom
             ),
-            (32, 1, 2.5, "zh", None)
+            (32, 1, 2.5, crate::i18n::detect_system_lang().code(), None)
         );
         let _ = std::fs::remove_dir_all(&dir);
         std::env::remove_var("IDE_FAST_SETTINGS");

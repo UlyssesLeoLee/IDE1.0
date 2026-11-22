@@ -1,46 +1,49 @@
 Target MCP: https://ide1d0.vercel.app/mcp
-Isolated Workspace: audit_1795325292228
-Timestamp: 2026-11-22T05:28:12.229Z
+Isolated Workspace: audit_1795326409011
+Timestamp: 2026-11-22T05:46:49.012Z
+Health: status=ok, version=0.9.0, db=connected, tls_verified=true, latency=31ms
 Discovery: server="IDE1.0 MCP Server (Vercel Durable Postgres)", version=0.9.0, protocol=2024-11-05
 
 === [E2E CASE] 1. two_agents_edit_different_functions ===
-PASS: 1. two_agents_edit_different_functions (2598 ms) -> {"rev":3,"content_hash":"d3e2d414aae14cc5d11d19a36c0a7c94bad2b45214be26d8e89a1912d0f6d39a"}
+PASS: 1. two_agents_edit_different_functions (1147 ms) -> {"rev":3,"content_hash":"d3e2d414aae14cc5d11d19a36c0a7c94bad2b45214be26d8e89a1912d0f6d39a"}
 
 === [E2E CASE] 2. three_agents_edit_same_file ===
-PASS: 2. three_agents_edit_same_file (2861 ms) -> {"final_revision":4,"content_hash":"5800a874758750ae2eaaf5b50fd1da85e1caf0f1441cfd587e908d88e897134e"}
+PASS: 2. three_agents_edit_same_file (1687 ms) -> {"final_revision":4,"content_hash":"5800a874758750ae2eaaf5b50fd1da85e1caf0f1441cfd587e908d88e897134e"}
 
 === [E2E CASE] 3. overlapping_edit_rejected_without_commit ===
-PASS: 3. overlapping_edit_rejected_without_commit (3281 ms) -> {"proposal_id":"prop_1795325303917_d2b87f6d","head_rev_preserved":2}
+PASS: 3. overlapping_edit_rejected_without_commit (1718 ms) -> {"proposal_id":"prop_1795326416564_f9806922","head_rev_preserved":2}
 
 === [E2E CASE] 4. reopen_existing_file_without_reset ===
-PASS: 4. reopen_existing_file_without_reset (922 ms) -> {"status":"ALREADY_EXISTS","revision_preserved":4,"unauth_force_status":403}
+PASS: 4. reopen_existing_file_without_reset (669 ms) -> {"status":"ALREADY_EXISTS","revision_preserved":4,"unauth_force_status":403}
 
 === [E2E CASE] 5. concurrent_duplicate_op_id ===
-PASS: 5. concurrent_duplicate_op_id (3363 ms) -> {"replay_rev":2,"mismatch_code":"IDEMPOTENCY_PAYLOAD_MISMATCH"}
+PASS: 5. concurrent_duplicate_op_id (1360 ms) -> {"replay_rev":2,"mismatch_code":"IDEMPOTENCY_PAYLOAD_MISMATCH"}
 
 === [E2E CASE] 6. cross_file_idempotency_collision ===
-PASS: 6. cross_file_idempotency_collision (2627 ms) -> {"f1_rev":2,"f2_rev":2}
+PASS: 6. cross_file_idempotency_collision (1691 ms) -> {"f1_rev":2,"f2_rev":2}
 
 === [E2E CASE] 7. unauthorized_access_denied ===
-PASS: 7. unauthorized_access_denied (6510 ms) -> {"noAuth":401,"expired":401,"roWrite":403,"wrongWs":403,"roResolve":403,"wrongWsResolve":403,"forbiddenFile":403,"crossTenant":"FILE_NOT_FOUND","badFencing":"FENCING_TOKEN_STALE"}
+PASS: 7. unauthorized_access_denied (5008 ms) -> {"noAuth":401,"expired":401,"roWrite":403,"wrongWs":403,"roResolve":403,"wrongWsResolve":403,"forbiddenFile":403,"missingWsClaim":403,"missingScopeClaim":403,"crossTenant":"FILE_NOT_FOUND","badFencing":"FENCING_TOKEN_STALE"}
 
 === [E2E CASE] 8. multiple_serverless_instances ===
-PASS: 8. multiple_serverless_instances (3701 ms) -> {"final_revision":7,"updated_functions":6}
+PASS: 8. multiple_serverless_instances (1709 ms) -> {"final_revision":7,"updated_functions":6}
 
 === [E2E CASE] 9. server_restart_persistence ===
-PASS: 9. server_restart_persistence (1459 ms) -> {"persisted_revision":3,"history_len":3,"redeployed":false,"redeployUrl":null}
+Triggering live `vercel deploy --prod --yes` mid-test to destroy & respawn all serverless containers...
+Fresh production deployment ready: id=dpl_5oWtrKLcWoY8Ya8s91btykrQ1meA state=READY url=https://ide1-0-hxm6vrttd-lidian727.vercel.app
+PASS: 9. server_restart_persistence (21449 ms) -> {"persisted_revision":3,"history_len":3,"redeployed":true,"deploymentId":"dpl_5oWtrKLcWoY8Ya8s91btykrQ1meA","readyState":"READY","redeployUrl":"https://ide1-0-hxm6vrttd-lidian727.vercel.app"}
 
 === [E2E CASE] 10. stale_revision_rebase_or_reject ===
-PASS: 10. stale_revision_rebase_or_reject (2954 ms) -> {"clean_rebased_rev":3,"bad_hash_code":"BASE_HASH_MISMATCH","conflict_status":"CONFLICT"}
+PASS: 10. stale_revision_rebase_or_reject (2415 ms) -> {"clean_rebased_rev":3,"bad_hash_code":"BASE_HASH_MISMATCH","conflict_status":"CONFLICT"}
 
 === [E2E CASE] 11. atomic_line_edit_and_replace ===
-PASS: 11. atomic_line_edit_and_replace (4117 ms) -> {"rev":3,"both_preserved":true}
+PASS: 11. atomic_line_edit_and_replace (1616 ms) -> {"rev":3,"both_preserved":true}
 
 === [E2E CASE] 12. correct_nema_domain_merge ===
-PASS: 12. correct_nema_domain_merge (2415 ms) -> {"rev":3,"bad_rejected":"REJECTED_NEMA_SYNTAX_ERROR"}
+PASS: 12. correct_nema_domain_merge (1383 ms) -> {"rev":3,"bad_rejected":"REJECTED_NEMA_SYNTAX_ERROR"}
 
 === [E2E CASE] 12b. authenticated_rest_coordination_endpoints ===
-PASS: 12b. authenticated_rest_coordination_endpoints (2593 ms) -> {"job_id":"job_1795325334602_00ae1360","fencing_token":1,"outbox_events":24}
+PASS: 12b. authenticated_rest_coordination_endpoints (1609 ms) -> {"job_id":"job_1795326455322_25fd0258","fencing_token":1,"outbox_events":24}
 
 === [E2E CASE] 13. real_disk_sync_and_git_diff ===
-PASS: 13. real_disk_sync_and_git_diff (26643 ms) -> {"rust_disk_git_test":"1 passed"}
+PASS: 13. real_disk_sync_and_git_diff (106586 ms) -> {"rust_disk_git_test":"1 passed"}

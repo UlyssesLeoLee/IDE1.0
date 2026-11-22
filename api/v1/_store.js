@@ -27,6 +27,19 @@ export function sha256Hex(text) {
   return crypto.createHash("sha256").update(String(text || ""), "utf8").digest("hex");
 }
 
+export function buildPgSslConfig(connectionString, env = process.env) {
+  const url = String(connectionString || "");
+  if (!url || url.includes("localhost") || url.includes("127.0.0.1")) {
+    return false;
+  }
+  const caCertRaw = env?.PG_CA_CERT || env?.DATABASE_CA_CERT || "";
+  const ssl = { rejectUnauthorized: true };
+  if (caCertRaw.trim()) {
+    ssl.ca = caCertRaw.replace(/\\n/g, "\n");
+  }
+  return ssl;
+}
+
 const SCHEMA_SQL = fs.readFileSync(
   new URL("../../db/migrations/001_mcp_durable_state.sql", import.meta.url),
   "utf8"
@@ -48,13 +61,12 @@ export class PgDurableStore {
         "DATABASE_URL / POSTGRES_URL is required for durable MCP state"
       );
     }
-    const useSsl = !url.includes("localhost") && !url.includes("127.0.0.1");
     this.pool = new Pool({
       connectionString: url,
       max: 5,
       idleTimeoutMillis: 15000,
       connectionTimeoutMillis: 8000,
-      ssl: useSsl ? { rejectUnauthorized: false } : false,
+      ssl: buildPgSslConfig(url, process.env),
     });
     return this.pool;
   }
@@ -796,6 +808,10 @@ export class PgDurableStore {
 
   async listProposals({ tenantId, principal = null, workspaceId = null, fileId = null }) {
     await this.ensureSchema();
+    let allowedExact = null;
+    if (principal && !principal.workspaces.some((w) => w.includes("*"))) {
+      allowedExact = principal.workspaces.map(String);
+    }
     const res = await this.getPool().query(
       `SELECT proposal_id, file_id, workspace_id, file_path, base_revision, head_revision,
               head_content_hash, agent_id, op_id, proposed_hash, conflict_diff,
@@ -804,8 +820,9 @@ export class PgDurableStore {
        WHERE tenant_id = $1
          AND ($2::text IS NULL OR workspace_id = $2)
          AND ($3::text IS NULL OR file_id = $3)
+         AND ($4::text[] IS NULL OR workspace_id = ANY($4::text[]))
        ORDER BY created_at DESC LIMIT 100`,
-      [tenantId, workspaceId, fileId]
+      [tenantId, workspaceId, fileId, allowedExact]
     );
     if (!principal) return res.rows;
     return res.rows.filter(
@@ -825,6 +842,9 @@ export class PgDurableStore {
         throw new StoreError(404, "PROPOSAL_NOT_FOUND", `Proposal '${proposalId}' not found`);
       }
       const prop = propRes.rows[0];
+      if (prop.tenant_id && prop.tenant_id !== tenantId) {
+        throw new StoreError(404, "PROPOSAL_NOT_FOUND", `Proposal '${proposalId}' not found`);
+      }
       if (principal) {
         authorizeScope(principal, prop.workspace_id, "write", prop.file_path);
       }

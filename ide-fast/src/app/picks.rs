@@ -500,9 +500,24 @@ mod tests {
         assert_eq!(d.lines.join("\n"), help::manual().trim_end_matches('\n'));
     }
 
+    struct LangGuard(crate::i18n::Lang);
+    impl LangGuard {
+        fn new(lang: crate::i18n::Lang) -> Self {
+            let prev = crate::i18n::cur();
+            crate::i18n::set(lang);
+            Self(prev)
+        }
+    }
+    impl Drop for LangGuard {
+        fn drop(&mut self) {
+            crate::i18n::set(self.0);
+        }
+    }
+
     #[test]
     fn help_search_starts_with_the_word_under_the_cursor() {
         let (mut a, _g) = app_with_docs(&["x"]);
+        let _lg = LangGuard::new(crate::i18n::Lang::Zh);
         a.cur().lines = vec!["宏登记 here".into()];
         a.cur().cursor = [0, 1];
         a.run_pick(KApp::ExtHelp);
@@ -519,6 +534,7 @@ mod tests {
     #[test]
     fn key_search_shows_a_tip_only_when_on_and_only_for_a_new_word() {
         let (mut a, _g) = app_with_docs(&["x"]);
+        let _lg = LangGuard::new(crate::i18n::Lang::Zh);
         a.cur().lines = vec!["窗口一览 xyzzyplugh".into()];
         a.cur().cursor = [0, 1];
         a.cur().tip.clear();
