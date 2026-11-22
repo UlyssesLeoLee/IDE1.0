@@ -165,6 +165,10 @@ pub struct App {
     /// 编辑区控件的 id (有别的输入框拿着焦点时, 编辑区不抢键盘; 编辑区自己拿着焦点不算)
     editor_ids: Vec<egui::Id>,
     pub(super) last_opened_dock: crate::panels::Dock,
+    /// 右侧边折叠条最顶部切割的小正方形触发区（用于悬停显示 导航 / MD / NEMA）
+    pub(super) right_strip_top_trigger: Option<egui::Rect>,
+    /// 右上角 导航 / MD / NEMA 悬浮栏展开状态
+    pub(super) right_nav_hover_open: bool,
     /// 移动履历 (Alt+P / Alt+N)
     jump: JumpHist,
     fullscreen: bool,
@@ -287,6 +291,8 @@ impl App {
             plug: Default::default(),
             editor_ids: vec![],
             last_opened_dock: crate::panels::Dock::Side,
+            right_strip_top_trigger: None,
+            right_nav_hover_open: false,
             jump: JumpHist::default(),
             fullscreen: false,
             topmost: false,
@@ -4019,25 +4025,21 @@ impl App {
         let md_open = (is_md_doc && !self.cfg.view.md_bar_collapsed) || self.md_preview;
         let nema_open = (is_nema_doc && !self.cfg.view.nema_bar_collapsed) || self.nema_preview;
         let slots = right_collapse_slots(rect, minimap_open, md_open, nema_open);
+        let show_top_slots = update_top_nav_hover(
+            self.right_nav_hover_open,
+            ui.input(|i| i.pointer.hover_pos()),
+            self.right_strip_top_trigger,
+            &rect,
+            &slots,
+        );
+        self.right_nav_hover_open = show_top_slots;
+        if !show_top_slots {
+            return;
+        }
         let btn_painter = ui.painter_at(rect.intersect(ui.clip_rect()));
         let pressed = ui.ctx().input(|i| i.pointer.primary_down());
-        let top_hover_zone = Rect::from_min_max(
-            Pos2::new(rect.max.x - 145.0, rect.min.y),
-            Pos2::new(rect.max.x, rect.min.y + 36.0),
-        );
-        let show_top_slots = ui.input(|i| i.pointer.hover_pos()).is_some_and(|p| {
-            top_hover_zone.contains(p)
-                || slots
-                    .iter()
-                    .filter(|s| s.rect.min.y < rect.min.y + 40.0)
-                    .any(|s| s.rect.expand(6.0).contains(p))
-        });
         let mut clicked_kind = None;
         for slot in slots {
-            let is_top = slot.rect.min.y < rect.min.y + 40.0;
-            if is_top && !show_top_slots {
-                continue;
-            }
             let (label, tip_text) = match slot.kind {
                 RightCollapseKind::Minimap => ("导航", trz("折叠 / 展开右侧导航图 (Minimap)")),
                 RightCollapseKind::Md => ("MD", trz("折叠 / 展开 Markdown 工具栏/预览")),
@@ -5659,47 +5661,48 @@ impl App {
                         );
                         let slots =
                             right_collapse_slots(screen_vp, minimap_open, md_open, nema_open);
-                        let btn_painter = ui.painter_at(screen_vp.intersect(ui.clip_rect()));
-                        let pressed = ui.ctx().input(|i| i.pointer.primary_down());
-                        let show_top_slots = is_top_nav_hovered(
+                        let show_top_slots = update_top_nav_hover(
+                            self.right_nav_hover_open,
                             ui.input(|i| i.pointer.hover_pos()),
+                            self.right_strip_top_trigger,
                             &screen_vp,
                             &slots,
                         );
-                        for slot in slots {
-                            let is_top = slot.rect.min.y < screen_vp.min.y + 40.0;
-                            if is_top && !show_top_slots {
-                                continue;
-                            }
-                            let (label, tip_text) = match slot.kind {
-                                RightCollapseKind::Minimap => {
-                                    ("导航", trz("折叠 / 展开右侧导航图 (Minimap)"))
-                                }
-                                RightCollapseKind::Md => {
-                                    ("MD", trz("折叠 / 展开 Markdown 工具栏/预览"))
-                                }
-                                RightCollapseKind::Nema => {
-                                    ("NEMA", trz("折叠 / 展开 NEMA 工具栏/预览"))
-                                }
-                            };
-                            let hresp = ui
-                                .interact(
+                        self.right_nav_hover_open = show_top_slots;
+                        if show_top_slots {
+                            let btn_painter = ui.painter_at(screen_vp.intersect(ui.clip_rect()));
+                            let pressed = ui.ctx().input(|i| i.pointer.primary_down());
+                            for slot in slots {
+                                let (label, tip_text) = match slot.kind {
+                                    RightCollapseKind::Minimap => {
+                                        ("导航", trz("折叠 / 展开右侧导航图 (Minimap)"))
+                                    }
+                                    RightCollapseKind::Md => {
+                                        ("MD", trz("折叠 / 展开 Markdown 工具栏/预览"))
+                                    }
+                                    RightCollapseKind::Nema => {
+                                        ("NEMA", trz("折叠 / 展开 NEMA 工具栏/预览"))
+                                    }
+                                };
+                                let hresp = ui
+                                    .interact(
+                                        slot.rect,
+                                        ui.id().with(("r_col_slot", slot.kind as u8)),
+                                        egui::Sense::hover(),
+                                    )
+                                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                    .on_hover_text(tip_text);
+                                crate::btnstyle::paint_unified_collapse_btn(
+                                    ui,
+                                    &btn_painter,
                                     slot.rect,
-                                    ui.id().with(("r_col_slot", slot.kind as u8)),
-                                    egui::Sense::hover(),
-                                )
-                                .on_hover_cursor(egui::CursorIcon::PointingHand)
-                                .on_hover_text(tip_text);
-                            crate::btnstyle::paint_unified_collapse_btn(
-                                ui,
-                                &btn_painter,
-                                slot.rect,
-                                label,
-                                &tc,
-                                slot.open,
-                                hresp.hovered(),
-                                hresp.hovered() && pressed,
-                            );
+                                    label,
+                                    &tc,
+                                    slot.open,
+                                    hresp.hovered(),
+                                    hresp.hovered() && pressed,
+                                );
+                            }
                         }
                     }
                     // 光标
@@ -6012,14 +6015,21 @@ impl App {
             let md_open = (is_md_doc && !vw.md_bar_collapsed) || self.md_preview;
             let nema_open = (is_nema_doc && !vw.nema_bar_collapsed) || self.nema_preview;
             let slots = right_collapse_slots(screen_vp, minimap_open, md_open, nema_open);
-            let show_top_slots = is_top_nav_hovered(Some(p), &screen_vp, &slots);
-            if let Some(slot) = slots.iter().find(|s| {
-                s.rect.contains(p) && (s.rect.min.y >= screen_vp.min.y + 40.0 || show_top_slots)
-            }) {
-                if ctx.input(|i| i.pointer.any_pressed()) {
-                    self.toggle_right_collapse_slot(slot.kind, is_md_doc, is_nema_doc);
+            let show_top_slots = self.right_nav_hover_open
+                || update_top_nav_hover(
+                    self.right_nav_hover_open,
+                    Some(p),
+                    self.right_strip_top_trigger,
+                    &screen_vp,
+                    &slots,
+                );
+            if show_top_slots {
+                if let Some(slot) = slots.iter().find(|s| s.rect.contains(p)) {
+                    if ctx.input(|i| i.pointer.any_pressed()) {
+                        self.toggle_right_collapse_slot(slot.kind, is_md_doc, is_nema_doc);
+                    }
+                    return;
                 }
-                return;
             }
             if vw.minimap
                 && !d.lines.is_empty()
@@ -6237,15 +6247,13 @@ pub struct RightCollapseSlot {
 }
 
 /// 计算编辑器右侧 3 个统一缩进/折叠按钮 (`导航` / `MD` / `NEMA`) 的排布位置:
-/// - 未打开任何右侧区域时：全部停靠在右上角
-/// - 点开其中任意一项后：已打开项保持在上方，其余未打开项自动降到底部
+/// 无论是否打开任一面板，3 个按钮始终统一停靠在右上角同一水平行（不再上下跳动）。
 pub fn right_collapse_slots(
     viewport: Rect,
     minimap_open: bool,
     md_open: bool,
     nema_open: bool,
 ) -> Vec<RightCollapseSlot> {
-    let any_open = minimap_open || md_open || nema_open;
     let specs = [
         (RightCollapseKind::Minimap, 38.0_f32, minimap_open),
         (RightCollapseKind::Md, 32.0_f32, md_open),
@@ -6255,22 +6263,13 @@ pub fn right_collapse_slots(
     let gap = 4.0_f32;
     let right_x = viewport.max.x - 6.0;
     let top_y = viewport.min.y + 6.0;
-    let bottom_y = (viewport.max.y - btn_h - 6.0).max(top_y + btn_h + gap);
 
     let mut top_cursor_x = right_x;
-    let mut bot_cursor_x = right_x;
     let mut out = Vec::with_capacity(specs.len());
     for (kind, w, is_open) in specs {
-        let on_bottom = any_open && !is_open;
-        let rect = if on_bottom {
-            let x = bot_cursor_x - w;
-            bot_cursor_x = x - gap;
-            Rect::from_min_size(Pos2::new(x, bottom_y), Vec2::new(w, btn_h))
-        } else {
-            let x = top_cursor_x - w;
-            top_cursor_x = x - gap;
-            Rect::from_min_size(Pos2::new(x, top_y), Vec2::new(w, btn_h))
-        };
+        let x = top_cursor_x - w;
+        top_cursor_x = x - gap;
+        let rect = Rect::from_min_size(Pos2::new(x, top_y), Vec2::new(w, btn_h));
         out.push(RightCollapseSlot {
             kind,
             rect,
@@ -6280,23 +6279,48 @@ pub fn right_collapse_slots(
     out
 }
 
-/// 判断鼠标是否位于右上角折叠按钮悬停感知区，用于顶部槽位悬停才显隐
-pub fn is_top_nav_hovered(
+/// 统一判定右上角 `导航 / MD / NEMA` 悬浮栏是否应显示：
+/// - 未展开时，严格只在悬停于右侧折叠条顶部切割的小正方形触发区时才激活；
+/// - 已展开时，只要鼠标位于触发小正方形或滑向三个按钮的紧凑桥接走廊内就保持显示，
+///   移出该区域立即收起，避免编辑区右上角大范围误触发。
+pub fn update_top_nav_hover(
+    was_open: bool,
     pointer_pos: Option<Pos2>,
+    trigger_rect: Option<Rect>,
     screen_vp: &Rect,
     slots: &[RightCollapseSlot],
 ) -> bool {
-    let top_hover_zone = Rect::from_min_max(
-        Pos2::new(screen_vp.max.x - 145.0, screen_vp.min.y),
-        Pos2::new(screen_vp.max.x, screen_vp.min.y + 36.0),
-    );
-    pointer_pos.is_some_and(|p| {
-        top_hover_zone.contains(p)
-            || slots
-                .iter()
-                .filter(|s| s.rect.min.y < screen_vp.min.y + 40.0)
-                .any(|s| s.rect.expand(6.0).contains(p))
-    })
+    let Some(p) = pointer_pos else {
+        return false;
+    };
+    let trigger = trigger_rect.unwrap_or_else(|| {
+        Rect::from_min_max(
+            Pos2::new(screen_vp.max.x - 16.0, screen_vp.min.y),
+            Pos2::new(screen_vp.max.x, screen_vp.min.y + 16.0),
+        )
+    });
+    if (trigger.max.x - screen_vp.max.x).abs() > 40.0 {
+        return false;
+    }
+    if trigger.contains(p) {
+        return true;
+    }
+    if was_open && !slots.is_empty() {
+        let (mut min_x, mut min_y) = (trigger.min.x, trigger.min.y);
+        let (mut max_x, mut max_y) = (trigger.max.x, trigger.max.y);
+        for s in slots {
+            min_x = min_x.min(s.rect.min.x);
+            min_y = min_y.min(s.rect.min.y);
+            max_x = max_x.max(s.rect.max.x);
+            max_y = max_y.max(s.rect.max.y);
+        }
+        let bridge = Rect::from_min_max(
+            Pos2::new(min_x - 6.0, min_y - 4.0),
+            Pos2::new(max_x + 2.0, max_y + 6.0),
+        );
+        return bridge.contains(p);
+    }
+    false
 }
 
 fn right_room(avail: f32) -> bool {

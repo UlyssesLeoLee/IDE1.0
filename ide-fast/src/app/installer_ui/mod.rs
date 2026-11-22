@@ -254,7 +254,9 @@ impl InstallerState {
                         self.agreement_accepted = false;
                         return;
                     }
-                    self.step = InstallerStep::Options;
+                    self.step = InstallerStep::Agreement;
+                    self.agreement_scrolled_to_bottom = false;
+                    self.agreement_accepted = false;
                     self.mode = InstallerMode::Maintenance;
                     self.target_dir = ex.install_dir.clone();
                     self.add_path = if ex.has_uninstall_reg {

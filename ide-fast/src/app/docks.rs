@@ -7,6 +7,29 @@ use super::*;
 use crate::panels::{self, Dock, Mode};
 use egui::{pos2, Stroke};
 
+/// 自适应均匀分布左右侧边折叠条上的波普黄网点纵坐标：
+/// 上半区 `[top_start, tab_top]` 与下半区 `[tab_bot, bot_end]` 各自按 ~16px 间距等分平铺，
+/// 消除大屏幕下顶部或底部出现大片留白的问题，同时确保不侵入中央拉手区域。
+pub(super) fn adaptive_ben_day_dot_ys(
+    top_start: f32,
+    tab_top: f32,
+    tab_bot: f32,
+    bot_end: f32,
+) -> Vec<f32> {
+    let mut ys = Vec::new();
+    for (a, b) in [(top_start, tab_top), (tab_bot, bot_end)] {
+        let span = b - a;
+        if span >= 8.0 {
+            let intervals = ((span / 16.0).round() as usize).max(1);
+            for i in 0..=intervals {
+                let t = i as f32 / intervals as f32;
+                ys.push(a + span * t);
+            }
+        }
+    }
+    ys
+}
+
 impl App {
     pub(super) fn dock_collapsed(&self, d: Dock) -> bool {
         let v = &self.cfg.view;
@@ -150,6 +173,7 @@ impl App {
         collapsed: bool,
         hovered: bool,
         pressed: bool,
+        top_trigger_hovered: bool,
     ) {
         // 1. 纯黑分镜墨线 (Panel Gutter Line)
         match d {
@@ -175,19 +199,59 @@ impl App {
         }
 
         let cx = rect.center().x;
+        let sq_size = rect.width().clamp(14.0, 24.0);
 
-        // 2. 本戴印刷网点 (Ben-Day Halftone Dots: 复古美漫 4 色胶印点阵)
-        let dot_step = 16.0;
-        let mut dot_y = rect.top() + 66.0;
-        let max_dot_y = rect.bottom() - 36.0;
-        while dot_y < max_dot_y {
-            if (dot_y - rect.center().y).abs() > 28.0 {
-                // 外圈墨黑微点
-                p.circle_filled(pos2(cx, dot_y), 1.3, Color32::from_black_alpha(140));
-                // 内圈波普黄高亮核心，形成逼真四色套印半色调网点
-                p.circle_filled(pos2(cx, dot_y), 0.65, Color32::from_rgb(255, 204, 0));
+        // 右侧折叠条最顶部切割独立小正方形区域，用于悬停呼出 NEMA/MD/导航 按钮（点击仍执行折叠/展开）
+        if d == Dock::Right && rect.height() >= sq_size + 8.0 {
+            let top_sq = Rect::from_min_size(rect.min, Vec2::splat(sq_size));
+            let inner_right = (top_sq.right() - 1.0).max(top_sq.left() + 4.0);
+            let sq_draw = Rect::from_min_max(
+                pos2(top_sq.left() + 2.0, top_sq.top()),
+                pos2(inner_right, top_sq.bottom()),
+            );
+            let sq_bg = if top_trigger_hovered {
+                Color32::from_rgb(255, 204, 0)
+            } else {
+                Color32::from_rgb(32, 36, 52)
+            };
+            p.rect_filled(sq_draw, 1.5, sq_bg);
+            p.hline(
+                rect.x_range(),
+                top_sq.bottom(),
+                Stroke::new(1.5, Color32::BLACK),
+            );
+            let bar_col = if top_trigger_hovered {
+                Color32::BLACK
+            } else {
+                Color32::from_rgb(255, 204, 0)
+            };
+            let scx = sq_draw.center().x;
+            let scy = sq_draw.center().y;
+            for dy in [-3.0_f32, 0.0, 3.0] {
+                p.line_segment(
+                    [pos2(scx - 3.0, scy + dy), pos2(scx + 3.0, scy + dy)],
+                    Stroke::new(1.4, bar_col),
+                );
             }
-            dot_y += dot_step;
+        }
+
+        // 2. 本戴印刷网点 (自适应上下等分填满整条竖条，避免大屏上下留白)
+        let top_start = if d == Dock::Right {
+            rect.top() + sq_size + 10.0
+        } else {
+            rect.top() + 14.0
+        };
+        let dot_ys = adaptive_ben_day_dot_ys(
+            top_start,
+            rect.center().y - 28.0,
+            rect.center().y + 28.0,
+            rect.bottom() - 30.0,
+        );
+        for dot_y in dot_ys {
+            // 外圈墨黑微点
+            p.circle_filled(pos2(cx, dot_y), 1.3, Color32::from_black_alpha(140));
+            // 内圈波普黄高亮核心，形成逼真四色套印半色调网点
+            p.circle_filled(pos2(cx, dot_y), 0.65, Color32::from_rgb(255, 204, 0));
         }
 
         // 3. 底部分镜校准标印 (Registration Mark / Comic Grip Notches)
@@ -408,6 +472,16 @@ impl App {
                         let w = ui.available_width();
                         let h = ui.available_height();
                         let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, h), Sense::click());
+                        let top_trigger_hovered = if d == Dock::Right {
+                            let sq_size = rect.width().clamp(14.0, 24.0);
+                            let top_trigger_rect =
+                                Rect::from_min_size(rect.min, Vec2::splat(sq_size));
+                            self.right_strip_top_trigger = Some(top_trigger_rect);
+                            ui.input(|i| i.pointer.hover_pos())
+                                .is_some_and(|p| top_trigger_rect.contains(p))
+                        } else {
+                            false
+                        };
                         let resp = resp
                             .on_hover_cursor(egui::CursorIcon::PointingHand)
                             .tip(trz(panels::tip(d, collapsed)));
@@ -419,6 +493,7 @@ impl App {
                                 collapsed,
                                 resp.hovered(),
                                 resp.is_pointer_button_down_on(),
+                                top_trigger_hovered,
                             );
                         } else {
                             Self::paint_modern_dock_strip(
@@ -429,6 +504,7 @@ impl App {
                                 &tc,
                                 resp.hovered(),
                                 resp.is_pointer_button_down_on(),
+                                top_trigger_hovered,
                             );
                         }
                         toggle = resp.clicked();
@@ -451,6 +527,7 @@ impl App {
     }
 
     /// 现代/水晶/复古主题左右折叠条腰部居中拉手胶囊
+    #[allow(clippy::too_many_arguments)]
     fn paint_modern_dock_strip(
         p: &egui::Painter,
         rect: Rect,
@@ -459,9 +536,42 @@ impl App {
         tc: &crate::view::ThemeColors,
         hovered: bool,
         pressed: bool,
+        top_trigger_hovered: bool,
     ) {
         if hovered {
             p.rect_filled(rect, 0.0, tc.bg_hover.gamma_multiply(0.35));
+        }
+        let sq_size = rect.width().clamp(14.0, 24.0);
+        if d == Dock::Right && rect.height() >= sq_size + 8.0 {
+            let top_sq = Rect::from_min_size(rect.min, Vec2::splat(sq_size));
+            let sq_bg = if top_trigger_hovered {
+                tc.bg_active
+            } else {
+                tc.bg_bar.gamma_multiply(0.85)
+            };
+            p.rect_filled(top_sq.shrink(1.5), 2.5, sq_bg);
+            p.hline(
+                top_sq.x_range(),
+                top_sq.bottom(),
+                Stroke::new(1.0, tc.border),
+            );
+            let bar_col = if top_trigger_hovered {
+                if tc.is_translucent() {
+                    tc.mat_prism_cyan
+                } else {
+                    tc.fg
+                }
+            } else {
+                tc.fg_dim
+            };
+            let scx = top_sq.center().x;
+            let scy = top_sq.center().y;
+            for dy in [-3.0_f32, 0.0, 3.0] {
+                p.line_segment(
+                    [pos2(scx - 3.0, scy + dy), pos2(scx + 3.0, scy + dy)],
+                    Stroke::new(1.2, bar_col),
+                );
+            }
         }
         let pill = Rect::from_center_size(
             Pos2::new(rect.center().x, rect.center().y),
@@ -836,20 +946,61 @@ mod tests {
                 for collapsed in [false, true] {
                     for hovered in [false, true] {
                         for pressed in [false, true] {
-                            App::paint_comic_dock_strip(
-                                ui.painter(),
-                                rect,
-                                d,
-                                collapsed,
-                                hovered,
-                                pressed,
-                            );
+                            for top_hovered in [false, true] {
+                                App::paint_comic_dock_strip(
+                                    ui.painter(),
+                                    rect,
+                                    d,
+                                    collapsed,
+                                    hovered,
+                                    pressed,
+                                    top_hovered,
+                                );
+                            }
                         }
                     }
                 }
             }
         });
         out.textures_delta.clear();
+    }
+
+    #[test]
+    fn adaptive_ben_day_dots_fill_upper_and_lower_spans_on_large_screens() {
+        for total_h in [720.0_f32, 1400.0, 2160.0] {
+            let cy = total_h * 0.5;
+            let top_start = 14.0;
+            let tab_top = cy - 28.0;
+            let tab_bot = cy + 28.0;
+            let bot_end = total_h - 30.0;
+            let ys = adaptive_ben_day_dot_ys(top_start, tab_top, tab_bot, bot_end);
+            assert!(!ys.is_empty(), "tall strip h={total_h} should have dots");
+            assert!(
+                (ys[0] - top_start).abs() < 1e-3,
+                "first dot should sit near top without large blank header: {:?}",
+                ys[0]
+            );
+            assert!(
+                (*ys.last().unwrap() - bot_end).abs() < 1e-3,
+                "last dot should reach bottom without large blank footer: {:?}",
+                ys.last()
+            );
+            for &y in &ys {
+                assert!(
+                    y <= tab_top + 1e-3 || y >= tab_bot - 1e-3,
+                    "dot y={y} must not collide with center tab [{tab_top}, {tab_bot}]"
+                );
+            }
+            let max_gap = ys
+                .windows(2)
+                .filter(|w| !((w[0] - tab_top).abs() < 1.0 && (w[1] - tab_bot).abs() < 1.0))
+                .map(|w| w[1] - w[0])
+                .fold(0.0_f32, f32::max);
+            assert!(
+                max_gap < 24.0,
+                "gap within any segment must stay compact (<24px), got {max_gap} at h={total_h}"
+            );
+        }
     }
 
     #[test]

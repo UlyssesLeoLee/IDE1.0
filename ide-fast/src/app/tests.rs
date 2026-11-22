@@ -1811,66 +1811,68 @@ fn test_wrap_mode_and_minimap_collapse_invariants() {
 }
 
 #[test]
-fn right_collapse_slots_places_all_at_top_when_closed_and_drops_closed_to_bottom_when_opened() {
+fn right_collapse_slots_always_stay_at_top_and_strict_top_square_hover() {
     let vp = Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(800.0, 600.0));
 
-    // 1. 全部未打开时: 导航 / MD / NEMA 全部位于右上角上方
-    let all_closed = crate::app::right_collapse_slots(vp, false, false, false);
-    assert_eq!(all_closed.len(), 3);
-    for s in &all_closed {
-        assert_eq!(s.rect.min.y, 6.0);
-        assert!(!s.open);
+    // 1. 无论是否打开导航 / MD / NEMA，三个按钮统一停靠在右上角同一顶行，不再跳到底部
+    for (minimap_open, md_open, nema_open) in [
+        (false, false, false),
+        (true, false, false),
+        (false, true, false),
+        (false, false, true),
+        (true, true, true),
+    ] {
+        let slots = crate::app::right_collapse_slots(vp, minimap_open, md_open, nema_open);
+        assert_eq!(slots.len(), 3);
+        for s in &slots {
+            assert_eq!(
+                s.rect.min.y, 6.0,
+                "所有按钮必须固定在右上角上方 (state={minimap_open},{md_open},{nema_open})"
+            );
+        }
     }
 
-    // 2. 点开导航图后: 导航图按钮留在上方，剩余 MD / NEMA 自动降到底部
-    let map_open = crate::app::right_collapse_slots(vp, true, false, false);
-    let m = map_open
-        .iter()
-        .find(|s| s.kind == crate::app::RightCollapseKind::Minimap)
-        .unwrap();
-    let md = map_open
-        .iter()
-        .find(|s| s.kind == crate::app::RightCollapseKind::Md)
-        .unwrap();
-    let nema = map_open
-        .iter()
-        .find(|s| s.kind == crate::app::RightCollapseKind::Nema)
-        .unwrap();
-    assert_eq!(m.rect.min.y, 6.0);
-    assert_eq!(md.rect.min.y, 574.0);
-    assert_eq!(nema.rect.min.y, 574.0);
-
-    // 3. 点开 MD 后: MD 留在上方，剩余 导航 / NEMA 自动降到底部
-    let md_only = crate::app::right_collapse_slots(vp, false, true, false);
-    assert_eq!(
-        md_only
-            .iter()
-            .find(|s| s.kind == crate::app::RightCollapseKind::Md)
-            .unwrap()
-            .rect
-            .min
-            .y,
-        6.0
+    // 2. 悬停严格由右侧折叠条顶部切割的小正方形触发区激活，打开后在按钮走廊内保持显示，移出即收起
+    let slots = crate::app::right_collapse_slots(vp, false, false, false);
+    let trigger = Rect::from_min_size(Pos2::new(800.0, 0.0), egui::Vec2::new(16.0, 16.0));
+    let editor_corner_pt = slots[0].rect.center();
+    assert!(
+        !crate::app::update_top_nav_hover(
+            false,
+            Some(editor_corner_pt),
+            Some(trigger),
+            &vp,
+            &slots
+        ),
+        "未触发前鼠标位于编辑区右上角也不得误弹出"
     );
-    assert_eq!(
-        md_only
-            .iter()
-            .find(|s| s.kind == crate::app::RightCollapseKind::Minimap)
-            .unwrap()
-            .rect
-            .min
-            .y,
-        574.0
+    assert!(
+        !crate::app::update_top_nav_hover(
+            false,
+            Some(Pos2::new(808.0, 24.0)),
+            Some(trigger),
+            &vp,
+            &slots
+        ),
+        "悬停在折叠条正方形触发区下方也不得触发"
     );
-    assert_eq!(
-        md_only
-            .iter()
-            .find(|s| s.kind == crate::app::RightCollapseKind::Nema)
-            .unwrap()
-            .rect
-            .min
-            .y,
-        574.0
+    assert!(
+        crate::app::update_top_nav_hover(false, Some(trigger.center()), Some(trigger), &vp, &slots),
+        "悬停在顶部小正方形触发区时应显示三个按钮"
+    );
+    assert!(
+        crate::app::update_top_nav_hover(true, Some(editor_corner_pt), Some(trigger), &vp, &slots),
+        "已显示时鼠标移向 导航/MD/NEMA 按钮应保持显示"
+    );
+    assert!(
+        !crate::app::update_top_nav_hover(
+            true,
+            Some(Pos2::new(400.0, 200.0)),
+            Some(trigger),
+            &vp,
+            &slots
+        ),
+        "鼠标离开悬浮走廊后应立即收起"
     );
 }
 

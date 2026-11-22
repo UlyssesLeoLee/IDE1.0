@@ -71,9 +71,10 @@ pub fn paint_step_indicator_for_mode(
         ),
         InstallerMode::Maintenance => (
             vec![
-                (InstallerStep::Options, "1", crate::i18n::trz("维护模式")),
-                (InstallerStep::Installing, "2", crate::i18n::trz("执行维护")),
-                (InstallerStep::Finished, "3", crate::i18n::trz("维护完成")),
+                (InstallerStep::Agreement, "1", crate::i18n::trz("许可协议")),
+                (InstallerStep::Options, "2", crate::i18n::trz("维护模式")),
+                (InstallerStep::Installing, "3", crate::i18n::trz("执行维护")),
+                (InstallerStep::Finished, "4", crate::i18n::trz("维护完成")),
             ],
             Color32::from_rgb(2, 132, 199),
             Color32::from_rgb(125, 211, 252),

@@ -695,10 +695,13 @@ fn test_apply_open_mode_transitions() {
         has_uninstall_reg: true,
     };
 
-    // 1. Auto + 已安装 -> 维护模式，继承已有目录与集成选项
+    // 1. Auto + 已安装 -> 维护模式，始终先进入许可协议并继承已有目录与集成选项
     let mut s1 = InstallerState::default();
     s1.apply_open_mode(InstallerLaunchMode::Auto, Some(ex.clone()), None, None);
     assert_eq!(s1.mode, InstallerMode::Maintenance);
+    assert_eq!(s1.step, InstallerStep::Agreement);
+    assert!(!s1.agreement_scrolled_to_bottom);
+    assert!(!s1.agreement_accepted);
     assert_eq!(s1.target_dir, r"C:\Apps\IDE1.0");
     assert!(!s1.add_path);
     assert!(!s1.desktop_shortcut);
@@ -923,6 +926,7 @@ fn test_eula_unaccepted_alert_and_all_steps_640h_layout() {
     // 2. 验证全 7 个分镜在 880x640 下均能无 panic 渲染
     let scenarios = [
         (InstallerMode::Install, InstallerStep::Agreement),
+        (InstallerMode::Maintenance, InstallerStep::Agreement),
         (InstallerMode::Install, InstallerStep::Options),
         (InstallerMode::Maintenance, InstallerStep::Options),
         (InstallerMode::Repair, InstallerStep::Options),
