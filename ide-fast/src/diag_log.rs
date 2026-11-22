@@ -95,22 +95,31 @@ pub fn should_show_crash_dialog() -> bool {
 }
 
 /// 在崩溃或启动严重异常时提示用户并提供打开 GitHub Issues 反馈按钮
-pub fn prompt_crash_feedback(log_path: &std::path::Path, error_type: &str) {
+pub fn prompt_crash_feedback(log_path: &std::path::Path, error_type: &'static str) {
     if !should_show_crash_dialog() {
         return;
     }
+    let feedback_btn = crate::i18n::trz("反馈问题").to_string();
+    let close_btn = crate::i18n::trz("关闭").to_string();
     let res = rfd::MessageDialog::new()
-        .set_title(format!("IDE1.0 - {error_type}"))
+        .set_level(rfd::MessageLevel::Error)
+        .set_title(format!("IDE1.0 - {}", crate::i18n::trz(error_type)))
         .set_description(format!(
-            "IDE1.0 遇到严重错误并已记录日志。\n\
-            日志路径：{}\n\n\
-            是否打开 GitHub Issues 页面反馈此问题？",
-            log_path.display()
+            "{}\n{}: {}\n\n{}",
+            crate::i18n::trz("IDE1.0 遇到严重错误并已记录日志。"),
+            crate::i18n::trz("日志路径"),
+            log_path.display(),
+            crate::i18n::trz("点击「反馈问题」将打开 GitHub Issues 页面。"),
         ))
-        .set_buttons(rfd::MessageButtons::YesNo)
+        .set_buttons(rfd::MessageButtons::OkCancelCustom(
+            feedback_btn.clone(),
+            close_btn,
+        ))
         .show();
 
-    if res == rfd::MessageDialogResult::Yes {
+    if matches!(res, rfd::MessageDialogResult::Custom(ref s) if s == &feedback_btn)
+        || res == rfd::MessageDialogResult::Ok
+    {
         let _ = crate::md_view::open_url(ISSUES_URL);
     }
 }
@@ -172,16 +181,6 @@ pub fn start_stale_log_cleanup(
                 deleted += 1;
             } else {
                 failed += 1;
-            }
-            let sleep_ms = if total <= 5 {
-                30
-            } else if total <= 15 {
-                10
-            } else {
-                0
-            };
-            if sleep_ms > 0 {
-                std::thread::sleep(std::time::Duration::from_millis(sleep_ms));
             }
         }
         let _ = tx.send(LogCleanupMsg::Complete { deleted, failed });

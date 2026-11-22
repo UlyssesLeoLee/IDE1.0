@@ -36,6 +36,8 @@ window-vibrancy = { version = "0.8", default-features = false }
 raw-window-handle = "0.6"
 # 系统通知区域托盘图标（右下角时钟旁边）：复用锁文件已有的 0.25 版本（Tauri 拉入）
 tray-icon = { version = "0.25", default-features = false }
+# 崩溃反馈对话使用 TaskDialogIndirect 以渲染专属「反馈问题 / 关闭」按钮标签
+rfd = { version = "0.15", default-features = false, features = ["common-controls-v6"] }
 
 [target.'cfg(windows)'.build-dependencies]
 tauri-winres = "0.3"

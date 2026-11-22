@@ -4794,6 +4794,42 @@ pub const CMD_T: &[Row] = &[
             "Collapse Model & API Settings",
         ],
     ),
+    ("程序异常崩溃", ["程序异常崩溃", "異常終了", "Unexpected Crash"]),
+    ("启动异常", ["启动异常", "起動エラー", "Startup Error"]),
+    (
+        "IDE1.0 遇到严重错误并已记录日志。",
+        [
+            "IDE1.0 遇到严重错误并已记录日志。",
+            "IDE1.0 で重大なエラーが発生し、ログを記録しました。",
+            "IDE1.0 encountered a critical error and saved a log.",
+        ],
+    ),
+    ("日志路径", ["日志路径", "ログパス", "Log path"]),
+    (
+        "点击「反馈问题」将打开 GitHub Issues 页面。",
+        [
+            "点击「反馈问题」将打开 GitHub Issues 页面。",
+            "「問題を報告」をクリックすると GitHub Issues を開きます。",
+            "Click \"Report Issue\" to open GitHub Issues.",
+        ],
+    ),
+    ("反馈问题", ["反馈问题", "問題を報告", "Report Issue"]),
+    (
+        "提示：文档关系图基于 Markdown 标题结构与引用生成。请在当前文档中添加 #、## 等标题，或使用 [[标题]] 引用关系后再试。",
+        [
+            "提示：文档关系图基于 Markdown 标题结构与引用生成。请在当前文档中添加 #、## 等标题，或使用 [[标题]] 引用关系后再试。",
+            "ヒント：ドキュメント関係図は Markdown の見出し構造と参照から生成されます。現在のドキュメントに # / ## 見出しや [[見出し]] 参照を追加して再試行してください。",
+            "Tip: Document Graph is generated from Markdown headings and links. Add # / ## headings or [[Heading]] references to the current document and try again.",
+        ],
+    ),
+    (
+        "插件命令失败 (编辑器不受影响)",
+        [
+            "插件命令失败 (编辑器不受影响)",
+            "プラグインコマンドに失敗しました (エディタには影響ありません)",
+            "Plugin command failed (editor unaffected)",
+        ],
+    ),
 ];
 
 #[cfg(test)]

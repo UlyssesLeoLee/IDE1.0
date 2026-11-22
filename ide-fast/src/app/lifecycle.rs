@@ -205,68 +205,70 @@ impl App {
             ctx.request_repaint();
             return false;
         }
-
         if self.pending_confirm_close {
-            self.pending_confirm_close = false;
-            let mut i = 0;
-            let mut all = true;
-            while i < self.docs.len() {
-                if self.docs[i].dirty {
-                    self.active = i;
-                    if !self.close_tab(i) {
-                        all = false;
-                        break;
-                    }
-                } else {
-                    i += 1;
-                }
-            }
-            if all {
-                self.confirm_exit = true;
-                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-            } else {
-                self.exit_session = None;
-                self.force_exit = false;
-                ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(
-                    egui::WindowLevel::Normal,
-                ));
-                crate::updapply::cancel();
-            }
+            self.process_pending_confirm_close(ctx);
             return false;
         }
-
         // 关窗口: 确认退出后清理超过 7 天的历史日志
         if ctx.input(|i| i.viewport().close_requested()) {
-            match &self.log_cleanup_state {
-                LogCleanupState::NotStarted => {
-                    let stale = crate::diag_log::scan_stale_logs(crate::diag_log::MAX_LOG_AGE_DAYS);
-                    if stale.is_empty() {
-                        self.log_cleanup_state = LogCleanupState::Finished;
-                        return false;
-                    }
-                    ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-                    let total = stale.len();
-                    let rx = crate::diag_log::start_stale_log_cleanup(stale);
-                    self.log_cleanup_state = LogCleanupState::Cleaning {
-                        total,
-                        current: 0,
-                        file_name: String::new(),
-                        rx,
-                        started_at: std::time::Instant::now(),
-                    };
-                    ctx.request_repaint();
-                    return false;
-                }
-                LogCleanupState::Cleaning { .. } => {
-                    ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-                    return false;
-                }
-                LogCleanupState::Finished => {
-                    return false;
-                }
-            }
+            self.start_exit_log_cleanup(ctx);
         }
         false
+    }
+
+    fn process_pending_confirm_close(&mut self, ctx: &egui::Context) {
+        self.pending_confirm_close = false;
+        let mut i = 0;
+        let mut all = true;
+        while i < self.docs.len() {
+            if self.docs[i].dirty {
+                self.active = i;
+                if !self.close_tab(i) {
+                    all = false;
+                    break;
+                }
+            } else {
+                i += 1;
+            }
+        }
+        if all {
+            self.confirm_exit = true;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        } else {
+            self.exit_session = None;
+            self.force_exit = false;
+            ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(
+                egui::WindowLevel::Normal,
+            ));
+            crate::updapply::cancel();
+        }
+    }
+
+    fn start_exit_log_cleanup(&mut self, ctx: &egui::Context) {
+        match &self.log_cleanup_state {
+            LogCleanupState::NotStarted => {
+                let stale = crate::diag_log::scan_stale_logs(crate::diag_log::MAX_LOG_AGE_DAYS);
+                if stale.is_empty() {
+                    self.log_cleanup_state = LogCleanupState::Finished;
+                    return;
+                }
+                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+                let total = stale.len();
+                let rx = crate::diag_log::start_stale_log_cleanup(stale);
+                self.log_cleanup_state = LogCleanupState::Cleaning {
+                    total,
+                    current: 0,
+                    file_name: String::new(),
+                    rx,
+                    started_at: std::time::Instant::now(),
+                };
+                ctx.request_repaint();
+            }
+            LogCleanupState::Cleaning { .. } => {
+                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            }
+            LogCleanupState::Finished => {}
+        }
     }
 
     /// 渲染并驱动日志清理进度模态窗口
@@ -335,7 +337,6 @@ impl App {
     ) {
         let rect = ui.max_rect();
         let p = ui.painter();
-
         crate::app::installer_ui::art::paint_comic_hard_shadow_rect(
             p,
             rect,
@@ -343,7 +344,6 @@ impl App {
             2.0,
             egui::vec2(4.0, 4.0),
         );
-
         p.rect_filled(
             egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), 4.0)),
             0.0,
@@ -370,47 +370,9 @@ impl App {
             egui::pos2(rect.left() + 20.0, rect.top() + 66.0),
             egui::vec2(rect.width() - 40.0, 22.0),
         );
-        let ratio = if total > 0 {
-            (current as f32 / total as f32).clamp(0.0, 1.0)
-        } else {
-            1.0
-        };
+        Self::render_log_cleanup_bar(p, bar_rect, total, current);
 
-        p.rect_filled(bar_rect, 0.0, Color32::from_rgb(10, 14, 22));
-        p.rect_stroke(
-            bar_rect,
-            0.0,
-            egui::Stroke::new(1.8, Color32::BLACK),
-            egui::StrokeKind::Inside,
-        );
-
-        if ratio > 0.0 {
-            let fill_rect = egui::Rect::from_min_size(
-                bar_rect.min,
-                egui::vec2(bar_rect.width() * ratio, bar_rect.height()),
-            );
-            p.rect_filled(fill_rect, 0.0, Color32::from_rgb(0, 180, 216));
-        }
-
-        let pct_text = format!(
-            "{} / {} ({}%)",
-            current,
-            total,
-            (ratio * 100.0).round() as u32
-        );
-        p.text(
-            bar_rect.center(),
-            egui::Align2::CENTER_CENTER,
-            pct_text,
-            egui::FontId::proportional(11.0),
-            Color32::WHITE,
-        );
-
-        let display_name = if file_name.len() > 40 {
-            format!("...{}", &file_name[file_name.len() - 37..])
-        } else {
-            file_name.to_string()
-        };
+        let display_name = truncate_log_filename(file_name, 40);
         let status_desc = if file_name.is_empty() {
             crate::i18n::trz("正在准备清理任务...").to_string()
         } else {
@@ -424,6 +386,59 @@ impl App {
             Color32::from_rgb(203, 213, 225),
         );
     }
+
+    fn render_log_cleanup_bar(
+        p: &egui::Painter,
+        bar_rect: egui::Rect,
+        total: usize,
+        current: usize,
+    ) {
+        let ratio = if total > 0 {
+            (current as f32 / total as f32).clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+        p.rect_filled(bar_rect, 0.0, Color32::from_rgb(10, 14, 22));
+        p.rect_stroke(
+            bar_rect,
+            0.0,
+            egui::Stroke::new(1.8, Color32::BLACK),
+            egui::StrokeKind::Inside,
+        );
+        if ratio > 0.0 {
+            let fill_rect = egui::Rect::from_min_size(
+                bar_rect.min,
+                egui::vec2(bar_rect.width() * ratio, bar_rect.height()),
+            );
+            p.rect_filled(fill_rect, 0.0, Color32::from_rgb(0, 180, 216));
+        }
+        let pct_text = format!(
+            "{} / {} ({}%)",
+            current,
+            total,
+            (ratio * 100.0).round() as u32
+        );
+        p.text(
+            bar_rect.center(),
+            egui::Align2::CENTER_CENTER,
+            pct_text,
+            egui::FontId::proportional(11.0),
+            Color32::WHITE,
+        );
+    }
+}
+
+/// 按 Unicode 字符数从左侧省略截断超长日志文件名，避免 UTF-8 字节边界切片 panic
+fn truncate_log_filename(file_name: &str, max_chars: usize) -> String {
+    let char_count = file_name.chars().count();
+    if char_count <= max_chars || max_chars <= 3 {
+        return file_name.to_string();
+    }
+    let tail: String = file_name
+        .chars()
+        .skip(char_count.saturating_sub(max_chars.saturating_sub(3)))
+        .collect();
+    format!("...{tail}")
 }
 
 /// 窗口关闭时历史日志清理状态机
@@ -495,5 +510,24 @@ mod tests {
             assert_eq!(file_name, "test2.log");
             assert!(completed);
         }
+    }
+
+    #[test]
+    fn test_truncate_log_filename_utf8_safe() {
+        let short = "ide10_diag_20261121.log";
+        assert_eq!(truncate_log_filename(short, 40), short);
+
+        let long_ascii = "ide10_diag_very_long_prefix_20261121_180000_detail.log";
+        let out_ascii = truncate_log_filename(long_ascii, 40);
+        assert!(out_ascii.starts_with("..."));
+        assert_eq!(out_ascii.chars().count(), 40);
+
+        let multibyte =
+            "崩溃诊断日志_这是一个包含中文与🚀符号的非常长的日志文件名_20261121_180000.log";
+        assert!(multibyte.len() > 40 && multibyte.chars().count() > 40);
+        let out_utf8 = truncate_log_filename(multibyte, 40);
+        assert!(out_utf8.starts_with("..."));
+        assert_eq!(out_utf8.chars().count(), 40);
+        assert!(out_utf8.ends_with(".log"));
     }
 }
