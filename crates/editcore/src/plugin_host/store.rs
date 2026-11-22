@@ -199,20 +199,27 @@ impl Http for CurlHttp {
         if !url.starts_with("https://") {
             return Err(format!("只允许 https 地址: {url}"));
         }
-        let out = std::process::Command::new("curl")
-            .args([
-                "-sSL",
-                "--fail",
-                "--max-time",
-                "60",
-                "--max-filesize",
-                &MAX_ASSET_BYTES.to_string(),
-                "-H",
-                "Accept: application/vnd.github+json",
-                "-H",
-                "User-Agent: IDE1.0-plugin-host",
-                url,
-            ])
+        let mut cmd = std::process::Command::new("curl");
+        cmd.args([
+            "-sSL",
+            "--fail",
+            "--max-time",
+            "60",
+            "--max-filesize",
+            &MAX_ASSET_BYTES.to_string(),
+            "-H",
+            "Accept: application/vnd.github+json",
+            "-H",
+            "User-Agent: IDE1.0-plugin-host",
+            url,
+        ]);
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.stdin(std::process::Stdio::null())
+                .creation_flags(0x0800_0000);
+        }
+        let out = cmd
             .output()
             .map_err(|e| format!("无法运行 curl ({e}): 请确认系统自带 curl 可用"))?;
         if out.status.success() {

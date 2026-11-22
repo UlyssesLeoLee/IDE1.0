@@ -190,28 +190,30 @@ pub fn apply_parallel_patches(
     Ok(patches.len())
 }
 
-/// 从 Agent 返回内容提取待写回的文本行 (优先抽取第一个 fenced code block)
-pub fn extract_patch_lines(text: &str) -> Vec<String> {
+/// 从 Agent 返回内容严格提取第一个闭合 fenced code block 的文本行；未包含闭合代码块时返回 `None`
+pub fn extract_fenced_patch_lines(text: &str) -> Option<Vec<String>> {
     let mut in_fence = false;
     let mut fenced = Vec::new();
     for line in text.lines() {
         let trimmed = line.trim_start();
         if trimmed.starts_with("```") {
             if in_fence {
-                if !fenced.is_empty() {
-                    return fenced;
-                }
-                in_fence = false;
-            } else {
-                in_fence = true;
+                return Some(fenced);
             }
+            in_fence = true;
+            fenced.clear();
             continue;
         }
         if in_fence {
             fenced.push(line.to_string());
         }
     }
-    text.lines().map(str::to_string).collect()
+    None
+}
+
+/// 从 Agent 返回内容提取待写回的文本行 (严格只提取闭合 fenced code block；普通说明文字/进度日志返回空)
+pub fn extract_patch_lines(text: &str) -> Vec<String> {
+    extract_fenced_patch_lines(text).unwrap_or_default()
 }
 
 /// 从用户输入提取合法单原子 `.nema` 标识符（不含空格或换行）
@@ -1035,22 +1037,41 @@ impl CollabState {
             .to_string();
 
         if !any_llm {
-            self.master_history.push(CollabMsg::system(
-                "[并发引擎] 已启动本地多智能体高并发线程池，各 Agent 真实同时工作，互不阻塞，零排队。",
-            ));
+            doc.remote_cursors.clear();
+            self.master_history.push(CollabMsg::system(&format!(
+                "当前未配置大模型 API Key，无法对「{}」执行多 Agent 自动代码修改；文件内容保持不变。请在右侧 AI 设置中配置 API Key 后再试。",
+                doc_name
+            )));
+            return Ok(0);
         }
 
         let mut cursors = Vec::with_capacity(dispatch_n);
+        let mut dispatched_count = 0usize;
         for (idx, a) in self.agents.iter_mut().take(dispatch_n).enumerate() {
             if let Some(old) = a.run.take() {
                 old.handle.cancel();
             }
-            let (start, count) = regions.get(idx).copied().unwrap_or((doc.lines.len(), 0));
-            let slice_text = doc.lines[start..start + count].join("\n");
-            let range_end = (start + count).max(start + 1);
             a.assigned_doc_id = Some(doc.id);
             a.patch_proposals.clear();
 
+            let agent_cfg = cfg.resolve_for_model(a.model_override.as_deref());
+            if !agent_cfg.configured() {
+                a.private_history.push(CollabMsg::system(
+                    "未配置可用模型 API Key，本轮跳过文件修改（文件内容保持不变）。",
+                ));
+                continue;
+            }
+
+            let (start, count) = regions.get(idx).copied().unwrap_or((doc.lines.len(), 0));
+            if count == 0 {
+                a.private_history.push(CollabMsg::system(
+                    "当前文档行数较少，现有内容已由前置 Agent 覆盖处理，本轮待命（不修改文件）。",
+                ));
+                continue;
+            }
+
+            let slice_text = doc.lines[start..start + count].join("\n");
+            let range_end = start + count;
             let role = collab_role_for(idx);
             cursors.push(RemoteCursor {
                 agent_id: a.id.clone(),
@@ -1076,76 +1097,17 @@ impl CollabState {
             let c = ctx.clone();
             let a_name = a.name.clone();
             let a_role = a.role.clone();
-            let agent_cfg = cfg.resolve_for_model(a.model_override.as_deref());
-            let handle = if agent_cfg.configured() {
-                let agent_prompt = format!(
-                    "【多 Agent 分区并行修改】\n任务目标: {}\n文档: {}\n你独占负责的行区间: 第 {} 行至第 {} 行 (共 {} 行)。\n请仅输出这一段区域修改后的完整内容（用单个 ``` 代码块包裹，不要包含行号前缀或其它区域代码）:\n```\n{}\n```",
-                    clean_prompt, doc_name, start + 1, range_end, count, slice_text
-                );
-                let msgs = vec![
-                    json!({ "role": "system", "content": format!("你是集成在 IDE1.0 中的协作智能体 {} ({})。严格只修改分配给你的行区间并用单个代码块输出替换行。", a_name, a_role) }),
-                    json!({ "role": "user", "content": agent_prompt }),
-                ];
-                ai::spawn_request(&agent_cfg, msgs, vec![], tx, move || {
-                    c.request_repaint();
-                })
-            } else {
-                let h = ai::Handle::default();
-                let hh = h.clone();
-                let slice_clone = slice_text.clone();
-                let prompt_clone = clean_prompt.to_string();
-                let agent_idx = idx;
-                std::thread::Builder::new()
-                    .name(format!("collab-edit-{}", a_name))
-                    .spawn(move || {
-                        let steps = [
-                            format!(
-                                "正在并发解析行区间 L{}-L{} (共 {} 行)...",
-                                start + 1,
-                                range_end,
-                                count
-                            ),
-                            format!(
-                                "专职角色「{}」进行独立语法语义分析与无冲突补丁生成...",
-                                a_role
-                            ),
-                            "区间语义隔离检查通过，生成替换代码块。".to_string(),
-                        ];
-                        for step in steps {
-                            if hh.cancelled() {
-                                return;
-                            }
-                            std::thread::sleep(std::time::Duration::from_millis(
-                                150 + (agent_idx as u64).min(15) * 50,
-                            ));
-                            let _ = tx.send(Event::Text(format!("▸ {}\n", step)));
-                            c.request_repaint();
-                        }
-                        let mut patch_lines = Vec::new();
-                        let marker = format!(
-                            "// [{}] 并行协同交付 (L{}-L{}): {}",
-                            a_name,
-                            start + 1,
-                            range_end,
-                            prompt_clone
-                        );
-                        patch_lines.push(marker);
-                        if !(count == 1 && slice_clone.trim().is_empty()) {
-                            for line in slice_clone.lines() {
-                                patch_lines.push(line.to_string());
-                            }
-                        }
-                        let result_code = format!("```\n{}\n```", patch_lines.join("\n"));
-                        let turn = crate::ai::Turn {
-                            content: result_code,
-                            ..Default::default()
-                        };
-                        let _ = tx.send(Event::Done(turn));
-                        c.request_repaint();
-                    })
-                    .ok();
-                h
-            };
+            let agent_prompt = format!(
+                "【多 Agent 分区并行修改】\n任务目标: {}\n文档: {}\n你独占负责的行区间: 第 {} 行至第 {} 行 (共 {} 行)。\n要求：\n1. 仅输出修改后的该区间源码，放在单个 ``` 代码块中，严禁包含行号前缀、进度日志或多余的 Agent 签名注释。\n2. 如有任何说明、建议或反馈，请全部写在代码块外部，它们只会在聊天记录中展示，绝不会写入源文件。\n待修改源码区间:\n```\n{}\n```",
+                clean_prompt, doc_name, start + 1, range_end, count, slice_text
+            );
+            let msgs = vec![
+                json!({ "role": "system", "content": format!("你是集成在 IDE1.0 中的协作智能体 {} ({})。严格只修改分配给你的行区间，用单个闭合 ``` 代码块输出纯替换代码（不要添加签名注释或进度日志）；说明文字或反馈写在代码块之外。", a_name, a_role) }),
+                json!({ "role": "user", "content": agent_prompt }),
+            ];
+            let handle = ai::spawn_request(&agent_cfg, msgs, vec![], tx, move || {
+                c.request_repaint();
+            });
             a.run = Some(SubAgentRun {
                 rx,
                 handle,
@@ -1154,14 +1116,14 @@ impl CollabState {
                 target_doc_id: Some(doc.id),
                 target_region: Some((start, count)),
             });
+            dispatched_count += 1;
         }
         doc.remote_cursors = cursors;
         self.master_history.push(CollabMsg::system(&format!(
-            "已派发 {} 个 Agent 并发启动工作线程，正在同时并行处理「{}」各自独立行区间。",
-            self.agents.len(),
-            doc_name
+            "已派发 {} 个 Agent 并行处理「{}」互不重叠行区间（进度与反馈将在聊天记录展示）。",
+            dispatched_count, doc_name
         )));
-        Ok(self.agents.len())
+        Ok(dispatched_count)
     }
 
     /// 针对特定子 Agent 单独下达针对性命令 (独立并发运行，不阻塞其它 Agent)
@@ -1286,11 +1248,6 @@ impl CollabState {
             };
             let agent_id = self.agents[idx].id.clone();
             let agent_name = self.agents[idx].name.clone();
-            let content = if run.streaming_text.is_empty() {
-                turn.content
-            } else {
-                run.streaming_text
-            };
 
             if let Some(err) = turn.error {
                 self.agents[idx]
@@ -1300,9 +1257,7 @@ impl CollabState {
                     self.master_history
                         .push(CollabMsg::error(&agent_name, &err));
                 }
-                if let (Some(doc_id), Some((raw_start, raw_remove))) =
-                    (run.target_doc_id, run.target_region)
-                {
+                if let Some(doc_id) = run.target_doc_id {
                     if let Some(doc) = docs.iter_mut().find(|d| d.id == doc_id && !d.readonly) {
                         if crate::app::nemaopts::is_nema_doc(doc) {
                             if apply_nema_collab_edit(
@@ -1319,73 +1274,32 @@ impl CollabState {
                                 )));
                             }
                         } else {
-                            let start = raw_start.min(doc.lines.len());
-                            let remove = raw_remove.min(doc.lines.len().saturating_sub(start));
-                            let range_end = (start + remove).max(start + 1);
-                            let marker = format_agent_comment(
-                                doc,
-                                &format!(
-                                    "[{}] 本地回退协同 L{}-L{}",
-                                    agent_name,
-                                    start + 1,
-                                    range_end
-                                ),
-                            );
-                            let orig = &doc.lines[start..start + remove];
-                            let mut fallback_lines = Vec::with_capacity(orig.len() + 1);
-                            if !orig.first().is_some_and(|l| l.contains(&agent_name)) {
-                                fallback_lines.push(marker);
-                            }
-                            if !(orig.len() == 1 && orig[0].is_empty()) {
-                                for l in orig {
-                                    fallback_lines.push(l.trim_end().to_string());
-                                }
-                            }
-                            let new_len = fallback_lines.len();
-                            if doc
-                                .apply_line_patch(
-                                    start,
-                                    remove,
-                                    fallback_lines.clone(),
-                                    Some([start, 0]),
-                                )
-                                .is_ok()
-                            {
-                                let delta = new_len as isize - remove as isize;
-                                region_shifts.push((doc_id, start + remove, delta));
-                                self.agents[idx].patch_proposals = fallback_lines;
-                                self.agents[idx]
-                                    .private_history
-                                    .push(CollabMsg::system(&format!(
-                                        "远端失败，已在 L{}-L{} 完成本地确定性协同写入。",
-                                        start + 1,
-                                        range_end
-                                    )));
-                                if let Some(rc) = doc
-                                    .remote_cursors
-                                    .iter_mut()
-                                    .find(|c| c.agent_id == agent_id)
-                                {
-                                    rc.cursor = [start.min(doc.lines.len().saturating_sub(1)), 0];
-                                    rc.active_symbol = Some(format!("回退写入 {} 行", new_len));
-                                }
-                                doc.tip = format!("{} 已完成容错本地协同写入", agent_name);
-                            }
+                            self.agents[idx].private_history.push(CollabMsg::system(
+                                "远端请求失败，已保留原文件内容未做改动（详情见错误记录）。",
+                            ));
+                            doc.tip =
+                                format!("{} 执行失败，文件未修改（详见聊天记录）", agent_name);
                         }
                     }
                 }
                 continue;
             }
 
+            let chat_reply = if !turn.content.is_empty() {
+                turn.content.clone()
+            } else {
+                run.streaming_text.clone()
+            };
             self.agents[idx]
                 .private_history
-                .push(CollabMsg::agent(&agent_name, &content));
+                .push(CollabMsg::agent(&agent_name, &chat_reply));
             if let (Some(doc_id), Some((raw_start, raw_remove))) =
                 (run.target_doc_id, run.target_region)
             {
-                let patch_lines = extract_patch_lines(&content);
-                if !patch_lines.is_empty() {
-                    if let Some(doc) = docs.iter_mut().find(|d| d.id == doc_id && !d.readonly) {
+                let patch_lines = extract_fenced_patch_lines(&turn.content)
+                    .or_else(|| extract_fenced_patch_lines(&run.streaming_text));
+                if let Some(doc) = docs.iter_mut().find(|d| d.id == doc_id && !d.readonly) {
+                    if let Some(patch_lines) = patch_lines.filter(|lines| !lines.is_empty()) {
                         let start = raw_start.min(doc.lines.len());
                         let remove = raw_remove.min(doc.lines.len().saturating_sub(start));
                         let is_nema = crate::app::nemaopts::is_nema_doc(doc);
@@ -1431,12 +1345,16 @@ impl CollabState {
                                 "模型补丁未通过 .nema 语法校验，已自动转为语法安全域记录写入。",
                             ));
                         }
+                    } else {
+                        self.agents[idx].private_history.push(CollabMsg::system(
+                            "未返回代码块补丁，文件内容保持不变（反馈已记录在聊天记录中）。",
+                        ));
                     }
                 }
             }
             if run.is_master_broadcast {
                 self.master_history
-                    .push(CollabMsg::agent(&agent_name, &content));
+                    .push(CollabMsg::agent(&agent_name, &chat_reply));
             }
         }
 
@@ -1479,10 +1397,14 @@ impl App {
                 .execute_parallel_edit_on_doc(doc, prompt, &cfg, ctx)
         };
         if let Ok(n) = res {
-            self.cookie_mark(doc_id, ide_agent_router::TaskState::Planning);
-            if !cfg.configured() || ctx.is_none() {
-                self.cookie_mark(doc_id, ide_agent_router::TaskState::Verified);
-                self.docs[idx].tip = format!("多 Agent 已并行写入 {} 处区域", n);
+            if n == 0 {
+                self.docs[idx].tip = "未配置 AI API Key，文件未修改（详见协同聊天记录）".into();
+            } else {
+                self.cookie_mark(doc_id, ide_agent_router::TaskState::Planning);
+                if !cfg.configured() || ctx.is_none() {
+                    self.cookie_mark(doc_id, ide_agent_router::TaskState::Verified);
+                    self.docs[idx].tip = format!("多 Agent 已并行写入 {} 处区域", n);
+                }
             }
         }
         res
@@ -2332,5 +2254,119 @@ mod tests {
         assert_eq!(active_runs, CollabState::MAX_CONCURRENT_AGENT_DISPATCH);
         s.stop_all();
         assert!(!s.any_running());
+    }
+
+    #[test]
+    fn extract_patch_lines_never_dumps_plain_chat_or_progress_logs() {
+        let noise = "▸ 正在并发解析行区间 L1-L1 (共 1 行)...\n▸ 专职角色「负责核心代码生成」进行独立语法语义分析...\n▸ 区间语义隔离检查通过，生成替换代码块。";
+        assert!(extract_patch_lines(noise).is_empty());
+        assert!(extract_fenced_patch_lines(noise).is_none());
+        assert!(extract_fenced_patch_lines("```rust\nunclosed fence").is_none());
+    }
+
+    #[test]
+    fn poll_with_docs_applies_only_fenced_code_and_keeps_progress_in_chat() {
+        let mut collab = CollabState::default();
+        collab.set_agent_count(1);
+        let ctx = egui::Context::default();
+        let mut doc = crate::doc::Doc::untitled(101, 1);
+        doc.lines = vec!["fn old() {}".into()];
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        let _ = tx.send(crate::ai::Event::Text(
+            "▸ 正在并发解析行区间 L1-L1 (共 1 行)...\n".into(),
+        ));
+        let _ = tx.send(crate::ai::Event::Done(crate::ai::Turn {
+            content: "已分析完毕。\n```rust\nfn updated() {}\n```\n补充反馈仅留在聊天记录。".into(),
+            ..Default::default()
+        }));
+
+        collab.agents[0].run = Some(SubAgentRun {
+            rx,
+            handle: crate::ai::Handle::default(),
+            is_master_broadcast: true,
+            streaming_text: String::new(),
+            target_doc_id: Some(doc.id),
+            target_region: Some((0, 1)),
+        });
+
+        let mut docs = [doc];
+        collab.poll_with_docs(&ctx, &mut docs);
+
+        assert_eq!(docs[0].lines, vec!["fn updated() {}"]);
+        assert!(
+            !docs[0]
+                .lines
+                .iter()
+                .any(|l| l.contains('▸') || l.contains("反馈")),
+            "docs must not contain progress logs or chat prose: {:?}",
+            docs[0].lines
+        );
+        assert!(collab.agents[0]
+            .private_history
+            .iter()
+            .any(|m| m.text.contains("补充反馈仅留在聊天记录")));
+        assert!(collab
+            .master_history
+            .iter()
+            .any(|m| m.text.contains("补充反馈仅留在聊天记录")));
+    }
+
+    #[test]
+    fn parallel_gui_without_llm_never_pollutes_document_with_progress_logs() {
+        let mut collab = CollabState::default();
+        collab.set_agent_count(3);
+        let ctx = egui::Context::default();
+        let mut doc = crate::doc::Doc::untitled(102, 1);
+        doc.lines = vec!["fn keep_me() {}".into()];
+        let cfg = AiConfig::default();
+
+        let dispatched = collab
+            .execute_parallel_edit_on_doc(&mut doc, "修改当前文件", &cfg, Some(&ctx))
+            .expect("should report cleanly without mutating file");
+        assert_eq!(dispatched, 0);
+        assert_eq!(doc.lines, vec!["fn keep_me() {}"]);
+        assert!(!collab.any_running());
+        assert!(collab
+            .master_history
+            .iter()
+            .any(|m| m.text.contains("未配置大模型 API Key")));
+    }
+
+    #[test]
+    fn poll_with_docs_api_error_leaves_document_untouched() {
+        let mut collab = CollabState::default();
+        collab.set_agent_count(1);
+        let ctx = egui::Context::default();
+        let mut doc = crate::doc::Doc::untitled(103, 1);
+        doc.lines = vec!["let original = 42;".into()];
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        let _ = tx.send(crate::ai::Event::Done(crate::ai::Turn {
+            error: Some("HTTP 429 额度耗尽".into()),
+            ..Default::default()
+        }));
+
+        collab.agents[0].run = Some(SubAgentRun {
+            rx,
+            handle: crate::ai::Handle::default(),
+            is_master_broadcast: true,
+            streaming_text: String::new(),
+            target_doc_id: Some(doc.id),
+            target_region: Some((0, 1)),
+        });
+
+        let mut docs = [doc];
+        collab.poll_with_docs(&ctx, &mut docs);
+
+        assert_eq!(docs[0].lines, vec!["let original = 42;"]);
+        assert!(collab.agents[0]
+            .private_history
+            .iter()
+            .any(|m| m.is_error && m.text.contains("HTTP 429")));
+        assert!(collab
+            .master_history
+            .iter()
+            .any(|m| m.is_error && m.text.contains("HTTP 429")));
     }
 }

@@ -340,6 +340,16 @@ Read-only: {}"),
         "マルチ Agent が構文安全に {} 箇所の .nema ドメインレコードを並列協調更新しました",
         "Multi-Agent syntax-safely updated {} .nema domain record(s) in parallel",
     ),
+    (
+        "未配置 AI API Key，文件未修改（详见协同聊天记录）",
+        "AI API キーが未設定のため、ファイルは変更されませんでした（協調チャット履歴を参照）",
+        "AI API key not configured; file left unchanged (see Collab Chat)",
+    ),
+    (
+        "{} 执行失败，文件未修改（详见聊天记录）",
+        "{} の実行に失敗したため、ファイルは変更されませんでした（チャット履歴を参照）",
+        "{} failed; file left unchanged (see chat history)",
+    ),
 ];
 
 struct Tpl {

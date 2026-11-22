@@ -1610,16 +1610,9 @@ impl App {
             .show(ctx, |ui| {
                 let rect = ui.max_rect();
                 let p = ui.painter();
-                crate::app::installer_ui::art::paint_comic_hard_shadow_rect(
+                crate::app::installer_ui::cards::paint_comic_modal_chrome(
                     p,
                     rect,
-                    Color32::from_rgb(18, 22, 32),
-                    2.0,
-                    egui::vec2(4.0, 4.0),
-                );
-                p.rect_filled(
-                    egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), 4.0)),
-                    0.0,
                     Color32::from_rgb(2, 132, 199),
                 );
                 let inner = rect.shrink2(egui::vec2(18.0, 14.0));

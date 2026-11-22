@@ -4887,6 +4887,43 @@ pub const CMD_T: &[Row] = &[
             "Connecting to Official Release Feed (CHECKING)",
         ],
     ),
+    ("我知道了 (GOT IT)", ["我知道了 (GOT IT)", "了解しました (GOT IT)", "Got It (OK)"]),
+    (
+        "请先完整阅读许可协议",
+        ["请先完整阅读许可协议", "ライセンス契約を最後までお読みください", "Please Read the License Agreement"],
+    ),
+    (
+        "请先将上方《IDE 1.0 最终用户许可与使用协议》滚动阅读至底部，并勾选同意条款后再点击下一步。",
+        [
+            "请先将上方《IDE 1.0 最终用户许可与使用协议》滚动阅读至底部，并勾选同意条款后再点击下一步。",
+            "上の「IDE 1.0 エンドユーザー使用許諾契約」を最後までスクロールし、同意にチェックを入れてから次へ進んでください。",
+            "Please scroll the License Agreement above all the way to the bottom and accept the terms before clicking Next.",
+        ],
+    ),
+    (
+        "请先勾选同意许可协议",
+        ["请先勾选同意许可协议", "同意チェックボックスにチェックしてください", "Please Accept the License Agreement"],
+    ),
+    (
+        "请先点击勾选下方「我已完整阅读并同意《IDE 1.0 最终用户许可与使用协议》」条款卡片，再点击继续。",
+        [
+            "请先点击勾选下方「我已完整阅读并同意《IDE 1.0 最终用户许可与使用协议》」条款卡片，再点击继续。",
+            "下の「IDE 1.0 エンドユーザー使用許諾契約に同意します」カードにチェックを入れてから続行してください。",
+            "Please check the License Agreement acceptance box below before proceeding to the next step.",
+        ],
+    ),
+    (
+        "安装目录不能为空",
+        ["安装目录不能为空", "インストール先フォルダーを入力してください", "Installation Directory Required"],
+    ),
+    (
+        "请先填写或点击浏览选择一个有效的目标安装目录后再继续安装。",
+        [
+            "请先填写或点击浏览选择一个有效的目标安装目录后再继续安装。",
+            "有効なインストール先フォルダーを入力または選択してから続行してください。",
+            "Please enter or browse to a valid installation directory before installing.",
+        ],
+    ),
 ];
 
 #[cfg(test)]

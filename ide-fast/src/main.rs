@@ -267,11 +267,11 @@ fn main() -> eframe::Result<()> {
             app::installer_ui::InstallerLaunchMode::Repair => "IDE1.0 Repair Wizard",
             app::installer_ui::InstallerLaunchMode::Auto => "IDE1.0 Setup Wizard",
         };
-        // 安装/维护向导模式: 独立 880×600 宽幅视口, 彻底移除 Windows 原生标题栏与控制钮, 全自绘美漫风格
+        // 安装/维护向导模式: 独立 880×640 宽幅视口, 彻底移除 Windows 原生标题栏与控制钮, 全自绘美漫风格
         viewport = viewport
             .with_title(title)
-            .with_inner_size([880.0, 600.0])
-            .with_min_inner_size([880.0, 600.0])
+            .with_inner_size([880.0, 640.0])
+            .with_min_inner_size([880.0, 640.0])
             .with_resizable(false)
             .with_decorations(false);
     } else {

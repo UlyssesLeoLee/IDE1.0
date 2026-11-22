@@ -179,8 +179,8 @@ impl App {
         );
 
         let body_rect = Rect::from_min_max(
-            pos2(win_rect.left() + 16.0, header_rect.bottom() + 14.0),
-            pos2(win_rect.right() - 16.0, win_rect.bottom() - 12.0),
+            pos2(win_rect.left() + 18.0, header_rect.bottom() + 14.0),
+            pos2(win_rect.right() - 18.0, win_rect.bottom() - 20.0),
         );
         let left_w = 330.0;
         let left_panel_rect = Rect::from_min_size(body_rect.min, vec2(left_w, body_rect.height()));

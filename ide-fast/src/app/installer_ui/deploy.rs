@@ -291,7 +291,7 @@ impl App {
 
         ui.add_space(4.0);
 
-        let log_h = (ui.available_height() - 4.0).max(210.0);
+        let log_h = ui.available_height().max(180.0);
         let (log_rect, _) =
             ui.allocate_exact_size(vec2(ui.available_width(), log_h), egui::Sense::hover());
         let lp = ui.painter();
@@ -486,153 +486,154 @@ impl App {
         standalone: bool,
         is_repair: bool,
     ) {
-        let hero_h = 56.0;
-        let (h_rect, _) =
-            ui.allocate_exact_size(vec2(ui.available_width(), hero_h), egui::Sense::hover());
-        let hp = ui.painter();
-        paint_comic_hard_shadow_rect(
-            hp,
-            h_rect,
-            Color32::from_rgb(20, 26, 38),
-            2.0,
-            vec2(3.0, 3.0),
-        );
-        hp.rect_filled(
-            Rect::from_min_size(h_rect.min, vec2(h_rect.width(), 3.5)),
-            0.0,
-            if is_repair {
-                Color32::from_rgb(20, 184, 166)
-            } else {
-                Color32::from_rgb(16, 185, 129)
-            },
-        );
-        ui_icons::paint(
-            hp,
-            Rect::from_center_size(
-                pos2(h_rect.left() + 26.0, h_rect.center().y),
-                vec2(22.0, 22.0),
-            ),
-            UiIcon::CheckCircle,
-            Color32::from_rgb(52, 211, 153),
-        );
-        let htp = hp.with_clip_rect(Rect::from_min_max(
-            pos2(h_rect.left() + 44.0, h_rect.top() + 2.0),
-            pos2(
-                (h_rect.right() - 8.0).max(h_rect.left() + 48.0),
-                h_rect.bottom() - 2.0,
-            ),
-        ));
-        htp.text(
-            pos2(h_rect.left() + 48.0, h_rect.top() + 17.0),
-            egui::Align2::LEFT_CENTER,
-            if is_repair {
-                crate::i18n::trz("修复完成！IDE 1.0 已恢复至最佳状态 (REPAIRED)")
-            } else {
-                crate::i18n::trz("部署成功！IDE 1.0 已准备就绪！(SUCCESS)")
-            },
-            egui::FontId::proportional(13.5),
-            Color32::from_rgb(241, 245, 249),
-        );
-        htp.text(
-            pos2(h_rect.left() + 48.0, h_rect.top() + 39.0),
-            egui::Align2::LEFT_CENTER,
-            if is_repair {
-                crate::i18n::trz("核心主程序、快捷方式与环境变量均已校验完毕，个人配置完好无损")
-            } else {
-                crate::i18n::trz(
-                    "所有核心依赖与配置已装载完毕，即刻享受极致的纯 Rust 原生开发体验！",
-                )
-            },
-            egui::FontId::proportional(10.2),
-            Color32::from_rgb(148, 163, 184),
-        );
+        let (upper_rect, action_rect) =
+            super::steps::split_wizard_bottom_bar(ui.available_rect_before_wrap());
+        ui.scope_builder(egui::UiBuilder::new().max_rect(upper_rect), |ui| {
+            ui.spacing_mut().item_spacing = vec2(0.0, 6.0);
+            let hero_h = 56.0;
+            let (h_rect, _) =
+                ui.allocate_exact_size(vec2(ui.available_width(), hero_h), egui::Sense::hover());
+            let hp = ui.painter();
+            paint_comic_hard_shadow_rect(
+                hp,
+                h_rect,
+                Color32::from_rgb(20, 26, 38),
+                2.0,
+                vec2(3.0, 3.0),
+            );
+            hp.rect_filled(
+                Rect::from_min_size(h_rect.min, vec2(h_rect.width(), 3.5)),
+                0.0,
+                if is_repair {
+                    Color32::from_rgb(20, 184, 166)
+                } else {
+                    Color32::from_rgb(16, 185, 129)
+                },
+            );
+            ui_icons::paint(
+                hp,
+                Rect::from_center_size(
+                    pos2(h_rect.left() + 26.0, h_rect.center().y),
+                    vec2(22.0, 22.0),
+                ),
+                UiIcon::CheckCircle,
+                Color32::from_rgb(52, 211, 153),
+            );
+            let htp = hp.with_clip_rect(Rect::from_min_max(
+                pos2(h_rect.left() + 44.0, h_rect.top() + 2.0),
+                pos2(
+                    (h_rect.right() - 8.0).max(h_rect.left() + 48.0),
+                    h_rect.bottom() - 2.0,
+                ),
+            ));
+            htp.text(
+                pos2(h_rect.left() + 48.0, h_rect.top() + 17.0),
+                egui::Align2::LEFT_CENTER,
+                if is_repair {
+                    crate::i18n::trz("修复完成！IDE 1.0 已恢复至最佳状态 (REPAIRED)")
+                } else {
+                    crate::i18n::trz("部署成功！IDE 1.0 已准备就绪！(SUCCESS)")
+                },
+                egui::FontId::proportional(13.5),
+                Color32::from_rgb(241, 245, 249),
+            );
+            htp.text(
+                pos2(h_rect.left() + 48.0, h_rect.top() + 39.0),
+                egui::Align2::LEFT_CENTER,
+                if is_repair {
+                    crate::i18n::trz("核心主程序、快捷方式与环境变量均已校验完毕，个人配置完好无损")
+                } else {
+                    crate::i18n::trz(
+                        "所有核心依赖与配置已装载完毕，即刻享受极致的纯 Rust 原生开发体验！",
+                    )
+                },
+                egui::FontId::proportional(10.2),
+                Color32::from_rgb(148, 163, 184),
+            );
 
-        ui.add_space(4.0);
-
-        let dir_desc = format!(
-            "{}: {}",
-            if is_repair {
-                crate::i18n::trz("已修复安装目录")
-            } else {
-                crate::i18n::trz("已绑定目标目录")
-            },
-            self.installer.target_dir
-        );
-        comic_info_card(
-            ui,
-            crate::i18n::trz("安装与工作空间目录"),
-            &dir_desc,
-            UiIcon::Folder,
-            Color32::from_rgb(14, 165, 233),
-        );
-
-        // 后台部署若有部分失败 (权限不足 / PATH 未写入等) 必须显式告知，绝不静默吞错
-        if let Some(msg) = self.installer.status_msg.clone() {
+            let dir_desc = format!(
+                "{}: {}",
+                if is_repair {
+                    crate::i18n::trz("已修复安装目录")
+                } else {
+                    crate::i18n::trz("已绑定目标目录")
+                },
+                self.installer.target_dir
+            );
             comic_info_card(
                 ui,
-                crate::i18n::trz("部署警告"),
-                &msg,
-                UiIcon::Warning,
-                Color32::from_rgb(245, 158, 11),
+                crate::i18n::trz("安装与工作空间目录"),
+                &dir_desc,
+                UiIcon::Folder,
+                Color32::from_rgb(14, 165, 233),
             );
-        }
 
-        let path_summary = if self.installer.add_path {
-            crate::i18n::trz("已添加至全局 PATH (终端键入 IDE1.0 秒级唤醒)")
-        } else {
-            crate::i18n::trz("未配置全局环境变量 PATH")
-        };
-        comic_info_card(
-            ui,
-            crate::i18n::trz("终端命令行集成"),
-            path_summary,
-            UiIcon::Terminal,
-            Color32::from_rgb(168, 85, 247),
-        );
-
-        let tray_summary = if self.installer.tray_resident {
-            crate::i18n::trz("系统托盘常驻守护已开启 (毫秒级热启动与状态守护)")
-        } else {
-            crate::i18n::trz("系统托盘守护未启用")
-        };
-        comic_info_card(
-            ui,
-            crate::i18n::trz("系统驻留守护"),
-            tray_summary,
-            UiIcon::Shield,
-            Color32::from_rgb(16, 185, 129),
-        );
-
-        ui.add_space(4.0);
-
-        ui.horizontal(|ui| {
-            ui.add_space(6.0);
-            let mut launch = self.installer.launch_on_finish;
-            if ui
-                .checkbox(
-                    &mut launch,
-                    egui::RichText::new(crate::i18n::trz(
-                        "完成后立即启动 IDE 1.0 (Launch IDE 1.0 Now)",
-                    ))
-                    .strong()
-                    .color(Color32::from_rgb(241, 245, 249)),
-                )
-                .changed()
-            {
-                self.installer.launch_on_finish = launch;
+            // 后台部署若有部分失败 (权限不足 / PATH 未写入等) 必须显式告知，绝不静默吞错
+            if let Some(msg) = self.installer.status_msg.clone() {
+                comic_info_card(
+                    ui,
+                    crate::i18n::trz("部署警告"),
+                    &msg,
+                    UiIcon::Warning,
+                    Color32::from_rgb(245, 158, 11),
+                );
             }
+
+            let path_summary = if self.installer.add_path {
+                crate::i18n::trz("已添加至全局 PATH (终端键入 IDE1.0 秒级唤醒)")
+            } else {
+                crate::i18n::trz("未配置全局环境变量 PATH")
+            };
+            comic_info_card(
+                ui,
+                crate::i18n::trz("终端命令行集成"),
+                path_summary,
+                UiIcon::Terminal,
+                Color32::from_rgb(168, 85, 247),
+            );
+
+            let tray_summary = if self.installer.tray_resident {
+                crate::i18n::trz("系统托盘常驻守护已开启 (毫秒级热启动与状态守护)")
+            } else {
+                crate::i18n::trz("系统托盘守护未启用")
+            };
+            comic_info_card(
+                ui,
+                crate::i18n::trz("系统驻留守护"),
+                tray_summary,
+                UiIcon::Shield,
+                Color32::from_rgb(16, 185, 129),
+            );
+
+            ui.add_space(4.0);
+
+            ui.horizontal(|ui| {
+                ui.add_space(6.0);
+                let mut launch = self.installer.launch_on_finish;
+                if ui
+                    .checkbox(
+                        &mut launch,
+                        egui::RichText::new(crate::i18n::trz(
+                            "完成后立即启动 IDE 1.0 (Launch IDE 1.0 Now)",
+                        ))
+                        .strong()
+                        .color(Color32::from_rgb(241, 245, 249)),
+                    )
+                    .changed()
+                {
+                    self.installer.launch_on_finish = launch;
+                }
+            });
         });
 
-        ui.add_space(10.0);
-
         let mut finish_clicked = false;
-        ui.horizontal(|ui| {
-            let total_w = ui.available_width();
+        ui.scope_builder(egui::UiBuilder::new().max_rect(action_rect), |ui| {
+            let total_w = action_rect.width();
             if comic_action_button_with_icon(
                 ui,
                 Some(UiIcon::ArrowRight),
                 crate::i18n::trz("完成并启动 IDE 1.0 (LAUNCH NOW)"),
-                vec2(total_w, 42.0),
+                vec2(total_w, super::steps::WIZARD_ACTION_BAR_H),
                 true,
                 Color32::from_rgb(16, 185, 129),
             )
@@ -657,108 +658,110 @@ impl App {
     }
 
     fn render_step_finished_uninstall(&mut self, ui: &mut egui::Ui, standalone: bool) {
-        let hero_h = 56.0;
-        let (h_rect, _) =
-            ui.allocate_exact_size(vec2(ui.available_width(), hero_h), egui::Sense::hover());
-        let hp = ui.painter();
-        paint_comic_hard_shadow_rect(
-            hp,
-            h_rect,
-            Color32::from_rgb(20, 26, 38),
-            2.0,
-            vec2(3.0, 3.0),
-        );
-        hp.rect_filled(
-            Rect::from_min_size(h_rect.min, vec2(h_rect.width(), 3.5)),
-            0.0,
-            Color32::from_rgb(16, 185, 129),
-        );
-        ui_icons::paint(
-            hp,
-            Rect::from_center_size(
-                pos2(h_rect.left() + 26.0, h_rect.center().y),
-                vec2(22.0, 22.0),
-            ),
-            UiIcon::CheckCircle,
-            Color32::from_rgb(52, 211, 153),
-        );
-        let htp = hp.with_clip_rect(Rect::from_min_max(
-            pos2(h_rect.left() + 44.0, h_rect.top() + 2.0),
-            pos2(
-                (h_rect.right() - 8.0).max(h_rect.left() + 48.0),
-                h_rect.bottom() - 2.0,
-            ),
-        ));
-        htp.text(
-            pos2(h_rect.left() + 48.0, h_rect.top() + 17.0),
-            egui::Align2::LEFT_CENTER,
-            crate::i18n::trz("卸载完成！IDE 1.0 已从本机移除 (UNINSTALLED)"),
-            egui::FontId::proportional(13.5),
-            Color32::from_rgb(241, 245, 249),
-        );
-        htp.text(
-            pos2(h_rect.left() + 48.0, h_rect.top() + 39.0),
-            egui::Align2::LEFT_CENTER,
-            crate::i18n::trz("已安全清理所选程序组件与系统集成项，感谢您的使用"),
-            egui::FontId::proportional(10.2),
-            Color32::from_rgb(148, 163, 184),
-        );
+        let (upper_rect, action_rect) =
+            super::steps::split_wizard_bottom_bar(ui.available_rect_before_wrap());
+        ui.scope_builder(egui::UiBuilder::new().max_rect(upper_rect), |ui| {
+            ui.spacing_mut().item_spacing = vec2(0.0, 6.0);
+            let hero_h = 56.0;
+            let (h_rect, _) =
+                ui.allocate_exact_size(vec2(ui.available_width(), hero_h), egui::Sense::hover());
+            let hp = ui.painter();
+            paint_comic_hard_shadow_rect(
+                hp,
+                h_rect,
+                Color32::from_rgb(20, 26, 38),
+                2.0,
+                vec2(3.0, 3.0),
+            );
+            hp.rect_filled(
+                Rect::from_min_size(h_rect.min, vec2(h_rect.width(), 3.5)),
+                0.0,
+                Color32::from_rgb(16, 185, 129),
+            );
+            ui_icons::paint(
+                hp,
+                Rect::from_center_size(
+                    pos2(h_rect.left() + 26.0, h_rect.center().y),
+                    vec2(22.0, 22.0),
+                ),
+                UiIcon::CheckCircle,
+                Color32::from_rgb(52, 211, 153),
+            );
+            let htp = hp.with_clip_rect(Rect::from_min_max(
+                pos2(h_rect.left() + 44.0, h_rect.top() + 2.0),
+                pos2(
+                    (h_rect.right() - 8.0).max(h_rect.left() + 48.0),
+                    h_rect.bottom() - 2.0,
+                ),
+            ));
+            htp.text(
+                pos2(h_rect.left() + 48.0, h_rect.top() + 17.0),
+                egui::Align2::LEFT_CENTER,
+                crate::i18n::trz("卸载完成！IDE 1.0 已从本机移除 (UNINSTALLED)"),
+                egui::FontId::proportional(13.5),
+                Color32::from_rgb(241, 245, 249),
+            );
+            htp.text(
+                pos2(h_rect.left() + 48.0, h_rect.top() + 39.0),
+                egui::Align2::LEFT_CENTER,
+                crate::i18n::trz("已安全清理所选程序组件与系统集成项，感谢您的使用"),
+                egui::FontId::proportional(10.2),
+                Color32::from_rgb(148, 163, 184),
+            );
 
-        ui.add_space(4.0);
+            let cleanup_desc = if let Some(msg) = &self.installer.status_msg {
+                msg.clone()
+            } else {
+                format!(
+                    "{}: {}",
+                    crate::i18n::trz("已清理目标目录"),
+                    self.installer.target_dir
+                )
+            };
+            comic_info_card(
+                ui,
+                crate::i18n::trz("程序文件清理"),
+                &cleanup_desc,
+                UiIcon::Trash,
+                Color32::from_rgb(239, 68, 68),
+            );
 
-        let cleanup_desc = if let Some(msg) = &self.installer.status_msg {
-            msg.clone()
-        } else {
-            format!(
-                "{}: {}",
-                crate::i18n::trz("已清理目标目录"),
-                self.installer.target_dir
-            )
-        };
-        comic_info_card(
-            ui,
-            crate::i18n::trz("程序文件清理"),
-            &cleanup_desc,
-            UiIcon::Trash,
-            Color32::from_rgb(239, 68, 68),
-        );
+            let integ_desc =
+                if self.installer.remove_shortcuts && self.installer.remove_path_and_reg {
+                    crate::i18n::trz("已移除所选快捷方式、环境变量与注册表项")
+                } else {
+                    crate::i18n::trz("已按选项保留部分系统集成项")
+                };
+            comic_info_card(
+                ui,
+                crate::i18n::trz("快捷方式与环境变量"),
+                integ_desc,
+                UiIcon::Terminal,
+                Color32::from_rgb(168, 85, 247),
+            );
 
-        let integ_desc = if self.installer.remove_shortcuts && self.installer.remove_path_and_reg {
-            crate::i18n::trz("已移除所选快捷方式、环境变量与注册表项")
-        } else {
-            crate::i18n::trz("已按选项保留部分系统集成项")
-        };
-        comic_info_card(
-            ui,
-            crate::i18n::trz("快捷方式与环境变量"),
-            integ_desc,
-            UiIcon::Terminal,
-            Color32::from_rgb(168, 85, 247),
-        );
-
-        let user_data_desc = if self.installer.remove_user_data {
-            crate::i18n::trz("已按选择删除个人配置与会话缓存")
-        } else {
-            crate::i18n::trz("已为您保留个人偏好设置与会话配置")
-        };
-        comic_info_card(
-            ui,
-            crate::i18n::trz("个人配置状态"),
-            user_data_desc,
-            UiIcon::Shield,
-            Color32::from_rgb(16, 185, 129),
-        );
-
-        ui.add_space(10.0);
+            let user_data_desc = if self.installer.remove_user_data {
+                crate::i18n::trz("已按选择删除个人配置与会话缓存")
+            } else {
+                crate::i18n::trz("已为您保留个人偏好设置与会话配置")
+            };
+            comic_info_card(
+                ui,
+                crate::i18n::trz("个人配置状态"),
+                user_data_desc,
+                UiIcon::Shield,
+                Color32::from_rgb(16, 185, 129),
+            );
+        });
 
         let mut finish_clicked = false;
-        ui.horizontal(|ui| {
-            let total_w = ui.available_width();
+        ui.scope_builder(egui::UiBuilder::new().max_rect(action_rect), |ui| {
+            let total_w = action_rect.width();
             if comic_action_button_with_icon(
                 ui,
                 Some(UiIcon::CheckCircle),
                 crate::i18n::trz("完成并关闭向导 (FINISH)"),
-                vec2(total_w, 42.0),
+                vec2(total_w, super::steps::WIZARD_ACTION_BAR_H),
                 true,
                 Color32::from_rgb(2, 132, 199),
             )

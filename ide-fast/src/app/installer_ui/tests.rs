@@ -403,7 +403,7 @@ fn test_installer_progress_clipping_and_no_tofu_icons() {
     let raw = egui::RawInput {
         screen_rect: Some(egui::Rect::from_min_size(
             egui::Pos2::ZERO,
-            egui::Vec2::new(880.0, 600.0),
+            egui::Vec2::new(880.0, 640.0),
         )),
         ..Default::default()
     };
@@ -737,7 +737,7 @@ fn test_dry_run_finishes_without_background_thread_and_real_job_is_isolated() {
     let raw = egui::RawInput {
         screen_rect: Some(egui::Rect::from_min_size(
             egui::Pos2::ZERO,
-            egui::Vec2::new(880.0, 600.0),
+            egui::Vec2::new(880.0, 640.0),
         )),
         ..Default::default()
     };
@@ -862,4 +862,82 @@ fn test_stylized_progress_bars_in_update_and_cards() {
         );
     });
     out2.textures_delta.clear();
+}
+
+#[test]
+fn test_eula_unaccepted_alert_and_all_steps_640h_layout() {
+    let ctx = egui::Context::default();
+    let raw = egui::RawInput {
+        screen_rect: Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::Vec2::new(880.0, 640.0),
+        )),
+        ..Default::default()
+    };
+    let mut a = App::build(vec![], None, Trace::new(), Settings::default(), false);
+    a.installer.open = true;
+    a.installer.standalone = true;
+    a.installer.dry_run = true;
+    a.installer.mode = InstallerMode::Install;
+    a.installer.step = InstallerStep::Agreement;
+
+    // 1. 首次渲染获取按钮布局后，模拟在未同意情况下点击「同意并继续」位置
+    let mut out1 = ctx.run_ui(raw.clone(), |root| {
+        a.installer_standalone(root);
+    });
+    out1.textures_delta.clear();
+
+    // 点击底部左侧主按钮区域（x=500, y=600 -> 位于 880x640 右栏底部固定按钮栏内）
+    let click_pos = egui::pos2(500.0, 595.0);
+    let mut raw_click = raw.clone();
+    raw_click.events.push(egui::Event::PointerMoved(click_pos));
+    raw_click.events.push(egui::Event::PointerButton {
+        pos: click_pos,
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: egui::Modifiers::NONE,
+    });
+    raw_click.events.push(egui::Event::PointerButton {
+        pos: click_pos,
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: egui::Modifiers::NONE,
+    });
+    let mut out_click = ctx.run_ui(raw_click, |root| {
+        a.installer_standalone(root);
+    });
+    out_click.textures_delta.clear();
+    assert!(
+        a.installer.alert.is_some(),
+        "未阅读或未勾选同意时点击继续必须弹出统一美漫警示窗"
+    );
+    assert_eq!(a.installer.step, InstallerStep::Agreement);
+
+    // 渲染弹窗一帧确保零 panic
+    let mut out_alert = ctx.run_ui(raw.clone(), |root| {
+        a.installer_standalone(root);
+    });
+    out_alert.textures_delta.clear();
+    a.installer.alert = None;
+
+    // 2. 验证全 7 个分镜在 880x640 下均能无 panic 渲染
+    let scenarios = [
+        (InstallerMode::Install, InstallerStep::Agreement),
+        (InstallerMode::Install, InstallerStep::Options),
+        (InstallerMode::Maintenance, InstallerStep::Options),
+        (InstallerMode::Repair, InstallerStep::Options),
+        (InstallerMode::Uninstall, InstallerStep::Options),
+        (InstallerMode::Install, InstallerStep::Installing),
+        (InstallerMode::Install, InstallerStep::Finished),
+        (InstallerMode::Uninstall, InstallerStep::Finished),
+    ];
+    for (mode, step) in scenarios {
+        a.installer.mode = mode;
+        a.installer.step = step;
+        a.installer.install_progress = 0.5;
+        let mut out_s = ctx.run_ui(raw.clone(), |root| {
+            a.installer_standalone(root);
+        });
+        out_s.textures_delta.clear();
+    }
 }

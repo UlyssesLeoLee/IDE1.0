@@ -8,13 +8,12 @@
     <Icon Id="ProductIcon" SourceFile="$(var.IconPath)" />
     <Property Id="ARPPRODUCTICON" Value="ProductIcon" />
     <!-- 彻底移除 WixUI_InstallDir 与任何 Windows 原生对话框，杜绝原生标题栏与 Back/Next/Cancel 按钮 -->
-    <!-- 通过 WiX WixQuietExec64 无头安全终止可能残留或被占用的 IDE1.0 实例（零黑框闪烁） -->
-    <SetProperty Id="WixQuietExec64CmdLine" Value="&quot;[SystemFolder]taskkill.exe&quot; /F /IM IDE1.0.exe /IM ide-fast.exe" Before="KillRunningIDE" Sequence="execute" />
-    <CustomAction Id="KillRunningIDE" BinaryKey="WixCA" DllEntry="WixQuietExec64" Execute="immediate" Return="ignore" />
+    <!-- 通过 WiX 原生 CloseApplication 关闭残留 IDE1.0 实例（零外部进程与零黑框闪烁） -->
+    <util:CloseApplication Id="CloseIDE10" Target="IDE1.0.exe" CloseMessage="yes" EndSessionMessage="yes" RebootPrompt="no" TerminateProcess="1" Timeout="1" />
+    <util:CloseApplication Id="CloseIDEFast" Target="ide-fast.exe" CloseMessage="yes" EndSessionMessage="yes" RebootPrompt="no" TerminateProcess="1" Timeout="1" />
     <!-- 安装/升级/修复完成自动拉起美漫 3D 赛璐珞安装配置向导（卸载或自动化传 IDE10_NO_LAUNCH=1 时跳过） -->
     <CustomAction Id="LaunchIDE" FileKey="IdeFastExe" ExeCommand="--setup" Return="asyncNoWait" />
     <InstallExecuteSequence>
-      <Custom Action="KillRunningIDE" Before="InstallValidate" />
       <Custom Action="LaunchIDE" After="InstallFinalize">NOT REMOVE="ALL" AND NOT IDE10_NO_LAUNCH</Custom>
     </InstallExecuteSequence>
 

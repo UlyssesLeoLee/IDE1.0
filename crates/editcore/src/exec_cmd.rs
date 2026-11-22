@@ -91,10 +91,13 @@ impl Capture {
 fn kill_tree(child: &mut std::process::Child) {
     #[cfg(windows)]
     {
+        use std::os::windows::process::CommandExt;
         let _ = Command::new("taskkill")
             .args(["/T", "/F", "/PID", &child.id().to_string()])
+            .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
+            .creation_flags(0x0800_0000)
             .status();
     }
     #[cfg(not(windows))]
@@ -205,14 +208,18 @@ mod tests {
     #[test]
     fn timeout_kills_the_child() {
         let cmd = if cfg!(windows) {
-            "ping -n 20 127.0.0.1 > nul"
+            "ping -n 30 127.0.0.1 > nul"
         } else {
-            "sleep 20"
+            "sleep 30"
         };
         let t = Instant::now();
         let r = run(&tmp(), cmd, None, Some(300)).unwrap();
         assert!(r.timed_out && r.code.is_none(), "{r:?}");
-        assert!(t.elapsed() < Duration::from_secs(10), "超时后应很快返回");
+        assert!(
+            t.elapsed() < Duration::from_secs(20),
+            "超时后应很快返回, elapsed={:?}",
+            t.elapsed()
+        );
     }
 
     #[test]

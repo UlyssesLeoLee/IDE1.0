@@ -605,6 +605,144 @@ pub fn comic_agreement_card(
     }
 }
 
+/// 统一绘制美漫三渲二弹窗外壳底板（硬阴影、黑曜钛金底色、粗墨描边与顶部高光装饰条）
+pub fn paint_comic_modal_chrome(p: &egui::Painter, rect: Rect, accent: Color32) {
+    paint_comic_hard_shadow_rect(p, rect, Color32::from_rgb(18, 22, 32), 2.2, vec2(4.5, 4.5));
+    p.rect_filled(
+        Rect::from_min_size(rect.min, vec2(rect.width(), 4.5)),
+        0.0,
+        accent,
+    );
+}
+
+/// 渲染统一的美漫三渲二前景提示弹窗（半透明墨水遮罩 + 居中漫画卡片 + 矢量图标徽章 + 确认按钮）
+/// 返回 `true` 表示用户已点击确认或按下 `Enter` / `Escape` 关闭弹窗。
+pub fn render_comic_alert_modal(
+    ctx: &egui::Context,
+    id_salt: &str,
+    title: &str,
+    message: &str,
+    accent: Color32,
+    icon: UiIcon,
+    confirm_label: &str,
+) -> bool {
+    let screen_rect = ctx.content_rect();
+    let backdrop = ctx.layer_painter(egui::LayerId::new(
+        egui::Order::Foreground,
+        egui::Id::new(format!("{id_salt}_backdrop")),
+    ));
+    backdrop.rect_filled(screen_rect, 0.0, Color32::from_black_alpha(175));
+
+    let mut dismissed = false;
+    egui::Window::new(id_salt)
+        .id(egui::Id::new(format!("{id_salt}_window")))
+        .order(egui::Order::Foreground)
+        .title_bar(false)
+        .frame(egui::Frame::NONE)
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .fixed_size(vec2(450.0, 204.0))
+        .show(ctx, |ui| {
+            let rect = ui.max_rect();
+            let p = ui.painter();
+            paint_comic_modal_chrome(p, rect, accent);
+
+            // 顶栏图标徽章与标题
+            let header_y = rect.top() + 34.0;
+            let badge_rect =
+                Rect::from_center_size(pos2(rect.left() + 34.0, header_y), vec2(30.0, 30.0));
+            p.rect_filled(badge_rect.translate(vec2(1.5, 1.5)), 6.0, Color32::BLACK);
+            p.rect_filled(badge_rect, 6.0, accent);
+            p.rect_stroke(
+                badge_rect,
+                6.0,
+                Stroke::new(1.8, Color32::BLACK),
+                StrokeKind::Inside,
+            );
+            ui_icons::paint(
+                p,
+                badge_rect.shrink(6.0),
+                icon,
+                Color32::from_rgb(10, 14, 24),
+            );
+
+            let title_clip = Rect::from_min_max(
+                pos2(rect.left() + 58.0, rect.top() + 12.0),
+                pos2(
+                    (rect.right() - 18.0).max(rect.left() + 62.0),
+                    rect.top() + 54.0,
+                ),
+            );
+            p.with_clip_rect(title_clip).text(
+                pos2(rect.left() + 58.0, header_y),
+                egui::Align2::LEFT_CENTER,
+                title,
+                egui::FontId::proportional(15.0),
+                Color32::WHITE,
+            );
+
+            // 分割细线
+            p.line_segment(
+                [
+                    pos2(rect.left() + 18.0, rect.top() + 58.0),
+                    pos2(rect.right() - 18.0, rect.top() + 58.0),
+                ],
+                Stroke::new(1.2, Color32::from_rgb(38, 49, 68)),
+            );
+
+            // 正文说明区与底部按钮区
+            let content_inner = Rect::from_min_max(
+                pos2(rect.left() + 20.0, rect.top() + 68.0),
+                pos2(rect.right() - 20.0, rect.bottom() - 18.0),
+            );
+            ui.scope_builder(egui::UiBuilder::new().max_rect(content_inner), |ui| {
+                let btn_h = 40.0;
+                let msg_rect = Rect::from_min_max(
+                    content_inner.min,
+                    pos2(
+                        content_inner.right(),
+                        (content_inner.bottom() - btn_h - 10.0).max(content_inner.top() + 24.0),
+                    ),
+                );
+                ui.scope_builder(egui::UiBuilder::new().max_rect(msg_rect), |ui| {
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(message)
+                                .size(12.2)
+                                .color(Color32::from_rgb(203, 213, 225)),
+                        )
+                        .wrap(),
+                    );
+                });
+
+                let btn_rect = Rect::from_min_max(
+                    pos2(content_inner.left(), content_inner.bottom() - btn_h),
+                    pos2(content_inner.right() - 2.0, content_inner.bottom()),
+                );
+                ui.scope_builder(egui::UiBuilder::new().max_rect(btn_rect), |ui| {
+                    if comic_action_button_with_icon(
+                        ui,
+                        Some(UiIcon::CheckCircle),
+                        confirm_label,
+                        vec2(btn_rect.width(), btn_h - 2.0),
+                        true,
+                        accent,
+                    )
+                    .clicked()
+                    {
+                        dismissed = true;
+                    }
+                });
+            });
+        });
+
+    if ctx.input(|i| i.key_pressed(egui::Key::Escape) || i.key_pressed(egui::Key::Enter)) {
+        dismissed = true;
+    }
+    dismissed
+}
+
 /// 美漫赛璐珞风格进度条（支持确定进度 `Some(0.0..=1.0)` 与不确定脉冲进度 `None`）
 pub fn paint_comic_progress_bar(
     p: &egui::Painter,

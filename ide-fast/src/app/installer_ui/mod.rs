@@ -82,6 +82,32 @@ pub struct ExistingInstall {
     pub has_uninstall_reg: bool,
 }
 
+/// 向导内部美漫弹窗告警类型
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum ComicAlertKind {
+    Warning,
+    Error,
+    Info,
+}
+
+/// 向导内部统一风格的美漫确认弹窗状态
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ComicAlertModal {
+    pub title: String,
+    pub message: String,
+    pub kind: ComicAlertKind,
+}
+
+impl ComicAlertModal {
+    pub fn warning(title: impl Into<String>, message: impl Into<String>) -> Self {
+        Self {
+            title: title.into(),
+            message: message.into(),
+            kind: ComicAlertKind::Warning,
+        }
+    }
+}
+
 pub struct InstallerState {
     pub open: bool,
     pub standalone: bool,
@@ -119,6 +145,8 @@ pub struct InstallerState {
     pub agreement_scrolled_to_bottom: bool,
     /// 用户是否已勾选同意许可协议
     pub agreement_accepted: bool,
+    /// 未勾选同意/路径缺失等前置提示的美漫模态弹窗
+    pub alert: Option<ComicAlertModal>,
 }
 
 impl Default for InstallerState {
@@ -158,6 +186,7 @@ impl Default for InstallerState {
             rot_target_pitch: 0.18,
             agreement_scrolled_to_bottom: false,
             agreement_accepted: false,
+            alert: None,
         }
     }
 }
@@ -177,6 +206,7 @@ impl InstallerState {
         self.deferred_self_cleanup_dir = None;
         self.legacy_cleanup_dir = None;
         self.log_path = None;
+        self.alert = None;
         self.existing = existing.clone();
 
         match launch_mode {
@@ -297,7 +327,7 @@ impl App {
         }
     }
 
-    /// 独立安装向导模式：直接铺满 800×560 视口，完全自绘美漫风格无原生边框窗口
+    /// 独立安装向导模式：直接铺满 880×640 视口，完全自绘美漫风格无原生边框窗口
     pub(super) fn installer_standalone(&mut self, root: &mut egui::Ui) {
         let ctx = root.ctx().clone();
         self.ensure_installer_logo(&ctx);
@@ -308,13 +338,13 @@ impl App {
         }
 
         let total_rect = root.max_rect();
-        let win_size = Vec2::new(880.0, 600.0);
+        let win_size = Vec2::new(880.0, 640.0);
         let win_rect = Rect::from_center_size(total_rect.center(), win_size);
 
         self.render_comic_installer_frame(root, win_rect, true);
     }
 
-    /// 应用内嵌入模态模式：暗化遮罩 + 880×600 美漫对话面板
+    /// 应用内嵌入模态模式：暗化遮罩 + 880×640 美漫对话面板
     pub(super) fn installer_window(&mut self, ctx: &egui::Context) {
         if !self.installer.open || self.installer.standalone {
             return;
@@ -323,7 +353,7 @@ impl App {
         self.ensure_installer_logo(ctx);
         Self::render_comic_backdrop(ctx, "installer_comic_modal_backdrop");
 
-        let win_size = Vec2::new(880.0, 600.0);
+        let win_size = Vec2::new(880.0, 640.0);
         egui::Window::new("installer_comic_modal")
             .id(egui::Id::new("installer_comic_modal_window"))
             .title_bar(false)
@@ -399,6 +429,34 @@ impl App {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             } else {
                 self.installer.open = false;
+            }
+        }
+
+        if let Some(alert) = self.installer.alert.clone() {
+            let (accent, icon) = match alert.kind {
+                ComicAlertKind::Warning => (
+                    Color32::from_rgb(245, 158, 11),
+                    crate::ui_icons::UiIcon::Warning,
+                ),
+                ComicAlertKind::Error => (
+                    Color32::from_rgb(239, 68, 68),
+                    crate::ui_icons::UiIcon::Warning,
+                ),
+                ComicAlertKind::Info => (
+                    Color32::from_rgb(2, 132, 199),
+                    crate::ui_icons::UiIcon::CheckCircle,
+                ),
+            };
+            if cards::render_comic_alert_modal(
+                &ctx,
+                "installer_comic_alert",
+                &alert.title,
+                &alert.message,
+                accent,
+                icon,
+                crate::i18n::trz("我知道了 (GOT IT)"),
+            ) {
+                self.installer.alert = None;
             }
         }
     }
