@@ -2,9 +2,11 @@
 //! 支持设置子 Agent 数量、动态标签页切换，每个标签页具备统筹总控命令窗口与单独命令窗口。
 
 use super::*;
-use crate::ai::{self, AiConfig, Event, Handle};
+use crate::ai::{self, AiConfig, Event, Handle, ToolCall};
+use crate::app::agent_plugins::{dispatch_mcp_tool_blocking, AgentPluginRuntime};
 use eframe::egui::vec2;
-use serde_json::json;
+use serde_json::{json, Value};
+use std::path::Path;
 use std::sync::mpsc::{channel, Receiver, TryRecvError};
 
 /// 协同对话消息项
@@ -54,6 +56,14 @@ impl CollabMsg {
     }
 }
 
+/// 子 Agent 异步工具调用等待项
+pub struct PendingSubTool {
+    pub slot: usize,
+    pub call: ToolCall,
+    pub is_plugin: bool,
+    pub rx: Receiver<Result<String, String>>,
+}
+
 /// 正在执行的子 Agent 请求状态
 pub struct SubAgentRun {
     pub rx: Receiver<Event>,
@@ -63,6 +73,75 @@ pub struct SubAgentRun {
     /// 并行修改模式的目标文档 ID 与行区间 (start_row, row_count)
     pub target_doc_id: Option<u64>,
     pub target_region: Option<(usize, usize)>,
+    pub doc_rows: usize,
+    pub msgs: Vec<Value>,
+    pub tools: Vec<Value>,
+    pub agent_cfg: Option<AiConfig>,
+    pub round: usize,
+    pub tool_slots: Vec<Option<Value>>,
+    pub pending_tools: Vec<PendingSubTool>,
+}
+
+impl SubAgentRun {
+    pub fn simple(
+        rx: Receiver<Event>,
+        handle: Handle,
+        is_master_broadcast: bool,
+        target_doc_id: Option<u64>,
+        target_region: Option<(usize, usize)>,
+    ) -> Self {
+        Self {
+            rx,
+            handle,
+            is_master_broadcast,
+            streaming_text: String::new(),
+            target_doc_id,
+            target_region,
+            doc_rows: 0,
+            msgs: Vec::new(),
+            tools: Vec::new(),
+            agent_cfg: None,
+            round: 0,
+            tool_slots: Vec::new(),
+            pending_tools: Vec::new(),
+        }
+    }
+
+    pub fn with_tool_context(
+        mut self,
+        doc_rows: usize,
+        msgs: Vec<Value>,
+        tools: Vec<Value>,
+        agent_cfg: AiConfig,
+    ) -> Self {
+        self.doc_rows = doc_rows;
+        self.msgs = msgs;
+        self.tools = tools;
+        self.agent_cfg = Some(agent_cfg);
+        self
+    }
+}
+
+fn build_subagent_turn_payload(
+    plugin_rt: &mut Option<&mut AgentPluginRuntime>,
+    base_sys: &str,
+    prompt: &str,
+    active_mod: &str,
+    ws_root: &Path,
+    installed: &[editcore::plugin_host::store::Installed],
+) -> (Vec<Value>, Vec<Value>) {
+    if let Some(rt) = plugin_rt.as_deref_mut() {
+        let prepared =
+            rt.prepare_agent_turn(base_sys, prompt, active_mod, ws_root, None, installed);
+        let msgs = AgentPluginRuntime::build_compacted_messages(
+            prepared.system_prompt,
+            &prepared.user_prompt,
+        );
+        (msgs, prepared.tools)
+    } else {
+        let msgs = AgentPluginRuntime::build_compacted_messages(base_sys.to_string(), prompt);
+        (msgs, ai::tool_table(installed))
+    }
 }
 
 /// 单个 Agent 针对文档局部区间生成的并发补丁
@@ -747,12 +826,39 @@ impl CollabState {
 
     /// 全员统筹下发命令 (受控配额并发派发，避免万级规模耗尽系统线程/连接句柄)
     pub fn send_master(&mut self, prompt: String, cfg: &AiConfig, ctx: &egui::Context) {
-        let q = prompt.trim().to_string();
-        if q.is_empty() {
+        self.send_master_with_plugins(prompt, cfg, ctx, None, "code", Path::new("."));
+    }
+
+    /// 带插件化后端（Hooks / Skills / Mod / Memory / MCP / Tool Calling）的全员统筹派发
+    pub fn send_master_with_plugins(
+        &mut self,
+        prompt: String,
+        cfg: &AiConfig,
+        ctx: &egui::Context,
+        mut plugin_rt: Option<&mut AgentPluginRuntime>,
+        active_mod: &str,
+        ws_root: &Path,
+    ) {
+        let raw_q = prompt.trim().to_string();
+        if raw_q.is_empty() {
             return;
         }
+        let q = if let Some(rt) = plugin_rt.as_deref_mut() {
+            match rt.run_pre_input_hook(raw_q) {
+                Ok(clean) => clean,
+                Err(err) => {
+                    self.master_history.push(CollabMsg::error("系统", &err));
+                    return;
+                }
+            }
+        } else {
+            raw_q
+        };
         self.master_input.clear();
         self.master_history.push(CollabMsg::user("统筹管理员", &q));
+        if let Some(rt) = plugin_rt.as_deref_mut() {
+            rt.record_working_item("user", &q, vec!["collab_master".into()]);
+        }
 
         let total_agents = self.agents.len();
         let dispatch_n = total_agents.min(Self::MAX_CONCURRENT_AGENT_DISPATCH);
@@ -774,6 +880,12 @@ impl CollabState {
             ));
         }
 
+        let installed = if any_llm {
+            editcore::plugin_host::store::list(&crate::plugins::root())
+        } else {
+            Vec::new()
+        };
+
         // 受控配额内为子 Agent 启动独立并发请求或本地并行工作线程（互不阻塞）
         for (idx, a) in self.agents.iter_mut().take(dispatch_n).enumerate() {
             if let Some(old) = a.run.take() {
@@ -784,18 +896,31 @@ impl CollabState {
             let agent_cfg = cfg.resolve_for_model(a.model_override.as_deref());
             let (tx, rx) = channel();
             let c = ctx.clone();
-            let handle = if agent_cfg.configured() {
+            if agent_cfg.configured() {
+                let sys = format!(
+                    "你是集成在 IDE1.0 中的协作智能体 {}。角色职责: {}。如有必要可调用已提供的编辑器、插件或 MCP 工具辅助完成任务。",
+                    a_name, a_role
+                );
                 let agent_prompt = format!(
                     "【多 Agent 协同统筹命令】: {}\n你的身份是: {}，专职角色: {}。\n请在你的专业领域内协同执行此任务，并给出具体执行结果与汇报说明。",
                     q, a_name, a_role
                 );
-                let msgs = vec![
-                    json!({ "role": "system", "content": format!("你是集成在 IDE1.0 中的协作智能体 {}。角色职责: {}。", a_name, a_role) }),
-                    json!({ "role": "user", "content": agent_prompt }),
-                ];
-                ai::spawn_request(&agent_cfg, msgs, vec![], tx, move || {
-                    c.request_repaint();
-                })
+                let (msgs, tools) = build_subagent_turn_payload(
+                    &mut plugin_rt,
+                    &sys,
+                    &agent_prompt,
+                    active_mod,
+                    ws_root,
+                    &installed,
+                );
+                let handle =
+                    ai::spawn_request(&agent_cfg, msgs.clone(), tools.clone(), tx, move || {
+                        c.request_repaint();
+                    });
+                a.run = Some(
+                    SubAgentRun::simple(rx, handle, true, None, None)
+                        .with_tool_context(0, msgs, tools, agent_cfg),
+                );
             } else {
                 let h = ai::Handle::default();
                 let hh = h.clone();
@@ -830,16 +955,8 @@ impl CollabState {
                         c.request_repaint();
                     })
                     .ok();
-                h
-            };
-            a.run = Some(SubAgentRun {
-                rx,
-                handle,
-                is_master_broadcast: true,
-                streaming_text: String::new(),
-                target_doc_id: None,
-                target_region: None,
-            });
+                a.run = Some(SubAgentRun::simple(rx, h, true, None, None));
+            }
         }
     }
 
@@ -947,12 +1064,35 @@ impl CollabState {
         cfg: &AiConfig,
         ctx: Option<&egui::Context>,
     ) -> Result<usize, String> {
+        self.execute_parallel_edit_on_doc_with_plugins(
+            doc,
+            prompt,
+            cfg,
+            ctx,
+            None,
+            "code",
+            Path::new("."),
+        )
+    }
+
+    /// 分配互不重叠的文档区域，调度多 Agent 并行修改同一文件（完整接入 Hooks/Skills/Mod/Memory/MCP 与工具调用）
+    #[allow(clippy::too_many_arguments)]
+    pub fn execute_parallel_edit_on_doc_with_plugins(
+        &mut self,
+        doc: &mut crate::doc::Doc,
+        prompt: &str,
+        cfg: &AiConfig,
+        ctx: Option<&egui::Context>,
+        mut plugin_rt: Option<&mut AgentPluginRuntime>,
+        active_mod: &str,
+        ws_root: &Path,
+    ) -> Result<usize, String> {
         use ide_agent_router::{CollaboratorColor, RemoteCursor};
 
         if doc.readonly {
             return Err("只读文档，无法多 Agent 并行修改".into());
         }
-        let clean_prompt = {
+        let raw_prompt = {
             let p = prompt.trim();
             if p.is_empty() {
                 "协同审查并完善分配区域"
@@ -960,17 +1100,25 @@ impl CollabState {
                 p
             }
         };
+        let clean_prompt = if let Some(rt) = plugin_rt.as_deref_mut() {
+            rt.run_pre_input_hook(raw_prompt.to_string())?
+        } else {
+            raw_prompt.to_string()
+        };
         let dispatch_n = self.agents.len().min(Self::MAX_CONCURRENT_AGENT_DISPATCH);
         let regions = plan_parallel_regions(doc.lines.len(), dispatch_n);
         self.master_history
-            .push(CollabMsg::user("统筹并行调度", clean_prompt));
+            .push(CollabMsg::user("统筹并行调度", &clean_prompt));
+        if let Some(rt) = plugin_rt.as_deref_mut() {
+            rt.record_working_item("user", &clean_prompt, vec!["collab_parallel".into()]);
+        }
 
         let any_llm = self.agents.iter().take(dispatch_n).any(|a| {
             cfg.resolve_for_model(a.model_override.as_deref())
                 .configured()
         });
         if (!any_llm || ctx.is_none()) && crate::app::nemaopts::is_nema_doc(doc) {
-            return self.execute_parallel_edit_on_nema_doc(doc, clean_prompt);
+            return self.execute_parallel_edit_on_nema_doc(doc, &clean_prompt);
         }
 
         let Some(ctx) = ctx else {
@@ -1045,7 +1193,18 @@ impl CollabState {
             return Ok(0);
         }
 
-        let mut cursors = Vec::with_capacity(dispatch_n);
+        // 仅在真正已配置可用模型的 Agent 之间公平分片，避免未配置 Agent 抢占仅有几行文件的首个区间导致漏派发
+        let configured_indices: Vec<usize> = (0..dispatch_n)
+            .filter(|&i| {
+                cfg.resolve_for_model(self.agents[i].model_override.as_deref())
+                    .configured()
+            })
+            .collect();
+        let active_regions = plan_parallel_regions(doc.lines.len(), configured_indices.len());
+        let installed = editcore::plugin_host::store::list(&crate::plugins::root());
+        let doc_rows = doc.lines.len();
+
+        let mut cursors = Vec::with_capacity(configured_indices.len());
         let mut dispatched_count = 0usize;
         for (idx, a) in self.agents.iter_mut().take(dispatch_n).enumerate() {
             if let Some(old) = a.run.take() {
@@ -1054,15 +1213,17 @@ impl CollabState {
             a.assigned_doc_id = Some(doc.id);
             a.patch_proposals.clear();
 
-            let agent_cfg = cfg.resolve_for_model(a.model_override.as_deref());
-            if !agent_cfg.configured() {
+            let Some(slot_pos) = configured_indices.iter().position(|&ci| ci == idx) else {
                 a.private_history.push(CollabMsg::system(
                     "未配置可用模型 API Key，本轮跳过文件修改（文件内容保持不变）。",
                 ));
                 continue;
-            }
-
-            let (start, count) = regions.get(idx).copied().unwrap_or((doc.lines.len(), 0));
+            };
+            let agent_cfg = cfg.resolve_for_model(a.model_override.as_deref());
+            let (start, count) = active_regions
+                .get(slot_pos)
+                .copied()
+                .unwrap_or((doc.lines.len(), 0));
             if count == 0 {
                 a.private_history.push(CollabMsg::system(
                     "当前文档行数较少，现有内容已由前置 Agent 覆盖处理，本轮待命（不修改文件）。",
@@ -1097,25 +1258,30 @@ impl CollabState {
             let c = ctx.clone();
             let a_name = a.name.clone();
             let a_role = a.role.clone();
+            let base_sys = format!(
+                "你是集成在 IDE1.0 中的协作智能体 {} ({})。严格只修改分配给你的行区间，可用已提供工具辅助分析后用单个闭合 ``` 代码块输出纯替换代码（不要添加签名注释或进度日志）；说明文字或反馈写在代码块之外。",
+                a_name, a_role
+            );
             let agent_prompt = format!(
                 "【多 Agent 分区并行修改】\n任务目标: {}\n文档: {}\n你独占负责的行区间: 第 {} 行至第 {} 行 (共 {} 行)。\n要求：\n1. 仅输出修改后的该区间源码，放在单个 ``` 代码块中，严禁包含行号前缀、进度日志或多余的 Agent 签名注释。\n2. 如有任何说明、建议或反馈，请全部写在代码块外部，它们只会在聊天记录中展示，绝不会写入源文件。\n待修改源码区间:\n```\n{}\n```",
                 clean_prompt, doc_name, start + 1, range_end, count, slice_text
             );
-            let msgs = vec![
-                json!({ "role": "system", "content": format!("你是集成在 IDE1.0 中的协作智能体 {} ({})。严格只修改分配给你的行区间，用单个闭合 ``` 代码块输出纯替换代码（不要添加签名注释或进度日志）；说明文字或反馈写在代码块之外。", a_name, a_role) }),
-                json!({ "role": "user", "content": agent_prompt }),
-            ];
-            let handle = ai::spawn_request(&agent_cfg, msgs, vec![], tx, move || {
-                c.request_repaint();
-            });
-            a.run = Some(SubAgentRun {
-                rx,
-                handle,
-                is_master_broadcast: true,
-                streaming_text: String::new(),
-                target_doc_id: Some(doc.id),
-                target_region: Some((start, count)),
-            });
+            let (msgs, tools) = build_subagent_turn_payload(
+                &mut plugin_rt,
+                &base_sys,
+                &agent_prompt,
+                active_mod,
+                ws_root,
+                &installed,
+            );
+            let handle =
+                ai::spawn_request(&agent_cfg, msgs.clone(), tools.clone(), tx, move || {
+                    c.request_repaint();
+                });
+            a.run = Some(
+                SubAgentRun::simple(rx, handle, true, Some(doc.id), Some((start, count)))
+                    .with_tool_context(doc_rows, msgs, tools, agent_cfg),
+            );
             dispatched_count += 1;
         }
         doc.remote_cursors = cursors;
@@ -1127,6 +1293,7 @@ impl CollabState {
     }
 
     /// 针对特定子 Agent 单独下达针对性命令 (独立并发运行，不阻塞其它 Agent)
+    #[allow(dead_code)]
     pub fn send_individual(
         &mut self,
         idx: usize,
@@ -1134,15 +1301,45 @@ impl CollabState {
         cfg: &AiConfig,
         ctx: &egui::Context,
     ) {
+        self.send_individual_with_plugins(idx, prompt, cfg, ctx, None, "code", Path::new("."));
+    }
+
+    /// 带插件化后端（Hooks / Skills / Mod / Memory / MCP / Tool Calling）的单 Agent 单独指令
+    #[allow(dead_code)]
+    #[allow(clippy::too_many_arguments)]
+    pub fn send_individual_with_plugins(
+        &mut self,
+        idx: usize,
+        prompt: String,
+        cfg: &AiConfig,
+        ctx: &egui::Context,
+        mut plugin_rt: Option<&mut AgentPluginRuntime>,
+        active_mod: &str,
+        ws_root: &Path,
+    ) {
         let Some(a) = self.agents.get_mut(idx) else {
             return;
         };
-        let q = prompt.trim().to_string();
-        if q.is_empty() {
+        let raw_q = prompt.trim().to_string();
+        if raw_q.is_empty() {
             return;
         }
+        let q = if let Some(rt) = plugin_rt.as_deref_mut() {
+            match rt.run_pre_input_hook(raw_q) {
+                Ok(clean) => clean,
+                Err(err) => {
+                    a.private_history.push(CollabMsg::error("系统", &err));
+                    return;
+                }
+            }
+        } else {
+            raw_q
+        };
         a.private_input.clear();
         a.private_history.push(CollabMsg::user("你", &q));
+        if let Some(rt) = plugin_rt.as_deref_mut() {
+            rt.record_working_item("user", &q, vec!["collab_individual".into()]);
+        }
 
         if let Some(old) = a.run.take() {
             old.handle.cancel();
@@ -1151,14 +1348,28 @@ impl CollabState {
         let agent_cfg = cfg.resolve_for_model(a.model_override.as_deref());
         let (tx, rx) = channel();
         let c = ctx.clone();
-        let handle = if agent_cfg.configured() {
-            let msgs = vec![
-                json!({ "role": "system", "content": format!("你是 {}。角色: {}。现在用户正在与你单独进行深度交互与指令下发。", a.name, a.role) }),
-                json!({ "role": "user", "content": q }),
-            ];
-            ai::spawn_request(&agent_cfg, msgs, vec![], tx, move || {
-                c.request_repaint();
-            })
+        if agent_cfg.configured() {
+            let installed = editcore::plugin_host::store::list(&crate::plugins::root());
+            let base_sys = format!(
+                "你是 {}。角色: {}。现在用户正在与你单独进行深度交互，如需要可调用已提供的编辑器/插件/MCP工具。",
+                a.name, a.role
+            );
+            let (msgs, tools) = build_subagent_turn_payload(
+                &mut plugin_rt,
+                &base_sys,
+                &q,
+                active_mod,
+                ws_root,
+                &installed,
+            );
+            let handle =
+                ai::spawn_request(&agent_cfg, msgs.clone(), tools.clone(), tx, move || {
+                    c.request_repaint();
+                });
+            a.run = Some(
+                SubAgentRun::simple(rx, handle, false, None, None)
+                    .with_tool_context(0, msgs, tools, agent_cfg),
+            );
         } else {
             let h = ai::Handle::default();
             let hh = h.clone();
@@ -1191,16 +1402,8 @@ impl CollabState {
                     c.request_repaint();
                 })
                 .ok();
-            h
-        };
-        a.run = Some(SubAgentRun {
-            rx,
-            handle,
-            is_master_broadcast: false,
-            streaming_text: String::new(),
-            target_doc_id: None,
-            target_region: None,
-        });
+            a.run = Some(SubAgentRun::simple(rx, h, false, None, None));
+        }
     }
 
     /// 每帧轮询接收各个子 Agent 的流式输出与完成事件 (不自动落盘文档补丁)
@@ -1210,11 +1413,98 @@ impl CollabState {
 
     /// 每帧轮询接收各个子 Agent 的流式输出，并在并行编辑模式下将完成区域无冲突写入目标文档
     pub fn poll_with_docs(&mut self, ctx: &egui::Context, docs: &mut [crate::doc::Doc]) {
+        self.poll_with_docs_and_plugins(ctx, docs, None, None, None);
+    }
+
+    /// 每帧轮询子 Agent（支持完整插件化多轮工具调用、MCP/Hooks/LoopBreaker 闸门及同帧行偏移修正）
+    pub fn poll_with_docs_and_plugins(
+        &mut self,
+        ctx: &egui::Context,
+        docs: &mut [crate::doc::Doc],
+        mut plugin_rt: Option<&mut AgentPluginRuntime>,
+        installed_plugins: Option<&[editcore::plugin_host::store::Installed]>,
+        mut plug_state: Option<&mut crate::plugin_ui::PlugState>,
+    ) {
         let mut completed = vec![];
         for (idx, a) in self.agents.iter_mut().enumerate() {
             let Some(run) = a.run.as_mut() else {
                 continue;
             };
+
+            // 1. 优先轮询异步工具结果 (MCP / QuickJS plugin.tool)
+            if !run.pending_tools.is_empty() {
+                ctx.request_repaint_after(std::time::Duration::from_millis(50));
+                let doc_rows = run
+                    .target_doc_id
+                    .and_then(|did| docs.iter().find(|d| d.id == did))
+                    .map_or(run.doc_rows, |d| d.lines.len());
+                let mut i = 0;
+                while i < run.pending_tools.len() {
+                    let recv = match run.pending_tools[i].rx.try_recv() {
+                        Ok(r) => Some(r),
+                        Err(TryRecvError::Empty) => None,
+                        Err(TryRecvError::Disconnected) => Some(Err("异步工具服务已停止".into())),
+                    };
+                    if let Some(r) = recv {
+                        let p = run.pending_tools.remove(i);
+                        let raw_val = match r {
+                            Ok(j) => match serde_json::from_str::<Value>(&j) {
+                                Ok(v) if v.is_null() => json!({}),
+                                Ok(v) => {
+                                    if p.is_plugin
+                                        && v.get("result").is_none()
+                                        && v.get("error").is_none()
+                                    {
+                                        ai::vet_plugin_patch(&v, doc_rows)
+                                    } else {
+                                        v
+                                    }
+                                }
+                                Err(_) => json!({ "error": "工具返回的不是 JSON" }),
+                            },
+                            Err(e) => json!({ "error": format!("工具执行失败: {e}") }),
+                        };
+                        let masked = if let Some(rt) = plugin_rt.as_deref_mut() {
+                            let v = rt.run_post_tool_hook(&p.call.name, raw_val);
+                            rt.record_working_item(
+                                "tool",
+                                &format!("{} tool: {}", a.name, p.call.name),
+                                vec!["tool".into(), p.call.name.clone()],
+                            );
+                            v
+                        } else {
+                            raw_val
+                        };
+                        if p.slot < run.tool_slots.len() {
+                            run.tool_slots[p.slot] = Some(ai::tool_message(&p.call.id, &masked));
+                        }
+                    } else {
+                        i += 1;
+                    }
+                }
+                if run.pending_tools.is_empty() && run.tool_slots.iter().all(Option::is_some) {
+                    if let Some(agent_cfg) = run.agent_cfg.clone() {
+                        let results: Vec<Value> = run.tool_slots.drain(..).flatten().collect();
+                        run.msgs.extend(results);
+                        run.streaming_text.clear();
+                        let (tx, rx) = channel();
+                        let c = ctx.clone();
+                        run.handle = ai::spawn_request(
+                            &agent_cfg,
+                            run.msgs.clone(),
+                            run.tools.clone(),
+                            tx,
+                            move || {
+                                c.request_repaint();
+                            },
+                        );
+                        run.rx = rx;
+                    }
+                }
+                continue;
+            }
+
+            // 2. 接收流式回复或工具调用事件
             let mut got_done = None;
             loop {
                 match run.rx.try_recv() {
@@ -1236,9 +1526,140 @@ impl CollabState {
                     }
                 }
             }
-            if let Some(turn) = got_done {
-                completed.push((idx, turn));
+            let Some(turn) = got_done else {
+                continue;
+            };
+
+            if turn.error.is_none()
+                && !turn.tool_calls.is_empty()
+                && run.round < ai::MAX_ROUNDS
+                && run.agent_cfg.is_some()
+            {
+                let doc_rows = run
+                    .target_doc_id
+                    .and_then(|did| docs.iter().find(|d| d.id == did))
+                    .map_or(run.doc_rows, |d| d.lines.len());
+                run.msgs.push(ai::assistant_message(&turn));
+                run.round += 1;
+                run.tool_slots = vec![None; turn.tool_calls.len()];
+
+                let tool_names: Vec<&str> =
+                    turn.tool_calls.iter().map(|c| c.name.as_str()).collect();
+                a.private_history.push(CollabMsg::system(&format!(
+                    "第 {} 轮调用工具: {}",
+                    run.round,
+                    tool_names.join(", ")
+                )));
+
+                for (slot, call) in turn.tool_calls.iter().enumerate() {
+                    let args = ai::parse_args(&call.args);
+                    if let Some(rt) = plugin_rt.as_deref_mut() {
+                        if let Err(gate_err) = rt.check_tool_gate(&call.name, &args) {
+                            run.tool_slots[slot] =
+                                Some(ai::tool_message(&call.id, &json!({ "error": gate_err })));
+                            continue;
+                        }
+                    }
+
+                    if call.name.starts_with("mcp_") {
+                        let mcp_mgr = plugin_rt
+                            .as_deref_mut()
+                            .and_then(|rt| rt.mcp_manager_cloned());
+                        let (tx, rx) = channel();
+                        let full_name = call.name.clone();
+                        let args_clone = args.clone();
+                        let c = ctx.clone();
+                        std::thread::Builder::new()
+                            .name(format!("collab-mcp-{}", call.name))
+                            .spawn(move || {
+                                let v = dispatch_mcp_tool_blocking(
+                                    mcp_mgr.as_ref(),
+                                    &full_name,
+                                    args_clone,
+                                );
+                                let res = if let Some(err) = v["error"].as_str() {
+                                    Err(err.to_string())
+                                } else {
+                                    Ok(serde_json::to_string(&v).unwrap_or_else(|_| "{}".into()))
+                                };
+                                let _ = tx.send(res);
+                                c.request_repaint();
+                            })
+                            .ok();
+                        run.pending_tools.push(PendingSubTool {
+                            slot,
+                            call: call.clone(),
+                            is_plugin: false,
+                            rx,
+                        });
+                    } else if let Some((pid, tool)) = ai::split_plugin_tool(&call.name) {
+                        let declared = installed_plugins
+                            .is_some_and(|list| ai::plugin_tool_declared(list, &pid, &tool));
+                        if declared {
+                            if let Some(plug) = plug_state.as_deref_mut() {
+                                let rx = plug.call_raw(
+                                    &pid,
+                                    &format!("agent.tool:{tool}"),
+                                    &json!([args]),
+                                );
+                                run.pending_tools.push(PendingSubTool {
+                                    slot,
+                                    call: call.clone(),
+                                    is_plugin: true,
+                                    rx,
+                                });
+                            } else {
+                                run.tool_slots[slot] = Some(ai::tool_message(
+                                    &call.id,
+                                    &json!({ "error": "插件宿主未挂载" }),
+                                ));
+                            }
+                        } else {
+                            run.tool_slots[slot] = Some(ai::tool_message(
+                                &call.id,
+                                &json!({ "error": format!("unknown tool: {}", call.name) }),
+                            ));
+                        }
+                    } else {
+                        let raw_val = ai::exec_builtin(&call.name, &args, doc_rows);
+                        let masked = if let Some(rt) = plugin_rt.as_deref_mut() {
+                            let v = rt.run_post_tool_hook(&call.name, raw_val);
+                            rt.record_working_item(
+                                "tool",
+                                &format!("{} tool: {}", a.name, call.name),
+                                vec!["tool".into(), call.name.clone()],
+                            );
+                            v
+                        } else {
+                            raw_val
+                        };
+                        run.tool_slots[slot] = Some(ai::tool_message(&call.id, &masked));
+                    }
+                }
+
+                if run.pending_tools.is_empty() && run.tool_slots.iter().all(Option::is_some) {
+                    if let Some(agent_cfg) = run.agent_cfg.clone() {
+                        let results: Vec<Value> = run.tool_slots.drain(..).flatten().collect();
+                        run.msgs.extend(results);
+                        run.streaming_text.clear();
+                        let (tx, rx) = channel();
+                        let c = ctx.clone();
+                        run.handle = ai::spawn_request(
+                            &agent_cfg,
+                            run.msgs.clone(),
+                            run.tools.clone(),
+                            tx,
+                            move || {
+                                c.request_repaint();
+                            },
+                        );
+                        run.rx = rx;
+                    }
+                }
+                continue;
             }
+
+            completed.push((idx, turn));
         }
 
         let mut region_shifts: Vec<(u64, usize, isize)> = Vec::new();
@@ -1285,10 +1706,21 @@ impl CollabState {
                 continue;
             }
 
-            let chat_reply = if !turn.content.is_empty() {
+            let raw_reply = if !turn.content.is_empty() {
                 turn.content.clone()
             } else {
                 run.streaming_text.clone()
+            };
+            let chat_reply = if let Some(rt) = plugin_rt.as_deref_mut() {
+                let clean = rt.run_post_response_hook(raw_reply);
+                rt.record_working_item(
+                    "assistant",
+                    &clean.chars().take(200).collect::<String>(),
+                    vec!["collab_response".into()],
+                );
+                clean
+            } else {
+                raw_reply
             };
             self.agents[idx]
                 .private_history
@@ -1300,7 +1732,14 @@ impl CollabState {
                     .or_else(|| extract_fenced_patch_lines(&run.streaming_text));
                 if let Some(doc) = docs.iter_mut().find(|d| d.id == doc_id && !d.readonly) {
                     if let Some(patch_lines) = patch_lines.filter(|lines| !lines.is_empty()) {
-                        let start = raw_start.min(doc.lines.len());
+                        // 先叠加同帧内先前完成的 Agent 对后续区域的行偏移，防止同帧并发落盘错位
+                        let mut shifted_start = raw_start;
+                        for (s_doc_id, boundary, delta) in &region_shifts {
+                            if *s_doc_id == doc_id && shifted_start >= *boundary {
+                                shifted_start = ((shifted_start as isize) + *delta).max(0) as usize;
+                            }
+                        }
+                        let start = shifted_start.min(doc.lines.len());
                         let remove = raw_remove.min(doc.lines.len().saturating_sub(start));
                         let is_nema = crate::app::nemaopts::is_nema_doc(doc);
                         let nema_valid = if is_nema {
@@ -1322,7 +1761,7 @@ impl CollabState {
                                     .push(CollabMsg::error(&agent_name, &e));
                             } else {
                                 let delta = new_len as isize - remove as isize;
-                                region_shifts.push((doc_id, start + remove, delta));
+                                region_shifts.push((doc_id, shifted_start + remove, delta));
                                 if let Some(rc) = doc
                                     .remote_cursors
                                     .iter_mut()
@@ -1390,11 +1829,36 @@ impl App {
         }
         let idx = self.active.min(self.docs.len() - 1);
         let cfg = self.ai_cfg().clone();
+        let ws_root = super::aichat::find_workspace_root(self.docs[idx].path.as_deref());
+        let active_mod = self.ai.active_mod.clone();
         let doc_id = self.docs[idx].id;
+        let has_configured = cfg.configured()
+            || self
+                .collab
+                .agents
+                .iter()
+                .take(CollabState::MAX_CONCURRENT_AGENT_DISPATCH)
+                .any(|a| {
+                    cfg.resolve_for_model(a.model_override.as_deref())
+                        .configured()
+                });
         let res = {
             let doc = &mut self.docs[idx];
-            self.collab
-                .execute_parallel_edit_on_doc(doc, prompt, &cfg, ctx)
+            if has_configured && ctx.is_some() {
+                let rt = self.ai.plugin_rt_mut();
+                self.collab.execute_parallel_edit_on_doc_with_plugins(
+                    doc,
+                    prompt,
+                    &cfg,
+                    ctx,
+                    Some(rt),
+                    &active_mod,
+                    &ws_root,
+                )
+            } else {
+                self.collab
+                    .execute_parallel_edit_on_doc(doc, prompt, &cfg, ctx)
+            }
         };
         if let Ok(n) = res {
             if n == 0 {
@@ -1828,16 +2292,41 @@ impl App {
         if let Some(prompt) = master_send {
             let cfg = self.ai_cfg().clone();
             let ctx = ui.ctx().clone();
-            self.collab.send_master(prompt, &cfg, &ctx);
+            let doc_path = self
+                .docs
+                .get(self.active.min(self.docs.len().saturating_sub(1)))
+                .and_then(|d| d.path.as_deref());
+            let ws_root = super::aichat::find_workspace_root(doc_path);
+            let active_mod = self.ai.active_mod.clone();
+            let rt = self.ai.plugin_rt_mut();
+            self.collab.send_master_with_plugins(
+                prompt,
+                &cfg,
+                &ctx,
+                Some(rt),
+                &active_mod,
+                &ws_root,
+            );
         }
     }
 
     /// 多 Agent 协同浮动窗口 (已弃用 — 统一内嵌在右侧 AI 协同侧边栏)
     pub(super) fn collab_window(&mut self, _ctx: &egui::Context) {}
 
-    /// 每帧轮询协同后台任务并写回并行修改的文档区域
+    /// 每帧轮询协同后台任务并写回并行修改的文档区域（空闲时 0 分配，活跃时接入完整插件化工具栈）
     pub(super) fn collab_poll(&mut self, ctx: &egui::Context) {
-        self.collab.poll_with_docs(ctx, &mut self.docs);
+        if !self.collab.any_running() {
+            return;
+        }
+        let installed = editcore::plugin_host::store::list(&crate::plugins::root());
+        let rt = self.ai.plugin_rt_mut();
+        self.collab.poll_with_docs_and_plugins(
+            ctx,
+            &mut self.docs,
+            Some(rt),
+            Some(&installed),
+            Some(&mut self.plug),
+        );
     }
 }
 
@@ -2281,14 +2770,13 @@ mod tests {
             ..Default::default()
         }));
 
-        collab.agents[0].run = Some(SubAgentRun {
+        collab.agents[0].run = Some(SubAgentRun::simple(
             rx,
-            handle: crate::ai::Handle::default(),
-            is_master_broadcast: true,
-            streaming_text: String::new(),
-            target_doc_id: Some(doc.id),
-            target_region: Some((0, 1)),
-        });
+            crate::ai::Handle::default(),
+            true,
+            Some(doc.id),
+            Some((0, 1)),
+        ));
 
         let mut docs = [doc];
         collab.poll_with_docs(&ctx, &mut docs);
@@ -2347,14 +2835,13 @@ mod tests {
             ..Default::default()
         }));
 
-        collab.agents[0].run = Some(SubAgentRun {
+        collab.agents[0].run = Some(SubAgentRun::simple(
             rx,
-            handle: crate::ai::Handle::default(),
-            is_master_broadcast: true,
-            streaming_text: String::new(),
-            target_doc_id: Some(doc.id),
-            target_region: Some((0, 1)),
-        });
+            crate::ai::Handle::default(),
+            true,
+            Some(doc.id),
+            Some((0, 1)),
+        ));
 
         let mut docs = [doc];
         collab.poll_with_docs(&ctx, &mut docs);
@@ -2368,5 +2855,47 @@ mod tests {
             .master_history
             .iter()
             .any(|m| m.is_error && m.text.contains("HTTP 429")));
+    }
+
+    #[test]
+    fn poll_with_docs_executes_tool_call_roundtrip_for_subagent() {
+        let mut collab = CollabState::default();
+        collab.set_agent_count(1);
+        let ctx = egui::Context::default();
+        let mut rt = AgentPluginRuntime::default();
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        let _ = tx.send(crate::ai::Event::Done(crate::ai::Turn {
+            tool_calls: vec![crate::ai::ToolCall {
+                id: "call_1".into(),
+                name: "search_text".into(),
+                args: r#"{"pattern":"hello"}"#.into(),
+            }],
+            ..Default::default()
+        }));
+
+        let cfg = AiConfig {
+            base_url: "http://127.0.0.1:9".into(),
+            key: "sk-test-12345678901234567890".into(),
+            model: "test-model".into(),
+            ..AiConfig::default_cfg()
+        };
+        collab.agents[0].run = Some(
+            SubAgentRun::simple(rx, crate::ai::Handle::default(), true, None, None)
+                .with_tool_context(
+                    10,
+                    vec![json!({"role":"user","content":"find hello"})],
+                    vec![],
+                    cfg,
+                ),
+        );
+
+        let mut docs = [];
+        collab.poll_with_docs_and_plugins(&ctx, &mut docs, Some(&mut rt), None, None);
+
+        let active = collab.agents[0].run.as_ref().expect("should enter round 1");
+        assert_eq!(active.round, 1);
+        assert!(active.msgs.iter().any(|m| m["role"] == "tool"));
+        collab.stop_all();
     }
 }

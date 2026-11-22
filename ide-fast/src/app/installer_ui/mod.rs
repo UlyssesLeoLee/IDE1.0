@@ -147,6 +147,8 @@ pub struct InstallerState {
     pub agreement_accepted: bool,
     /// 未勾选同意/路径缺失等前置提示的美漫模态弹窗
     pub alert: Option<ComicAlertModal>,
+    /// 向导窗口当前是否处于全屏最大化状态（便于放大查阅长篇用户协议）
+    pub maximized: bool,
 }
 
 impl Default for InstallerState {
@@ -187,6 +189,7 @@ impl Default for InstallerState {
             agreement_scrolled_to_bottom: false,
             agreement_accepted: false,
             alert: None,
+            maximized: false,
         }
     }
 }
@@ -207,6 +210,7 @@ impl InstallerState {
         self.legacy_cleanup_dir = None;
         self.log_path = None;
         self.alert = None;
+        self.maximized = false;
         self.existing = existing.clone();
 
         match launch_mode {
@@ -334,19 +338,20 @@ impl App {
         let ctx = root.ctx().clone();
         self.ensure_installer_logo(&ctx);
 
+        self.installer.maximized =
+            ctx.input(|i| i.viewport().maximized.unwrap_or(self.installer.maximized));
+
         if !self.shown {
             self.shown = true;
             ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
         }
 
-        let total_rect = root.max_rect();
-        let win_size = Vec2::new(880.0, 640.0);
-        let win_rect = Rect::from_center_size(total_rect.center(), win_size);
+        let win_rect = root.max_rect();
 
         self.render_comic_installer_frame(root, win_rect, true);
     }
 
-    /// 应用内嵌入模态模式：暗化遮罩 + 880×640 美漫对话面板
+    /// 应用内嵌入模态模式：暗化遮罩 + 880×640 美漫对话面板（支持最大化查阅长篇协议）
     pub(super) fn installer_window(&mut self, ctx: &egui::Context) {
         if !self.installer.open || self.installer.standalone {
             return;
@@ -355,7 +360,14 @@ impl App {
         self.ensure_installer_logo(ctx);
         Self::render_comic_backdrop(ctx, "installer_comic_modal_backdrop");
 
-        let win_size = Vec2::new(880.0, 640.0);
+        let win_size = if self.installer.maximized {
+            ctx.content_rect()
+                .shrink(12.0)
+                .size()
+                .max(Vec2::new(880.0, 640.0))
+        } else {
+            Vec2::new(880.0, 640.0)
+        };
         egui::Window::new("installer_comic_modal")
             .id(egui::Id::new("installer_comic_modal_window"))
             .title_bar(false)
@@ -403,6 +415,8 @@ impl App {
                 badge_bg,
                 drag_id: "installer_drag_caption",
                 min_btn_id: Some("comic_inst_min"),
+                max_btn_id: Some("comic_inst_max"),
+                is_maximized: self.installer.maximized,
                 close_btn_id: "comic_inst_close",
             },
             |app, ui, right_panel_rect| {
@@ -412,6 +426,12 @@ impl App {
 
         if res.minimize_clicked {
             ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+        }
+        if res.maximize_clicked {
+            self.installer.maximized = !self.installer.maximized;
+            if standalone {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(self.installer.maximized));
+            }
         }
 
         if res.close_clicked {

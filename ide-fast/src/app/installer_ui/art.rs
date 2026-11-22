@@ -388,12 +388,20 @@ pub fn paint_ionic_comic_pedestal(p: &egui::Painter, cx: f32, top_y: f32) {
     );
 }
 
-/// 纯自绘美漫窗口控制按钮 (提取公用逻辑，消除重复代码)
-pub fn paint_comic_window_btn(
+/// 美漫标题栏控制按钮类型
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum ComicWindowBtnKind {
+    Minimize,
+    Maximize { restored: bool },
+    Close,
+}
+
+/// 纯自绘美漫窗口控制按钮（最小化 / 最大化-还原 / 关闭）
+pub fn paint_comic_window_btn_kind(
     ui: &mut egui::Ui,
     center: egui::Pos2,
     id_str: &str,
-    is_close: bool,
+    kind: ComicWindowBtnKind,
 ) -> bool {
     let rect = Rect::from_center_size(center, vec2(24.0, 24.0));
     let resp = ui.interact(rect, ui.id().with(id_str), egui::Sense::click());
@@ -403,6 +411,7 @@ pub fn paint_comic_window_btn(
     } else {
         rect
     };
+    let is_close = matches!(kind, ComicWindowBtnKind::Close);
     let bg_color = if is_close {
         if resp.hovered() {
             Color32::from_rgb(255, 60, 60)
@@ -423,20 +432,69 @@ pub fn paint_comic_window_btn(
     paint_comic_hard_shadow_rect(p, draw_rect, bg_color, 2.0, shadow);
 
     let cc = draw_rect.center();
-    if is_close {
-        p.line_segment(
-            [pos2(cc.x - 4.5, cc.y - 4.5), pos2(cc.x + 4.5, cc.y + 4.5)],
-            Stroke::new(2.5, Color32::WHITE),
-        );
-        p.line_segment(
-            [pos2(cc.x + 4.5, cc.y - 4.5), pos2(cc.x - 4.5, cc.y + 4.5)],
-            Stroke::new(2.5, Color32::WHITE),
-        );
-    } else {
-        p.line_segment(
-            [pos2(cc.x - 5.0, cc.y), pos2(cc.x + 5.0, cc.y)],
-            Stroke::new(2.5, Color32::BLACK),
-        );
+    match kind {
+        ComicWindowBtnKind::Close => {
+            p.line_segment(
+                [pos2(cc.x - 4.5, cc.y - 4.5), pos2(cc.x + 4.5, cc.y + 4.5)],
+                Stroke::new(2.5, Color32::WHITE),
+            );
+            p.line_segment(
+                [pos2(cc.x + 4.5, cc.y - 4.5), pos2(cc.x - 4.5, cc.y + 4.5)],
+                Stroke::new(2.5, Color32::WHITE),
+            );
+        }
+        ComicWindowBtnKind::Maximize { restored } => {
+            if restored {
+                let back = Rect::from_min_size(pos2(cc.x - 2.5, cc.y - 5.0), vec2(7.5, 7.5));
+                let front = Rect::from_min_size(pos2(cc.x - 5.0, cc.y - 2.5), vec2(7.5, 7.5));
+                p.rect_stroke(
+                    back,
+                    0.0,
+                    Stroke::new(1.8, Color32::BLACK),
+                    StrokeKind::Inside,
+                );
+                p.rect_filled(front, 0.0, bg_color);
+                p.rect_stroke(
+                    front,
+                    0.0,
+                    Stroke::new(1.8, Color32::BLACK),
+                    StrokeKind::Inside,
+                );
+            } else {
+                let sq = Rect::from_center_size(cc, vec2(9.5, 9.5));
+                p.rect_stroke(
+                    sq,
+                    0.0,
+                    Stroke::new(2.0, Color32::BLACK),
+                    StrokeKind::Inside,
+                );
+            }
+        }
+        ComicWindowBtnKind::Minimize => {
+            p.line_segment(
+                [pos2(cc.x - 5.0, cc.y), pos2(cc.x + 5.0, cc.y)],
+                Stroke::new(2.5, Color32::BLACK),
+            );
+        }
     }
     resp.clicked()
+}
+
+/// 纯自绘美漫窗口控制按钮 (提取公用逻辑，消除重复代码)
+pub fn paint_comic_window_btn(
+    ui: &mut egui::Ui,
+    center: egui::Pos2,
+    id_str: &str,
+    is_close: bool,
+) -> bool {
+    paint_comic_window_btn_kind(
+        ui,
+        center,
+        id_str,
+        if is_close {
+            ComicWindowBtnKind::Close
+        } else {
+            ComicWindowBtnKind::Minimize
+        },
+    )
 }

@@ -239,9 +239,9 @@ impl App {
                 tip_accent,
             );
 
-            // 协议正文漫画滚动面板 (带深黑实心阴影与纯黑描边墨水框，动态适配剩余空间)
+            // 协议正文漫画滚动面板 (带深黑实心阴影与纯黑描边墨水框，动态适配全屏/窗口高度)
             let w = ui.available_width();
-            let scroll_card_h = (ui.available_height() - 52.0 - 8.0).clamp(130.0, 236.0);
+            let scroll_card_h = (ui.available_height() - 52.0 - 8.0).max(130.0);
             let (box_rect, _) =
                 ui.allocate_exact_size(vec2(w, scroll_card_h), egui::Sense::hover());
             let p = ui.painter();

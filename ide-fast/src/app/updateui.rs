@@ -271,6 +271,8 @@ impl App {
                         badge_bg,
                         drag_id: "update_drag_caption",
                         min_btn_id: None,
+                        max_btn_id: None,
+                        is_maximized: false,
                         close_btn_id: "comic_upd_close",
                     },
                     |app, ui, right_panel_rect| {

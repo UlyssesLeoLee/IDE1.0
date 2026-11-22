@@ -24,6 +24,7 @@ use editcore::type_config::{TokenKind, TypeConfig, TypeRegistry};
 use eframe::egui::{self, Color32, FontId, Key, Modifiers, Pos2, Rect, Sense, Vec2};
 use std::path::PathBuf;
 
+mod agent_plugins;
 mod aichat;
 mod chrome;
 mod collab;

@@ -945,3 +945,33 @@ fn test_eula_unaccepted_alert_and_all_steps_640h_layout() {
         out_s.textures_delta.clear();
     }
 }
+
+#[test]
+fn test_maximized_installer_expands_eula_without_dark_backdrop() {
+    let ctx = egui::Context::default();
+    let raw = egui::RawInput {
+        screen_rect: Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::Vec2::new(1920.0, 1080.0),
+        )),
+        ..Default::default()
+    };
+    let mut a = App::build(vec![], None, Trace::new(), Settings::default(), false);
+    a.installer.open = true;
+    a.installer.standalone = true;
+    a.installer.dry_run = true;
+    a.installer.maximized = true;
+    a.installer.mode = InstallerMode::Install;
+    a.installer.step = InstallerStep::Agreement;
+    a.installer.alert = Some(ComicAlertModal::warning(
+        "请先阅读许可协议",
+        "协议未滚到底部",
+    ));
+
+    let mut out = ctx.run_ui(raw, |root| {
+        a.installer_standalone(root);
+    });
+    out.textures_delta.clear();
+    assert!(a.installer.maximized);
+    assert!(a.installer.alert.is_some());
+}

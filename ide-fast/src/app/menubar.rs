@@ -1015,13 +1015,6 @@ impl App {
                                 "https://github.com/UlyssesLeoLee/IDE1.0/wiki",
                             );
                         }
-                        if ui.button(trz("欢迎与安装向导…")).clicked() {
-                            ui.close();
-                            self.open_installer_wizard(
-                                crate::app::installer_ui::InstallerLaunchMode::Auto,
-                                false,
-                            );
-                        }
                         ui.separator();
                         if ui.button(trz("导出诊断与性能日志…")).clicked() {
                             ui.close();

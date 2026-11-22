@@ -626,17 +626,19 @@ pub fn render_comic_alert_modal(
     icon: UiIcon,
     confirm_label: &str,
 ) -> bool {
+    // 透明拦截遮罩（不添加暗色蒙版，避免协议页提示弹窗发灰变暗，同时阻止误点击穿透到底层控件）
     let screen_rect = ctx.content_rect();
-    let backdrop = ctx.layer_painter(egui::LayerId::new(
-        egui::Order::Foreground,
-        egui::Id::new(format!("{id_salt}_backdrop")),
-    ));
-    backdrop.rect_filled(screen_rect, 0.0, Color32::from_black_alpha(175));
+    egui::Area::new(egui::Id::new(format!("{id_salt}_blocker")))
+        .order(egui::Order::Foreground)
+        .fixed_pos(screen_rect.min)
+        .show(ctx, |ui| {
+            ui.allocate_exact_size(screen_rect.size(), egui::Sense::click_and_drag());
+        });
 
     let mut dismissed = false;
     egui::Window::new(id_salt)
         .id(egui::Id::new(format!("{id_salt}_window")))
-        .order(egui::Order::Foreground)
+        .order(egui::Order::Tooltip)
         .title_bar(false)
         .frame(egui::Frame::NONE)
         .collapsible(false)

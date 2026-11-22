@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.9.4 — 2026-11-22
+
+### 向导全屏最大化与视觉通透优化、移除帮助菜单向导入口、及惰性插件化多 Agent 后端对等
+
+#### 1. 安装向导交互与视觉打磨 (`menubar.rs`, `main.rs`, `installer_ui/*`, `updateui.rs`)
+- **精简帮助下拉菜单**：移除「帮助」菜单中的「欢迎与安装向导…」入口。
+- **安装向导全屏最大化支持**：独立安装/维护视口允许缩放与最大化，标题栏新增最大化/还原矢量按钮并支持双击标题栏切换；协议滚动区高度自适应拉伸，方便放大查阅《最终用户许可与使用协议》。
+- **移除协议警示弹窗暗化蒙版**：未勾选同意点击继续时弹出 `render_comic_alert_modal` 保留透明交互防穿透遮罩，移除 `from_black_alpha(175)` 暗色背景层以保持亮洁清晰。
+
+#### 2. 插件化惰性 Agent 运行时与多 Agent 能力对等 (`agent_plugins.rs`, `aichat.rs`, `collab.rs`)
+- **冷启动零开销插件封装 (`AgentPluginRuntime`)**：将 `mcp`、`skills`、`mod`、`hooks`、`memory_engine`、`loop_breaker` 收拢至按需惰性初始化的 `Option<AgentPluginRuntime>`（`AiState::default()` 下为 `None`），并严格按热插拔插件激活状态加载与卸载。
+- **多 Agent 与单 Agent 后端能力拉齐**：多 Agent 协同调度（`send_master_with_plugins`、`execute_parallel_edit_on_doc_with_plugins`、`send_individual_with_plugins`、`poll_with_docs_and_plugins`）全面支持 `PreInput`/`PreTool`/`PostTool`/`PostResponse` 钩子、Skills、Mod 模式与规则注入、工作记忆、`LoopBreaker` 熔断以及内建/`plugin_*`/`mcp_*` 多轮工具调用；同步修复部分 Agent 未配置时的分区切分问题与同帧多 Agent 完成写盘时的行偏移累加问题。
+
+---
+
+## 0.9.3 — 2026-11-22
+
+### 恢复维护模式用户协议前置确认、折叠条网点自适应与顶部触发区收紧 (`installer_ui/*`, `docks.rs`, `app.rs`)
+- **向导恢复协议前置确认**：从 MSI 安装目录自动进入维护向导（`InstallerLaunchMode::Auto`）时同样先展示 `InstallerStep::Agreement` 并同步 4 步步骤指示条。
+- **左右折叠条黄色网点自适应分布**：`adaptive_ben_day_dot_ys` 按实际高度均匀填充中央拉手上下区域，消除大屏留白。
+- **右上角 `导航 / MD / NEMA` 统一顶部悬停**：取消未展开项落到底部的跳动行为，并在 `Dock::Right` 折叠条最顶部切割紧凑正方形触发区（点击仍执行面板折叠/展开）。
+
+---
+
+## 0.9.2 — 2026-11-22
+
+### 安装向导布局对齐、消除残留终端闪窗与多 Agent 并行修改净版输出 (`installer_ui/*`, `ide-fast.wxs`, `exec_cmd.rs`, `store.rs`, `collab.rs`)
+- **统一底部内边距与警示弹窗**：规范向导各分镜 `640px` 高度与底部 `46px` 操作条布局；未勾选同意协议点击下一步及空路径时统一弹出 `ComicAlertModal`。
+- **无头化修复**：MSI 改用 WiX 原生 `<util:CloseApplication>` 替换外部 `taskkill.exe`，为 `exec_cmd` / `store` 补充 `CREATE_NO_WINDOW`。
+- **多 Agent 净版写回**：`extract_fenced_patch_lines` 仅从闭合代码块提取写回文本，杜绝流式进度日志或错误说明写入源文件。
+
+---
+
+## 0.9.1 — 2026-11-22
+
+### MCP 最终安全加固、TLS 验证、无头安装与 Blender 式 `ide_rust_eval` (`api/v1/*`, `ide-mcp`, `ide-fast.wxs`)
+- 补全 Proposal 工作区 ACL（`SEC-001`）、鉴权 Fail-Closed（`SEC-002`）与 PostgreSQL 严格 TLS 校验（`SEC-003`）。
+- 对齐 MCP Streamable HTTP 协议与 `/api/v1/health` 实库探测（`MCP-001`），新增 `ide_rust_eval` 批量文本脚本引擎。
+
+---
+
 ## 0.9.0 — 2026-11-22
 
 ### MSI 安装后即刻可启动修复、精简安装包与绿色便携版双形态发布、以及 Vercel MCP 持久化加固全量同步

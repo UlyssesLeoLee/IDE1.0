@@ -3,11 +3,10 @@
 
 use super::*;
 use crate::ai::{self, AiConfig, Event, Handle, Msg, ToolCall};
+use crate::app::agent_plugins::{dispatch_mcp_tool_blocking, AgentPluginRuntime};
 use crate::app::collab::CollabMsg;
 use ide_agent_router::{
-    AgentMemoryEngine, ContextCompactor, CookieJar, CookieStats, FileCookie, HookPipeline,
-    LoopBreaker, McpConfig, McpManager, PrunePolicy, SkillRegistry, TaskState,
-    WorkspaceRulesEngine,
+    ContextCompactor, CookieJar, CookieStats, FileCookie, PrunePolicy, TaskState,
 };
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
@@ -107,14 +106,8 @@ pub(super) struct AiState {
     fetch: Option<Receiver<Result<Vec<String>, String>>>,
     /// 获取档位的结果 / 错误说明
     fetch_msg: String,
-    // Agent 生态基础设施 (零冷启开销、Sakura 级轻量):
-    pub skills: SkillRegistry,
-    pub rules_engine: WorkspaceRulesEngine,
-    pub memory_engine: AgentMemoryEngine,
-    pub hooks: HookPipeline,
-    pub loop_breaker: LoopBreaker,
-    pub mcp: McpManager,
-    mcp_loaded_root: Option<PathBuf>,
+    // Agent 插件化惰性运行时 (冷启动为 None，按需在首次使用时加载启用的 mcp/skills/mod/hooks):
+    pub plugin_rt: Option<AgentPluginRuntime>,
     /// 文件即任务: 文档 id → 任务状态 (Tab 指示条读它; 只存会话内状态, 随文档关闭回收)
     task_states: HashMap<u64, TaskState>,
     /// 已做过一次后台回收的工作区 (每个工作区每次启动只回收一次)
@@ -146,17 +139,18 @@ impl Default for AiState {
             efforts_text: None,
             fetch: None,
             fetch_msg: String::new(),
-            skills: SkillRegistry::default(),
-            rules_engine: WorkspaceRulesEngine::default(),
-            memory_engine: AgentMemoryEngine::default(),
-            hooks: HookPipeline::default(),
-            loop_breaker: LoopBreaker::default(),
-            mcp: McpManager::default(),
-            mcp_loaded_root: None,
+            plugin_rt: None,
             task_states: HashMap::new(),
             pruned_roots: HashSet::new(),
             cookie_stats: None,
         }
+    }
+}
+
+impl AiState {
+    /// 按需惰性获取插件化 Agent 运行时（冷启动期间始终为 `None`）
+    pub(super) fn plugin_rt_mut(&mut self) -> &mut AgentPluginRuntime {
+        self.plugin_rt.get_or_insert_with(Default::default)
     }
 }
 
@@ -171,7 +165,7 @@ pub(super) fn fmt_bytes(b: u64) -> String {
     }
 }
 
-fn find_workspace_root(doc_path: Option<&Path>) -> PathBuf {
+pub(super) fn find_workspace_root(doc_path: Option<&Path>) -> PathBuf {
     if let Some(p) = doc_path {
         let mut cur = if p.is_dir() {
             p.to_path_buf()
@@ -201,23 +195,9 @@ fn find_workspace_root(doc_path: Option<&Path>) -> PathBuf {
 impl App {
     /// 卸载或重置活跃的 MCP 外部工具服务器池 (热关闭 / 删除 mcp 插件时调用)
     pub(super) fn ai_reset_mcp(&mut self) {
-        self.ai.mcp_loaded_root = None;
-        self.ai.mcp = McpManager::default();
-    }
-
-    /// 确保当前工作区的 MCP 外部配置已登记 (按需惰性加载，启动 0 开销)
-    fn ensure_mcp_config(&mut self, ws_root: &Path) {
-        if self.ai.mcp_loaded_root.as_deref() == Some(ws_root) {
-            return;
+        if let Some(rt) = self.ai.plugin_rt.as_mut() {
+            rt.reset_mcp();
         }
-        let dot_mcp = ws_root.join(".mcp.json");
-        let servers_json = ws_root.join("mcp_servers.json");
-        if let Some(cfg) =
-            McpConfig::load_from_file(&dot_mcp).or_else(|| McpConfig::load_from_file(&servers_json))
-        {
-            self.ai.mcp.load_config(cfg);
-        }
-        self.ai.mcp_loaded_root = Some(ws_root.to_path_buf());
     }
 
     // ---------- 文件即任务: 会话 Cookie ----------
@@ -283,10 +263,13 @@ impl App {
     }
 
     /// 落盘前过一遍脱敏钩子 (Cookie 在磁盘上是明文, 不能把 API Key 带进去; 仅在 hooks 插件激活时生效)
-    fn mask_secrets(&self, s: String) -> String {
+    fn mask_secrets(&mut self, s: String) -> String {
         if crate::plugins::is_module_active("hooks") {
-            self.ai.hooks.execute_post_response(s.clone()).unwrap_or(s)
+            self.ai.plugin_rt_mut().run_post_response_hook(s)
         } else {
+            if let Some(rt) = self.ai.plugin_rt.as_mut() {
+                rt.unload_disabled_modules();
+            }
             s
         }
     }
@@ -605,16 +588,12 @@ impl App {
             return;
         }
         // 执行 Pre-input 生命周期拦截钩子 (仅在 hooks 热插拔模块启用时运行)
-        let q = if crate::plugins::is_module_active("hooks") {
-            match self.ai.hooks.execute_pre_input(raw_q) {
-                Ok(clean) => clean,
-                Err(e) => {
-                    self.ai.items.push(Item::Err(e));
-                    return;
-                }
+        let q = match self.ai.plugin_rt_mut().run_pre_input_hook(raw_q) {
+            Ok(clean) => clean,
+            Err(e) => {
+                self.ai.items.push(Item::Err(e));
+                return;
             }
-        } else {
-            raw_q
         };
 
         // 智能识别多智能体协作需求并自动无缝切换，杜绝误报单智能体错误
@@ -746,26 +725,6 @@ impl App {
     fn ai_start(&mut self, q: String, with_ctx: bool, ctx: &egui::Context) {
         let i = self.active.min(self.docs.len() - 1);
         let ws_root = find_workspace_root(self.docs[i].path.as_deref());
-        let mcp_active = crate::plugins::is_module_active("mcp");
-        let skills_active = crate::plugins::is_module_active("skills");
-        let mod_modes = crate::plugins::active_mod_modes();
-
-        if mcp_active {
-            self.ensure_mcp_config(&ws_root);
-        } else {
-            self.ai_reset_mcp();
-        }
-
-        // 1. 技能匹配与指令转化 (仅在 skills 热插拔模块启用时生效)
-        let (matched_skill, user_prompt) = if skills_active {
-            if let Some((skill, rest)) = self.ai.skills.match_prompt(&q) {
-                (Some(skill.clone()), rest.to_string())
-            } else {
-                (None, q.clone())
-            }
-        } else {
-            (None, q.clone())
-        };
 
         let c = if with_ctx { self.ai_context(i) } else { None };
         let mut sys = ai::system_prompt(&self.docs[i].name, self.docs[i].lines.len(), c.as_ref());
@@ -783,61 +742,35 @@ impl App {
             }
         }
 
-        // 2. Claude Mod 模式与工作区规范约束注入 (仅在 mod 热插拔模块启用时生效)
-        if !mod_modes.is_empty() {
-            if let Some(rules_prompt) = self.ai.rules_engine.format_invariants_prompt(&ws_root) {
-                sys.push_str("\n\n");
-                sys.push_str(&rules_prompt);
-            }
-            if let Some(active_mode) = mod_modes
-                .iter()
-                .find(|m| m.id == self.ai.active_mod)
-                .or_else(|| mod_modes.first())
-            {
-                if !active_mode.prompt.is_empty() {
-                    sys.push_str("\n\n");
-                    sys.push_str(&active_mode.prompt);
-                }
-            }
-        }
-
-        // 3. 注入长期记忆 (架构决议、技术栈偏好)
-        if let Some(mem_prompt) = self.ai.memory_engine.format_memory_prompt(&ws_root) {
-            sys.push_str("\n\n");
-            sys.push_str(&mem_prompt);
-        }
-
-        // 3.5 文件即任务: 载入该文件的会话 Cookie (断点续航 + 局部不变量), 并把本轮意图记进去
+        // 文件即任务: 载入该文件的会话 Cookie (断点续航 + 局部不变量), 并把本轮意图记进去
         let (run_cookie, resume) = self.cookie_begin(i, &ws_root, &q);
-        if let Some(r) = resume {
-            sys.push_str("\n\n");
-            sys.push_str(&r);
-        }
 
-        // 4. 应用技能模板强化
-        let (final_sys, final_q) = if let Some(skill) = matched_skill {
-            skill.apply(&user_prompt, Some(&sys))
-        } else {
-            (sys, user_prompt)
-        };
+        let installed = editcore::plugin_host::store::list(&plugins::root());
+        let active_mod = self.ai.active_mod.clone();
+        let prepared = self.ai.plugin_rt_mut().prepare_agent_turn(
+            &sys,
+            &q,
+            &active_mod,
+            &ws_root,
+            resume.as_deref(),
+            &installed,
+        );
 
-        // 5. 组装消息列表并执行自适应上下文压缩 (Context Compact)
-        let mut msgs = ai::base_messages(final_sys, &self.ai.history, &final_q);
+        // 组装消息列表并执行自适应上下文压缩 (Context Compact)
+        let mut msgs = ai::base_messages(
+            prepared.system_prompt,
+            &self.ai.history,
+            &prepared.user_prompt,
+        );
         ContextCompactor::compact_messages(&mut msgs, 8192, 4);
 
-        // 6. 聚合内建工具、插件工具与外部 MCP 工具 (mcp 关闭时不再暴露外部工具)
-        let installed = editcore::plugin_host::store::list(&plugins::root());
-        let mut tools = ai::tool_table(&installed);
-        if mcp_active {
-            let mcp_tools = self.ai.mcp.aggregate_openai_tools();
-            tools.extend(mcp_tools);
-        }
+        let tools = prepared.tools;
 
         self.ai.input.clear();
         self.ai.items.push(Item::User(q.clone()));
         // 记录工作记忆 (零分配环形缓冲)
         self.ai
-            .memory_engine
+            .plugin_rt_mut()
             .record_working_item("user", &q, vec!["prompt".into()]);
 
         let (rx, handle) = self.ai_spawn(&msgs, &tools, ctx);
@@ -977,52 +910,35 @@ impl App {
         for (slot, call) in turn.tool_calls.iter().enumerate() {
             let args = ai::parse_args(&call.args);
 
-            // 1. 智能体死循环自省熔断 (LoopBreaker: 64位哈希三元组检测防死循环)
-            if let Err(loop_err) = self.ai.loop_breaker.check_and_record(&call.name, &args) {
-                immediate.push((slot, call.clone(), json!({ "error": loop_err })));
+            // 1. 智能体死循环自省熔断 (LoopBreaker) + 2. Pre-tool-call 生命周期拦截钩子
+            if let Err(gate_err) = self.ai.plugin_rt_mut().check_tool_gate(&call.name, &args) {
+                immediate.push((slot, call.clone(), json!({ "error": gate_err })));
                 continue;
-            }
-
-            // 2. Pre-tool-call 生命周期拦截钩子 (仅在 hooks 热插拔模块启用时运行)
-            if crate::plugins::is_module_active("hooks") {
-                if let Err(hook_err) = self.ai.hooks.execute_pre_tool_call(&call.name, &args) {
-                    immediate.push((slot, call.clone(), json!({ "error": hook_err })));
-                    continue;
-                }
             }
 
             // 3. 工具分发：MCP 外部工具 vs 插件扩展工具 vs 原生内建工具
             if call.name.starts_with("mcp_") {
-                if !crate::plugins::is_module_active("mcp") {
+                let Some(mgr) = self.ai.plugin_rt_mut().mcp_manager_cloned() else {
                     immediate.push((
                         slot,
                         call.clone(),
                         json!({ "error": "MCP 插件模块已关闭或卸载" }),
                     ));
                     continue;
-                }
+                };
                 // MCP 工具：后台专用 Worker 线程异步执行，零阻塞 UI 渲染
                 let (tx, rx) = channel();
-                let mgr = self.ai.mcp.clone();
                 let full_name = call.name.clone();
                 let args_clone = args.clone();
                 let c = ctx.clone();
                 std::thread::Builder::new()
                     .name(format!("mcp-{}", call.name))
                     .spawn(move || {
-                        let res = match mgr.dispatch_tool_call(&full_name, args_clone) {
-                            Some(Ok(mcp_res)) => {
-                                if mcp_res.is_error {
-                                    Err(mcp_res.merged_text())
-                                } else {
-                                    Ok(serde_json::to_string(&json!({
-                                        "result": mcp_res.merged_text()
-                                    }))
-                                    .unwrap_or_else(|_| "{}".into()))
-                                }
-                            }
-                            Some(Err(err)) => Err(err),
-                            None => Err(format!("未找到对应的 MCP 工具服务器: {}", full_name)),
+                        let v = dispatch_mcp_tool_blocking(Some(&mgr), &full_name, args_clone);
+                        let res = if let Some(err) = v["error"].as_str() {
+                            Err(err.to_string())
+                        } else {
+                            Ok(serde_json::to_string(&v).unwrap_or_else(|_| "{}".into()))
                         };
                         let _ = tx.send(res);
                         c.request_repaint();
@@ -1119,15 +1035,10 @@ impl App {
 
     fn ai_tool_done(&mut self, slot: usize, call: &ToolCall, result: Value, doc_id: u64) {
         // 执行 Post-tool-call 生命周期拦截钩子 (仅在 hooks 热插拔模块启用时运行)
-        let result: Value = if crate::plugins::is_module_active("hooks") {
-            let masked_result_str = self
-                .ai
-                .hooks
-                .execute_post_tool_call(&call.name, result.to_string());
-            serde_json::from_str(&masked_result_str).unwrap_or(result)
-        } else {
-            result
-        };
+        let result: Value = self
+            .ai
+            .plugin_rt_mut()
+            .run_post_tool_hook(&call.name, result);
 
         let line = match result["error"].as_str() {
             Some(e) => trf("ai.tool-fail", &[&call.name, e]),
@@ -1136,7 +1047,7 @@ impl App {
         self.ai.items.push(Item::Tool(line.clone()));
 
         // 记录工作记忆 (无锁环形队列)
-        self.ai.memory_engine.record_working_item(
+        self.ai.plugin_rt_mut().record_working_item(
             "tool",
             &format!("{}: {}", call.name, line),
             vec!["tool".into(), call.name.clone()],
@@ -1239,7 +1150,7 @@ impl App {
 
     /// 正常结束: 若模型在正文返回了代码块且未通过工具改动过文件，开启免点击自动应用时直接写回当前打开文件
     fn ai_finish(&mut self) {
-        self.ai.loop_breaker.reset();
+        self.ai.plugin_rt_mut().reset_loop_breaker();
         if let Some(mut run) = self.ai.run.take() {
             let (doc_id, mut cookie, auto_applied) =
                 (run.doc_id, run.cookie.take(), run.auto_applied);
@@ -1301,7 +1212,7 @@ impl App {
             }
             let summary = last_assistant.map(|c| c.chars().take(600).collect::<String>());
             if let Some(s) = &summary {
-                self.ai.memory_engine.record_working_item(
+                self.ai.plugin_rt_mut().record_working_item(
                     "assistant",
                     &s.chars().take(200).collect::<String>(),
                     vec!["response".into()],
@@ -1431,7 +1342,7 @@ impl App {
     }
 
     fn ai_cancel(&mut self) {
-        self.ai.loop_breaker.reset();
+        self.ai.plugin_rt_mut().reset_loop_breaker();
         if let Some(mut run) = self.ai.run.take() {
             let (doc_id, cookie) = (run.doc_id, run.cookie.take());
             run.handle.cancel();
@@ -1839,6 +1750,10 @@ fn build_direct_patch(doc: &crate::doc::Doc, q: &str) -> (usize, usize, Vec<Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ide_agent_router::{
+        AgentMemoryEngine, HookPipeline, LoopBreaker, McpConfig, McpManager, SkillRegistry,
+        WorkspaceRulesEngine,
+    };
 
     #[test]
     fn test_find_workspace_root() {

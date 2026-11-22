@@ -15,12 +15,15 @@ pub(crate) struct ComicFrameSpec<'a> {
     pub badge_bg: Color32,
     pub drag_id: &'a str,
     pub min_btn_id: Option<&'a str>,
+    pub max_btn_id: Option<&'a str>,
+    pub is_maximized: bool,
     pub close_btn_id: &'a str,
 }
 
 /// 美漫外壳顶栏控制按钮交互结果
 pub(crate) struct ComicFrameResult {
     pub minimize_clicked: bool,
+    pub maximize_clicked: bool,
     pub close_clicked: bool,
 }
 
@@ -77,10 +80,10 @@ fn paint_comic_shell_chrome(
     );
 
     let ver_x = header_rect.right()
-        - if spec.min_btn_id.is_some() {
-            86.0
-        } else {
-            78.0
+        - match (spec.min_btn_id.is_some(), spec.max_btn_id.is_some()) {
+            (true, true) => 142.0,
+            (true, false) | (false, true) => 112.0,
+            (false, false) => 78.0,
         };
     let ver_rect = Rect::from_center_size(pos2(ver_x, header_rect.center().y), vec2(76.0, 22.0));
     paint_comic_hard_shadow_rect(
@@ -146,10 +149,10 @@ impl App {
         );
 
         let drag_right = header_rect.right()
-            - if spec.min_btn_id.is_some() {
-                126.0
-            } else {
-                118.0
+            - match (spec.min_btn_id.is_some(), spec.max_btn_id.is_some()) {
+                (true, true) => 186.0,
+                (true, false) | (false, true) => 152.0,
+                (false, false) => 118.0,
             };
         let drag_rect = Rect::from_min_max(
             pos2(wiz_rect.right() + 10.0, header_rect.top()),
@@ -158,31 +161,48 @@ impl App {
                 header_rect.bottom(),
             ),
         );
-        let drag_resp = ui.interact(drag_rect, ui.id().with(spec.drag_id), egui::Sense::drag());
+        let drag_resp = ui.interact(
+            drag_rect,
+            ui.id().with(spec.drag_id),
+            egui::Sense::click_and_drag(),
+        );
         if drag_resp.drag_started() || drag_resp.dragged() {
             ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
         }
 
+        let has_max = spec.max_btn_id.is_some();
+        let min_x = header_rect.right() - if has_max { 80.0 } else { 50.0 };
         let minimize_clicked = spec.min_btn_id.is_some_and(|min_id| {
-            paint_comic_window_btn(
+            paint_comic_window_btn_kind(
                 ui,
-                pos2(header_rect.right() - 50.0, header_rect.center().y),
+                pos2(min_x, header_rect.center().y),
                 min_id,
-                false,
+                ComicWindowBtnKind::Minimize,
             )
         });
-        let close_clicked = paint_comic_window_btn(
+        let max_btn_clicked = spec.max_btn_id.is_some_and(|max_id| {
+            paint_comic_window_btn_kind(
+                ui,
+                pos2(header_rect.right() - 50.0, header_rect.center().y),
+                max_id,
+                ComicWindowBtnKind::Maximize {
+                    restored: spec.is_maximized,
+                },
+            )
+        });
+        let maximize_clicked = has_max && (max_btn_clicked || drag_resp.double_clicked());
+        let close_clicked = paint_comic_window_btn_kind(
             ui,
             pos2(header_rect.right() - 20.0, header_rect.center().y),
             spec.close_btn_id,
-            true,
+            ComicWindowBtnKind::Close,
         );
 
         let body_rect = Rect::from_min_max(
             pos2(win_rect.left() + 18.0, header_rect.bottom() + 14.0),
             pos2(win_rect.right() - 18.0, win_rect.bottom() - 20.0),
         );
-        let left_w = 330.0;
+        let left_w = (body_rect.width() * 0.38).clamp(320.0, 400.0);
         let left_panel_rect = Rect::from_min_size(body_rect.min, vec2(left_w, body_rect.height()));
         let right_panel_rect = Rect::from_min_max(
             pos2(left_panel_rect.right() + 14.0, body_rect.top()),
@@ -194,6 +214,7 @@ impl App {
 
         ComicFrameResult {
             minimize_clicked,
+            maximize_clicked,
             close_clicked,
         }
     }
