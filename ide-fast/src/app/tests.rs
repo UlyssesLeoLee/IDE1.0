@@ -1481,7 +1481,11 @@ fn test_tray_all_actions_and_visibility_state_invariants() {
     // 8. 再次 ToggleResident 打开
     a.handle_tray_event(&ctx, crate::tray::TrayEvent::ToggleResident);
     assert!(a.cfg.tray_resident);
-    assert!(a.tray.is_some());
+    if cfg!(windows) {
+        assert!(a.tray.is_some());
+    } else {
+        assert!(a.tray.is_none());
+    }
 
     // 9. DisableResident 确保唤醒并禁用托盘
     a.window_hidden = true;
