@@ -118,7 +118,7 @@ async function main() {
   assert.equal(disc.status, 200);
   const discJson = await disc.json();
   logLine(`Discovery: server="${discJson.server}", version=${discJson.version}, protocol=${discJson.protocolVersion}`);
-  assert.equal(discJson.version, "0.8.10");
+  assert.equal(discJson.version, "0.9.0");
 
   const init = await rpcRaw("initialize", { protocolVersion: "2024-11-05", clientInfo: { name: "audit-e2e", version: "1.0" } });
   assert.equal(init.status, 200);

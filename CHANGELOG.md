@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.9.0 — 2026-11-22
+
+### MSI 安装后即刻可启动修复、精简安装包与绿色便携版双形态发布、以及 Vercel MCP 持久化加固全量同步
+
+本版本解决 `0.8.9` MSI 安装包安装或覆盖更新后未拉起主程序、缺乏桌面快捷方式及独立 Setup 冗余问题，完成真实开机窗口可见性实测门禁，并同步将 Vercel 生产端与桌面端全部升级至 **`v0.9.0`**。
+
+#### 1. MSI 安装体验与可启动性彻底修复 (`ide-fast.wxs`, `build-msi.ps1`, `installer_ui/deploy.rs`)
+- **安装/升级/修复即刻自动拉起主程序**：将 `Launch3DSetup` (`IDE1.0.exe --setup`, `NOT Installed`) 改为直接启动 `LaunchIDE` (`IDE1.0.exe`, `NOT REMOVE="ALL" AND NOT IDE10_NO_LAUNCH`)，彻底消除升级场景跳过启动与向导二次跳转问题。
+- **补齐桌面快捷方式 (`DesktopFolder`)**：MSI 现同步创建桌面快捷方式与开始菜单快捷方式，指向 `[INSTALLFOLDER]IDE1.0.exe`。
+- **精简发版产物为双形态**：移除独立 `IDE1.0_Setup_*_x64.exe` 冗余副本，仅交付企业/标准安装包 (`IDE1.0_0.9.0_x64.msi`)、单文件绿色便携版 (`IDE1.0-0.9.0-windows-x64.exe`) 与 `SHA256SUMS.txt`。
+- **打包自动化解包门禁**：`build-msi.ps1` 构建完成后自动运行 `msiexec /a` 解包 `MSI` 并对解包出的 `IDE1.0.exe` 执行 `--smoke-test` 验证。
+- **向导退出不被托盘拦截**：独立向导点击完成并退出时显式置位 `self.force_exit = true`，避免被系统托盘常驻模式拦截隐藏。
+
+#### 2. 真实桌面实测与 Vercel 云端 MCP 全同步
+- **桌面双形态实测通过**：`IDE1.0_0.9.0_x64.msi` 解包主程序与 `IDE1.0-0.9.0-windows-x64.exe` 均实测通过 `--smoke-test` 及真实 Win32 窗口渲染可见性验证（`IDE1.0` 主窗口正常创建并可见）。
+- **Vercel 生产 MCP (`v0.9.0`)**：线上 `https://ide1d0.vercel.app/mcp` 同步更新至 `0.9.0` 并通过全套 13 项（含 REST 协调与容器重建重启持久化）真实云端 E2E 测试。
+
+---
+
 ## 0.8.10 — 2026-11-22
 
 ### Vercel MCP 持久化事务存储、权限边界全面加固与 Rust 内核规范治理
