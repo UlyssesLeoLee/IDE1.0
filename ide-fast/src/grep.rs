@@ -100,6 +100,8 @@ pub fn build_opts(o: &GrepOpts) -> SearchOptions {
             inc.push(t);
         }
     }
+    let folders_vec = split(&o.folders, &[';']);
+    let has_abs_folder = folders_vec.iter().any(|f| Path::new(f).is_absolute());
     SearchOptions {
         pattern: o.pattern.clone(),
         case_sensitive: Some(o.case),
@@ -108,8 +110,8 @@ pub fn build_opts(o: &GrepOpts) -> SearchOptions {
         include_files: some(inc),
         exclude_files: some(exf),
         exclude_folders: some(exd),
-        search_folders: some(split(&o.folders, &[';'])),
-        allow_outside_root: Some(o.outside),
+        search_folders: some(folders_vec),
+        allow_outside_root: Some(o.outside || has_abs_folder),
         subfolders: Some(o.sub),
         max_results: Some(CAP),
         charset: if o.charset.is_empty() {
@@ -145,7 +147,8 @@ fn rebase(pat: &str, shard_rel: &str) -> Option<String> {
 pub fn plan(root: &Path, o: &GrepOpts) -> Result<Vec<(PathBuf, SearchOptions)>, String> {
     let base = build_opts(o);
     let folders = base.search_folders.clone().unwrap_or_default();
-    let roots = grep_engine::resolve_search_folders(root, &folders, o.outside)?;
+    let allow_outside = base.allow_outside_root.unwrap_or(o.outside);
+    let roots = grep_engine::resolve_search_folders(root, &folders, allow_outside)?;
     let sub = o.sub;
     let exd: Vec<String> = base.exclude_folders.clone().unwrap_or_default();
     let mut out = Vec::new();
@@ -260,37 +263,142 @@ pub fn run_job(root: &Path, o: &GrepOpts, cancel: &AtomicBool, emit: &mut dyn Fn
             }))
         }
     };
-    let mut total = 0usize;
-    for (r, mut so) in shards {
+    let n_shards = shards.len();
+    if n_shards == 0 {
+        return emit(Msg::Done(End::default()));
+    }
+    let workers = std::thread::available_parallelism()
+        .map(|n| n.get().clamp(1, 8))
+        .unwrap_or(4);
+    // 少量分片或单核时保持单线程顺序执行，避免线程启动开销并确保测试确定性
+    if n_shards <= 4 || workers <= 1 {
+        let mut total = 0usize;
+        for (r, mut so) in shards {
+            if cancel.load(Ordering::Relaxed) {
+                return emit(Msg::Done(End {
+                    cancelled: true,
+                    ..Default::default()
+                }));
+            }
+            so.max_results = Some(CAP - total);
+            match grep_engine::search(&r, &so) {
+                Ok(v) => {
+                    total += v.len();
+                    if !v.is_empty() {
+                        emit(Msg::Batch(v));
+                    }
+                    if total >= CAP {
+                        return emit(Msg::Done(End {
+                            capped: true,
+                            ..Default::default()
+                        }));
+                    }
+                }
+                Err(e) => {
+                    return emit(Msg::Done(End {
+                        error: Some(e),
+                        ..Default::default()
+                    }))
+                }
+            }
+        }
+        return emit(Msg::Done(End::default()));
+    }
+
+    // 多分片并行流水线：工作线程池按序认领分片，主线程严格按分片下标保序 emit Batch，
+    // 兼顾多核并行磁盘 I/O 与确定性的输出顺序、取消响应及 CAP 截断。
+    use std::sync::atomic::AtomicUsize;
+    let next_idx = AtomicUsize::new(0);
+    let stop_workers = AtomicBool::new(false);
+    let shards_ref = &shards;
+    let next_ref = &next_idx;
+    let stop_ref = &stop_workers;
+
+    std::thread::scope(|s| {
+        let (tx, rx) = std::sync::mpsc::channel::<(usize, Result<Vec<SearchResult>, String>)>();
+        for _ in 0..workers.min(n_shards) {
+            let tx_w = tx.clone();
+            s.spawn(move || loop {
+                if cancel.load(Ordering::Relaxed) || stop_ref.load(Ordering::Relaxed) {
+                    break;
+                }
+                let idx = next_ref.fetch_add(1, Ordering::Relaxed);
+                if idx >= shards_ref.len() {
+                    break;
+                }
+                let (ref r, ref base_so) = shards_ref[idx];
+                let mut so = base_so.clone();
+                so.max_results = Some(CAP);
+                let res = grep_engine::search(r, &so);
+                if tx_w.send((idx, res)).is_err() {
+                    break;
+                }
+            });
+        }
+        drop(tx);
+
+        let mut pending: std::collections::BTreeMap<usize, Result<Vec<SearchResult>, String>> =
+            std::collections::BTreeMap::new();
+        let mut expect_idx = 0usize;
+        let mut total = 0usize;
+
+        while expect_idx < n_shards {
+            if cancel.load(Ordering::Relaxed) {
+                stop_ref.store(true, Ordering::Relaxed);
+                emit(Msg::Done(End {
+                    cancelled: true,
+                    ..Default::default()
+                }));
+                return;
+            }
+            if let Some(res) = pending.remove(&expect_idx) {
+                expect_idx += 1;
+                match res {
+                    Ok(mut v) => {
+                        let remain = CAP.saturating_sub(total);
+                        if v.len() > remain {
+                            v.truncate(remain);
+                        }
+                        total += v.len();
+                        if !v.is_empty() {
+                            emit(Msg::Batch(v));
+                        }
+                        if total >= CAP {
+                            stop_ref.store(true, Ordering::Relaxed);
+                            emit(Msg::Done(End {
+                                capped: true,
+                                ..Default::default()
+                            }));
+                            return;
+                        }
+                    }
+                    Err(e) => {
+                        stop_ref.store(true, Ordering::Relaxed);
+                        emit(Msg::Done(End {
+                            error: Some(e),
+                            ..Default::default()
+                        }));
+                        return;
+                    }
+                }
+                continue;
+            }
+            match rx.recv() {
+                Ok((idx, res)) => {
+                    pending.insert(idx, res);
+                }
+                Err(_) => break,
+            }
+        }
         if cancel.load(Ordering::Relaxed) {
-            return emit(Msg::Done(End {
+            emit(Msg::Done(End {
                 cancelled: true,
                 ..Default::default()
             }));
+        } else {
+            emit(Msg::Done(End::default()));
         }
-        so.max_results = Some(CAP - total);
-        match grep_engine::search(&r, &so) {
-            Ok(v) => {
-                total += v.len();
-                if !v.is_empty() {
-                    emit(Msg::Batch(v));
-                }
-                if total >= CAP {
-                    return emit(Msg::Done(End {
-                        capped: true,
-                        ..Default::default()
-                    }));
-                }
-            }
-            Err(e) => {
-                return emit(Msg::Done(End {
-                    error: Some(e),
-                    ..Default::default()
-                }))
-            }
-        }
-    }
-    emit(Msg::Done(End::default()));
+    });
 }
 
 pub struct Job {
@@ -360,6 +468,31 @@ pub fn first_cols(texts: &[String], o: &GrepOpts) -> Vec<usize> {
     let mut cols = vec![1usize; texts.len()];
     if o.pattern.is_empty() || texts.is_empty() {
         return cols;
+    }
+    // 字面量快速路径：直接定位首个命中列（按字符下标 + 1），避免构造 SearchReq 和全行二次克隆
+    if !o.regex && !o.word {
+        if o.case {
+            for (i, line) in texts.iter().enumerate() {
+                if let Some(byte_idx) = line.find(&o.pattern) {
+                    cols[i] = line[..byte_idx].chars().count() + 1;
+                }
+            }
+            return cols;
+        } else if o.pattern.is_ascii() {
+            let pat_b = o.pattern.as_bytes();
+            let nlen = pat_b.len();
+            for (i, line) in texts.iter().enumerate() {
+                let lb = line.as_bytes();
+                if lb.len() >= nlen {
+                    if let Some(byte_idx) =
+                        (0..=lb.len() - nlen).find(|&k| lb[k..k + nlen].eq_ignore_ascii_case(pat_b))
+                    {
+                        cols[i] = line.get(..byte_idx).map(|s| s.chars().count()).unwrap_or(0) + 1;
+                    }
+                }
+            }
+            return cols;
+        }
     }
     let req = SearchReq {
         op: "hits".into(),
@@ -477,7 +610,7 @@ pub fn footer(n: usize, end: &End) -> Vec<String> {
     vec![String::new(), s]
 }
 
-/// 结果文档里的一行 -> (文件, 行, 列)。`路径(行,列): 文字`, 或只有一个存在的文件路径 (文件名格式)
+/// 结果文档里的一行 -> (文件, 行, 列)。`路径(行,列): 文字`, `路径: 计数`, 或只有一个存在的文件路径 (文件名格式)
 pub fn parse_result_line(line: &str) -> Option<(PathBuf, usize, usize)> {
     for (i, _) in line.match_indices('(') {
         if i == 0 {
@@ -496,12 +629,23 @@ pub fn parse_result_line(line: &str) -> Option<(PathBuf, usize, usize)> {
             }
         }
     }
-    let p = Path::new(line.trim());
-    if !line.trim().is_empty() && p.is_file() {
-        Some((p.to_path_buf(), 1, 1))
-    } else {
-        None
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return None;
     }
+    let p = Path::new(trimmed);
+    if p.is_file() {
+        return Some((p.to_path_buf(), 1, 1));
+    }
+    if let Some((left, right)) = trimmed.rsplit_once(':') {
+        if right.trim().parse::<usize>().is_ok() {
+            let cand = Path::new(left.trim());
+            if !left.trim().is_empty() && cand.is_file() {
+                return Some((cand.to_path_buf(), 1, 1));
+            }
+        }
+    }
+    None
 }
 
 // ---------------------------------------------------------------- 置换
@@ -581,6 +725,8 @@ pub enum Ev {
     ReplaceAll,
     ResultDoc,
     UseCurDir,
+    BrowseFolder,
+    RevealPath(String),
     Open {
         path: String,
         line: usize,
@@ -741,6 +887,12 @@ impl Grep {
         use egui::Key;
         let mut ev = Vec::new();
         let w = f32::INFINITY;
+        let submit_on_enter = |resp: &egui::Response, ui: &egui::Ui, ev: &mut Vec<Ev>| {
+            if resp.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
+                ev.push(Ev::Start);
+                resp.request_focus();
+            }
+        };
         let r = ui.add(
             egui::TextEdit::singleline(&mut self.o.pattern)
                 .hint_text(crate::i18n::trz("搜索内容 (空 = 只按文件名找)"))
@@ -748,26 +900,45 @@ impl Grep {
         );
         if self.focus_pattern {
             r.request_focus();
-            self.focus_pattern = false;
+            if !egui::Popup::is_any_open(ui.ctx()) && !ui.input(|i| i.pointer.any_released()) {
+                self.focus_pattern = false;
+            }
         }
-        if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
-            ev.push(Ev::Start);
-        }
-        ui.add(
+        submit_on_enter(&r, ui, &mut ev);
+        let r_files = ui.add(
             egui::TextEdit::singleline(&mut self.o.files)
                 .hint_text(crate::i18n::trz(
                     "文件名: *.rs;*.toml  排除 !*.gen.rs  排除目录 #target",
                 ))
                 .desired_width(w),
         );
+        submit_on_enter(&r_files, ui, &mut ev);
         egui::CollapsingHeader::new(crate::i18n::trz("文件夹 / 排除 / 字符集"))
             .default_open(true)
             .show(ui, |ui| {
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.o.folders)
-                        .hint_text(crate::i18n::trz("文件夹 (留空 = 整个项目, 多个用 ; 分隔)"))
-                        .desired_width(w),
-                );
+                ui.horizontal(|ui| {
+                    let browse_w = 72.0;
+                    let input_w =
+                        (ui.available_width() - browse_w - ui.spacing().item_spacing.x).max(60.0);
+                    let r_folders = ui.add(
+                        egui::TextEdit::singleline(&mut self.o.folders)
+                            .hint_text(crate::i18n::trz("文件夹 (留空 = 整个项目, 多个用 ; 分隔)"))
+                            .desired_width(input_w),
+                    );
+                    submit_on_enter(&r_folders, ui, &mut ev);
+                    if ui
+                        .add_sized(
+                            [browse_w, r_folders.rect.height().max(20.0)],
+                            egui::Button::new(crate::i18n::trz("📁 浏览…")),
+                        )
+                        .tip(crate::i18n::trz(
+                            "打开文件夹选择对话框，选择要检索的目录路径",
+                        ))
+                        .clicked()
+                    {
+                        ev.push(Ev::BrowseFolder);
+                    }
+                });
                 if ui
                     .add_enabled(
                         has_cur_file,
@@ -777,16 +948,18 @@ impl Grep {
                 {
                     ev.push(Ev::UseCurDir);
                 }
-                ui.add(
+                let r_exf = ui.add(
                     egui::TextEdit::singleline(&mut self.o.exc_files)
                         .hint_text(crate::i18n::trz("排除文件, 如 *.min.js"))
                         .desired_width(w),
                 );
-                ui.add(
+                submit_on_enter(&r_exf, ui, &mut ev);
+                let r_exd = ui.add(
                     egui::TextEdit::singleline(&mut self.o.exc_folders)
                         .hint_text(crate::i18n::trz("排除文件夹, 如 target;dist"))
                         .desired_width(w),
                 );
+                submit_on_enter(&r_exd, ui, &mut ev);
                 ui.horizontal(|ui| {
                     ui.label(crate::i18n::trz("字符集"));
                     let shown = if self.o.charset.is_empty() {
@@ -870,6 +1043,7 @@ impl Grep {
         }
         ui.label(crate::msgtr::msg(&self.msg).as_ref());
         let row_h = ui.text_style_height(&egui::TextStyle::Body) + 4.0;
+        let mut set_search_folder: Option<String> = None;
         egui::ScrollArea::both()
             .auto_shrink([false, false])
             .show_rows(ui, row_h, self.results.len(), |ui, range| {
@@ -881,19 +1055,82 @@ impl Grep {
                         .unwrap_or_else(|_| h.path.clone());
                     let t: String = h.text.trim().chars().take(80).collect();
                     let label = if h.line == 0 {
-                        rel
+                        rel.clone()
                     } else {
                         format!("{rel}:{}  {t}", h.line)
                     };
-                    if ui.selectable_label(false, label).clicked() {
+                    let resp = ui.selectable_label(false, label);
+                    if resp.clicked() || resp.double_clicked() {
                         ev.push(Ev::Open {
                             path: h.path.clone(),
                             line: h.line.max(1) as usize,
                             text: h.text.clone(),
                         });
                     }
+                    let full_path = h.path.clone();
+                    let hit_line = h.line.max(1) as usize;
+                    let hit_text = h.text.clone();
+                    resp.context_menu(|ui| {
+                        if ui
+                            .button(crate::i18n::trz("📂 打开该文件并跳转到命中行"))
+                            .clicked()
+                        {
+                            ev.push(Ev::Open {
+                                path: full_path.clone(),
+                                line: hit_line,
+                                text: hit_text.clone(),
+                            });
+                            ui.close();
+                        }
+                        ui.separator();
+                        if ui.button(crate::i18n::trz("📋 复制完整路径")).clicked() {
+                            ui.ctx().copy_text(full_path.clone());
+                            ui.close();
+                        }
+                        if ui.button(crate::i18n::trz("📄 复制相对路径")).clicked() {
+                            ui.ctx().copy_text(rel.clone());
+                            ui.close();
+                        }
+                        if ui.button(crate::i18n::trz("📌 复制 路径:行号")).clicked() {
+                            ui.ctx().copy_text(format!("{full_path}:{hit_line}"));
+                            ui.close();
+                        }
+                        if ui.button(crate::i18n::trz("📝 复制命中行文本")).clicked() {
+                            ui.ctx().copy_text(hit_text.trim().to_string());
+                            ui.close();
+                        }
+                        ui.separator();
+                        if ui
+                            .button(crate::i18n::trz("🗂️ 在文件资源管理器中定位该文件"))
+                            .clicked()
+                        {
+                            ev.push(Ev::RevealPath(full_path.clone()));
+                            ui.close();
+                        }
+                        if let Some(parent) = Path::new(&full_path).parent() {
+                            let parent_str = parent.display().to_string();
+                            if !parent_str.is_empty()
+                                && ui
+                                    .button(crate::i18n::trz("🔍 以此文件所在目录作为搜索文件夹"))
+                                    .clicked()
+                            {
+                                set_search_folder = Some(parent_str);
+                                ui.close();
+                            }
+                        }
+                        if ui
+                            .button(crate::i18n::trz("📑 结果在主编辑区作为标签页打开"))
+                            .clicked()
+                        {
+                            ev.push(Ev::ResultDoc);
+                            ui.close();
+                        }
+                    });
                 }
             });
+        if let Some(dir) = set_search_folder {
+            self.o.folders = dir;
+        }
         ev
     }
 }

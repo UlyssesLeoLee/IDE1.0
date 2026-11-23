@@ -139,6 +139,25 @@ impl Trace {
     }
 }
 
+/// 命令行里的 `--e2e-script <path>`: 取出脚本路径并从文件参数中剥离
+fn split_e2e_script_flag(args: Vec<String>) -> (Option<std::path::PathBuf>, Vec<String>) {
+    let mut script = None;
+    let mut rest = Vec::with_capacity(args.len());
+    let mut it = args.into_iter();
+    while let Some(a) = it.next() {
+        if a == "--e2e-script" {
+            if let Some(p) = it.next() {
+                script = Some(std::path::PathBuf::from(p));
+            }
+        } else if let Some(p) = a.strip_prefix("--e2e-script=") {
+            script = Some(std::path::PathBuf::from(p));
+        } else {
+            rest.push(a);
+        }
+    }
+    (script, rest)
+}
+
 /// 命令行里的 `--new`: 取出并告诉调用方 (其余原样当文件参数)
 fn split_new_flag(args: Vec<String>) -> (bool, Vec<String>) {
     let new = args.iter().any(|a| a == "--new");
@@ -236,12 +255,17 @@ fn main() -> eframe::Result<()> {
         updapply::run_apply();
         return Ok(());
     }
+    let (e2e_script, raw_args) = split_e2e_script_flag(raw_args);
     let (force_new, args) = split_new_flag(raw_args);
     let (open_installer, args) = split_installer_flag(args);
     // `--relaunch` = 「立即重启」拉起来的新进程: 旧进程这时正在退出, 不能把文件转交给它
     let (relaunched, args) = relaunch::take_flag(args);
-    // 单实例: 已经有一个在运行就把文件交给它, 自己退出 (`--new` = 就是要一个独立的新窗口, 也不去抢监听端口)
-    if !force_new && !relaunched && open_installer.is_none() && instance::forward_to_running(&args)
+    // 单实例: 已经有一个在运行就把文件交给它, 自己退出 (`--new` / `--e2e-script` 独占新窗口)
+    if !force_new
+        && !relaunched
+        && open_installer.is_none()
+        && e2e_script.is_none()
+        && instance::forward_to_running(&args)
     {
         trace.mark("handed over to the running instance");
         return Ok(());
@@ -250,9 +274,9 @@ fn main() -> eframe::Result<()> {
     let st = settings::Settings::load();
     trace.mark("settings loaded");
     let font_file = fonts::effective_font_family(&st.font_family, &st.theme_plugin);
-    // 字体文件在后台双线程并行读 (主字体 + 核心 CJK fallback, 按需加载粗体), 和下面窗口 / OpenGL 的创建 (约 230 ms) 并行
-    let fonts_job = fonts::prefetch_ext(&font_file, &st.font_cjk_fallback, &st.lang, st.font_bold);
-    let inbox = if force_new || open_installer.is_some() {
+    // 字体文件在后台双线程并行读 (主字体 + 核心 CJK fallback + 粗体变体, 保障 Markdown 加粗与编辑器粗体立即可用), 和下面窗口 / OpenGL 的创建并行
+    let fonts_job = fonts::prefetch_ext(&font_file, &st.font_cjk_fallback, &st.lang, true);
+    let inbox = if force_new || open_installer.is_some() || e2e_script.is_some() {
         None
     } else {
         instance::listen()
@@ -336,6 +360,15 @@ fn main() -> eframe::Result<()> {
             let mut app = app::App::with_settings(args, inbox, t_app, st);
             if let Some(launch_mode) = open_installer {
                 app.open_installer_wizard(launch_mode, true);
+            }
+            if let Some(ref script_path) = e2e_script {
+                match app::e2e_driver::E2eDriver::load(script_path) {
+                    Ok(drv) => app.attach_e2e_driver(drv),
+                    Err(err) => {
+                        eprintln!("[e2e-driver error] {err}");
+                        std::process::exit(2);
+                    }
+                }
             }
             t.mark("App::new done");
             Ok(Box::new(app))

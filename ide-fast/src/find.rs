@@ -118,6 +118,8 @@ pub struct Find {
     focus: Focus,
     /// 增量查找的起点: 打开查找栏时 (或上一次明确"找下一个"之后) 的位置
     start: [usize; 2],
+    /// 打开增量查找时的初始光标位置 (清空查找串时退回到此处)
+    origin: [usize; 2],
     /// 上一帧的 (查找串, 条件): 变了才重新增量查找
     last: Option<(String, FindOpts)>,
     cache: HashMap<u64, Marks>,
@@ -138,6 +140,7 @@ impl Find {
             isearch: None,
             focus: Focus::None,
             start: [0, 0],
+            origin: [0, 0],
             last: None,
             cache: HashMap::new(),
         }
@@ -149,6 +152,7 @@ impl Find {
             self.needle = if self.opts.regex { escape_regex(&t) } else { t };
         }
         self.start = d.sel.map(|s| [s[0], s[1]]).unwrap_or(d.cursor);
+        self.origin = self.start;
         self.open = true;
         self.isearch = None;
         if replace {
@@ -172,6 +176,7 @@ impl Find {
         self.replace = false;
         self.isearch = Some(fwd);
         self.start = d.sel.map(|s| [s[0], s[1]]).unwrap_or(d.cursor);
+        self.origin = self.start;
         self.open = true;
         self.focus = Focus::Find;
         self.err = None;
@@ -204,7 +209,7 @@ impl Find {
         true
     }
 
-    fn step(&mut self, d: &mut Doc, fwd: bool) {
+    pub(crate) fn step(&mut self, d: &mut Doc, fwd: bool) {
         self.err = d.find_error(&self.needle, self.opts);
         if self.err.is_some() {
             return;
@@ -251,9 +256,23 @@ impl Find {
     }
 
     /// 条件变了: 查正则、从起点找第一处 (边输入边找)
-    fn changed(&mut self, d: &mut Doc) {
+    pub(crate) fn changed(&mut self, d: &mut Doc) {
         self.err = d.find_error(&self.needle, self.opts);
-        if self.needle.is_empty() || self.err.is_some() {
+        if self.needle.is_empty() {
+            self.msg.clear();
+            if self.isearch.is_some() {
+                self.start = self.origin;
+                let row = self.origin[0].min(d.lines.len().saturating_sub(1));
+                let col =
+                    self.origin[1].min(d.lines.get(row).map(|l| l.chars().count()).unwrap_or(0));
+                d.cursor = [row, col];
+                d.sel = None;
+                d.anchor = None;
+                d.reveal = true;
+            }
+            return;
+        }
+        if self.err.is_some() {
             self.msg.clear();
             return;
         }
@@ -416,18 +435,21 @@ impl Find {
         let bg = crate::btnstyle::input_bg(ui.visuals().dark_mode);
         let r = ui.add(
             egui::TextEdit::singleline(&mut self.needle)
+                .id_salt("find-needle-input")
                 .background_color(bg)
                 .hint_text(crate::i18n::trz("查找内容"))
                 .desired_width(f32::INFINITY),
         );
         if self.focus == Focus::Find {
             r.request_focus();
-            self.focus = Focus::None;
+            if !egui::Popup::is_any_open(ui.ctx()) && !ui.input(|i| i.pointer.any_released()) {
+                self.focus = Focus::None;
+            }
         }
         r
     }
 
-    /// 增量查找: 方向 / 查找串 / 正则 / Migemo / 区分大小写; Enter 往同方向找下一处, Esc 关
+    /// 增量查找: 方向 / 查找串 / 正则 / Migemo / 区分大小写; Enter 或 ↑/↓ 往对应方向找下一处, Esc 关
     fn isearch_body(&mut self, ui: &mut egui::Ui, d: &mut Doc) {
         let fwd = self.isearch.unwrap_or(true);
         ui.horizontal(|ui| {
@@ -435,19 +457,27 @@ impl Find {
                 .selectable_label(fwd, "↓")
                 .tip(crate::i18n::trz("向后"))
                 .clicked()
-                && !fwd
             {
                 self.isearch = Some(true);
-                self.last = None;
+                if !self.needle.is_empty() {
+                    self.step(d, true);
+                } else {
+                    self.last = None;
+                }
+                self.focus = Focus::Find;
             }
             if ui
                 .selectable_label(!fwd, "↑")
                 .tip(crate::i18n::trz("向前"))
                 .clicked()
-                && fwd
             {
                 self.isearch = Some(false);
-                self.last = None;
+                if !self.needle.is_empty() {
+                    self.step(d, false);
+                } else {
+                    self.last = None;
+                }
+                self.focus = Focus::Find;
             }
         });
         let r = self.needle_box(ui);
@@ -455,13 +485,21 @@ impl Find {
             let go = self.isearch.unwrap_or(true) != ui.input(|i| i.modifiers.shift);
             self.step(d, go);
             r.request_focus();
+        } else if r.has_focus() {
+            if ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::ArrowDown)) {
+                self.isearch = Some(true);
+                self.step(d, true);
+            } else if ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::ArrowUp)) {
+                self.isearch = Some(false);
+                self.step(d, false);
+            }
         }
         ui.horizontal_wrapped(|ui| {
             ui.check(&mut self.opts.regex, crate::i18n::trz("正则"));
             ui.check(&mut self.opts.migemo, "Migemo");
             ui.check(&mut self.opts.case, crate::i18n::trz("区分大小写"));
         });
-        self.status_line(ui, d, false);
+        self.status_line(ui, d, true);
     }
 
     /// 命中数 / 正则错误 / 提示
@@ -772,5 +810,31 @@ mod tests {
             !matches!(d.find_step("kensaku", FindOpts::default(), true), Ok(true)),
             "关掉 Migemo 就是字面查找"
         );
+    }
+
+    #[test]
+    fn incremental_search_forward_backward_and_empty_restore_work() {
+        let mut d = doc(&["alpha beta", "gamma alpha delta"]);
+        d.cursor = [1, 12];
+        let mut f = Find::new();
+        // 反向增量查找: 键入 'a','l','p','h','a' 时应一直停留在 [1, 6..11] 而不是每次按键跳过当前命中
+        f.open_isearch(&d, false, false, false);
+        for ch in ['a', 'l', 'p', 'h', 'a'] {
+            f.needle.push(ch);
+            f.changed(&mut d);
+        }
+        assert_eq!(
+            d.sel,
+            Some([1, 6, 1, 11]),
+            "反向增量查找应稳定锁定当前最近的命中"
+        );
+        // 再按一次向上步进应跳到上一处 [0, 0..5]
+        f.step(&mut d, false);
+        assert_eq!(d.sel, Some([0, 0, 0, 5]));
+        // 清空关键字后光标应退回起点 [1, 12] 且清空选区
+        f.needle.clear();
+        f.changed(&mut d);
+        assert_eq!(d.cursor, [1, 12]);
+        assert_eq!(d.sel, None);
     }
 }

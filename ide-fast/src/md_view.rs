@@ -182,7 +182,7 @@ fn code_job(text: &str, lang: &str, cx: &MdCtx, color: Color32) -> egui::text::L
     job
 }
 
-/// 行内文字 -> 排版 (链接着蓝色加下划线; 图片在 `inline_ui` 里单独处理)
+/// 行内文字 -> 排版 (链接着蓝色加下划线; 加粗使用 editor_bold_family 粗体字族并强化对比色; 图片在 `inline_ui` 里单独处理)
 fn rich(
     spans: &[crate::markdown::Span],
     cx: &MdCtx,
@@ -194,14 +194,20 @@ fn rich(
     } else {
         Color32::from_black_alpha(18)
     };
+    let has_bold_family = true;
     let mut job = egui::text::LayoutJob::default();
     for s in spans {
+        let font_id = if s.code && s.bold && has_bold_family {
+            FontId::new(size - 1.0, crate::fonts::editor_bold_family())
+        } else if s.code {
+            FontId::monospace(size - 1.0)
+        } else if s.bold && has_bold_family {
+            FontId::new(size, crate::fonts::editor_bold_family())
+        } else {
+            FontId::proportional(size)
+        };
         let mut f = egui::TextFormat {
-            font_id: if s.code {
-                FontId::monospace(size - 1.0)
-            } else {
-                FontId::proportional(size)
-            },
+            font_id,
             color: base_color,
             italics: s.italic,
             ..Default::default()
@@ -229,6 +235,15 @@ fn rich(
         job.append(&s.text, 0.0, f);
     }
     job
+}
+
+/// 整段默认加粗的行内排版 (用于标题 `# Heading`、表格表头等，既能解析内部 `**bold**` / `` `code` `` 又能整段保持粗体字重)
+fn rich_bold(text: &str, cx: &MdCtx, size: f32, base_color: Color32) -> egui::text::LayoutJob {
+    let mut spans = inline(text);
+    for s in &mut spans {
+        s.bold = true;
+    }
+    rich(&spans, cx, size, base_color)
 }
 
 /// 一段行内内容: 文字用换行排版, 图片单独占一行; 返回被点击的链接
@@ -491,8 +506,10 @@ fn table_ui(
                                             ui.add_space(pad_y);
                                             if k == 0 {
                                                 ui.add(
-                                                    egui::Label::new(RichText::new(text).strong())
-                                                        .wrap(),
+                                                    egui::Label::new(rich_bold(
+                                                        text, cx, 13.0, cx.tc.fg,
+                                                    ))
+                                                    .wrap(),
                                                 );
                                             } else {
                                                 inline_ui(ui, text, cx, cache, 13.0, cx.tc.fg, ev);
@@ -739,7 +756,7 @@ pub fn show(
                                 _ => 13.0,
                             }; // Tauri: 13px 基准的 2em / 1.5em / 1.17em / 1em
                             let r = ui.add(
-                                egui::Label::new(RichText::new(text).strong().size(size))
+                                egui::Label::new(rich_bold(text, cx, size, cx.tc.fg))
                                     .sense(Sense::click()),
                             );
                             if *level <= 2 {

@@ -174,6 +174,26 @@ impl App {
                     d.group = g;
                 }
             }
+            Some(TabCmd::OpenGrepHit(i)) => {
+                self.select_tab(i);
+                if let Some(d) = self.docs.get(i) {
+                    let cur_r = d.cursor[0].min(d.lines.len().saturating_sub(1));
+                    let target_r = if d
+                        .lines
+                        .get(cur_r)
+                        .is_some_and(|l| grep::parse_result_line(l).is_some())
+                    {
+                        Some(cur_r)
+                    } else {
+                        d.lines
+                            .iter()
+                            .position(|l| grep::parse_result_line(l).is_some())
+                    };
+                    if let Some(r) = target_r {
+                        self.jump_req = Some((d.id, r));
+                    }
+                }
+            }
             None => {}
         }
         if self.split_on {
@@ -232,6 +252,9 @@ impl App {
         );
         if resp.clicked() && !close.hovered() {
             *cmd = Some(TabCmd::Select(i));
+        }
+        if resp.double_clicked() && !close.hovered() && doc.grep_result {
+            *cmd = Some(TabCmd::OpenGrepHit(i));
         }
         if close.clicked() || resp.middle_clicked() {
             *cmd = Some(TabCmd::Close(i));
@@ -356,8 +379,42 @@ impl App {
             if ui.button(tr("c.copy-path")).clicked() {
                 if let Some(p) = &doc.path {
                     ctx.copy_text(p.display().to_string());
+                } else if doc.grep_result {
+                    let row = doc.cursor[0].min(doc.lines.len().saturating_sub(1));
+                    let hit_path = doc
+                        .lines
+                        .get(row)
+                        .and_then(|l| grep::parse_result_line(l))
+                        .or_else(|| doc.lines.iter().find_map(|l| grep::parse_result_line(l)))
+                        .map(|(p, _, _)| p.display().to_string())
+                        .or_else(|| {
+                            self.side
+                                .grep
+                                .last
+                                .as_ref()
+                                .map(|(_, r)| r.display().to_string())
+                        });
+                    if let Some(p) = hit_path {
+                        ctx.copy_text(p);
+                    }
                 }
                 ui.close();
+            }
+            if doc.grep_result {
+                if ui.button(trz("📂 打开当前命中文件")).clicked() {
+                    *cmd = Some(TabCmd::OpenGrepHit(i));
+                    ui.close();
+                }
+                if ui.button(trz("📑 复制全部 Grep 结果文本")).clicked() {
+                    ctx.copy_text(doc.lines.join("\n"));
+                    ui.close();
+                }
+            } else if let Some(p) = &doc.path {
+                let p_clone = p.clone();
+                if ui.button(trz("🗂️ 在资源管理器中定位")).clicked() {
+                    Self::reveal_in_file_manager(&p_clone);
+                    ui.close();
+                }
             }
             ui.separator();
             for (g, name) in GROUP_KEYS.iter().enumerate() {

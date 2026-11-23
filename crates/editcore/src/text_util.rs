@@ -21,6 +21,100 @@ pub fn indent_len(cs: &[char]) -> usize {
     cs.iter().take_while(|c| **c == ' ' || **c == '\t').count()
 }
 
+/// 东亚宽字符占 2 列 (CJK / 假名 / 全角形), 其余字符占 1 列
+pub fn char_display_width(c: char) -> usize {
+    let n = c as u32;
+    if (0x1100..=0x115F).contains(&n)
+        || (0x2E80..=0xA4CF).contains(&n)
+        || (0xAC00..=0xD7A3).contains(&n)
+        || (0xF900..=0xFAFF).contains(&n)
+        || (0xFE30..=0xFE6F).contains(&n)
+        || (0xFF00..=0xFF60).contains(&n)
+        || (0xFFE0..=0xFFE6).contains(&n)
+    {
+        2
+    } else {
+        1
+    }
+}
+
+/// 计算字符切片 `l` 的总显示列宽（`\t` 按 `tab` 宽对齐）
+pub fn chars_display_width(l: &[char], tab: usize) -> usize {
+    let tab = tab.max(1);
+    let mut x = 0usize;
+    for &ch in l {
+        if ch == '\t' {
+            x += tab - x % tab;
+        } else {
+            x += char_display_width(ch);
+        }
+    }
+    x
+}
+
+/// 0 起算的显示列区间 `[vcol0, vcol1]` -> 字符切片 `l` 对应的字符列区间 `(char_c0, char_c1)`。
+/// 若 `extend_past_eol == true`，越过行尾的部分按 1 列/格顺延到 `l.len()` 之后；否则夹在 `l.len()` 内。
+pub fn display_range_to_char_cols_slice(
+    l: &[char],
+    vcol0: usize,
+    vcol1: usize,
+    tab: usize,
+    extend_past_eol: bool,
+) -> (usize, usize) {
+    let tab = tab.max(1);
+    let len = l.len();
+    let mut x = 0usize;
+    let mut c0 = None;
+    for (i, &ch) in l.iter().enumerate() {
+        let w = if ch == '\t' {
+            tab - x % tab
+        } else {
+            char_display_width(ch)
+        };
+        if c0.is_none() && x + w > vcol0 {
+            c0 = Some(i);
+        }
+        x += w;
+    }
+    let line_disp_w = x;
+    let char_c0 = c0.unwrap_or_else(|| {
+        if extend_past_eol {
+            len + vcol0.saturating_sub(line_disp_w)
+        } else {
+            len
+        }
+    });
+    if vcol1 <= vcol0 {
+        return (char_c0, char_c0);
+    }
+    let mut x2 = 0usize;
+    let mut c1 = None;
+    for (i, &ch) in l.iter().enumerate() {
+        let w = if ch == '\t' {
+            tab - x2 % tab
+        } else {
+            char_display_width(ch)
+        };
+        if x2 >= vcol1 {
+            c1 = Some(i);
+            break;
+        }
+        if x2 + w >= vcol1 {
+            c1 = Some(i + 1);
+            break;
+        }
+        x2 += w;
+    }
+    let char_c1 = c1.unwrap_or_else(|| {
+        if extend_past_eol {
+            len + vcol1.saturating_sub(line_disp_w)
+        } else {
+            len
+        }
+    });
+    (char_c0, char_c1.max(char_c0))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

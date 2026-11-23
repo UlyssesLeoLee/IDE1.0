@@ -128,31 +128,72 @@ impl RowView {
     }
 
     fn width_of(painter: &egui::Painter, text: String, font: &FontId, color: Color32) -> f32 {
+        Self::width_of_with_spacing(painter, text, font, color, 0.0)
+    }
+
+    fn width_of_with_spacing(
+        painter: &egui::Painter,
+        text: String,
+        font: &FontId,
+        color: Color32,
+        letter_spacing: f32,
+    ) -> f32 {
         if text.is_empty() {
             0.0
-        } else {
+        } else if letter_spacing.abs() <= f32::EPSILON {
             painter.layout_no_wrap(text, font.clone(), color).size().x
+        } else {
+            let mut job = egui::text::LayoutJob::single_section(
+                text,
+                egui::TextFormat {
+                    font_id: font.clone(),
+                    color,
+                    extra_letter_spacing: letter_spacing,
+                    ..Default::default()
+                },
+            );
+            job.wrap.max_width = f32::INFINITY;
+            painter.layout_job(job).size().x
         }
     }
 
     /// 第 `col` 列前缘的 x (相对行首): 窗口内按真实排版量, 窗口外按等宽格子估
     pub fn x_of(&self, painter: &egui::Painter, col: usize, font: &FontId, color: Color32) -> f32 {
+        self.x_of_with_spacing(painter, col, font, color, 0.0)
+    }
+
+    /// 第 `col` 列前缘的 x (相对行首, 带 `letter_spacing`)
+    pub fn x_of_with_spacing(
+        &self,
+        painter: &egui::Painter,
+        col: usize,
+        font: &FontId,
+        color: Color32,
+        letter_spacing: f32,
+    ) -> f32 {
         if !self.sliced {
             let di = self.idx(col);
             if di == 0 {
                 return 0.0;
             }
-            return Self::width_of(painter, self.disp.chars().take(di).collect(), font, color);
+            return Self::width_of_with_spacing(
+                painter,
+                self.disp.chars().take(di).collect(),
+                font,
+                color,
+                letter_spacing,
+            );
         }
         if col <= self.col0 {
             return col as f32 * self.cw;
         }
         let local = (col - self.col0).min(self.len);
-        let w = Self::width_of(
+        let w = Self::width_of_with_spacing(
             painter,
             self.disp.chars().take(local).collect(),
             font,
             color,
+            letter_spacing,
         );
         self.x_off() + w + (col - self.col0 - local) as f32 * self.cw
     }

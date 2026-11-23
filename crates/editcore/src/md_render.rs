@@ -69,7 +69,17 @@ fn inline(src: &str, depth: usize) -> String {
         let rest = &src[i..];
         let two = |m: &str, tag: &str, out: &mut String, i: &mut usize| -> bool {
             if rest.starts_with(m) {
-                if let Some((inner, next)) = take_until(src, *i + m.len(), m) {
+                let mut from = *i + m.len();
+                while let Some((_seg, next)) = take_until(src, from, m) {
+                    if m == "__"
+                        && b.get(next)
+                            .map(|&ch| ch.is_ascii_alphanumeric() || ch == b'_')
+                            .unwrap_or(false)
+                    {
+                        from = next;
+                        continue;
+                    }
+                    let inner = &src[*i + m.len()..next - m.len()];
                     out.push_str(&format!("<{tag}>{}</{tag}>", inline(inner, depth + 1)));
                     *i = next;
                     return true;
@@ -91,6 +101,8 @@ fn inline(src: &str, depth: usize) -> String {
             }
         }
         if two("**", "strong", &mut out, &mut i)
+            || ((i == 0 || !b[i - 1].is_ascii_alphanumeric() && b[i - 1] != b'_')
+                && two("__", "strong", &mut out, &mut i))
             || two("~~", "del", &mut out, &mut i)
             || two("==", "mark", &mut out, &mut i)
         {

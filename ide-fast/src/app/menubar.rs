@@ -439,15 +439,25 @@ impl App {
                                 {
                                     self.cfg.view.rail = !self.cfg.view.rail;
                                 }
-                                if menu_check(ui, &tc, self.side.open, lk("c.sidebar", "Ctrl+B"))
-                                    .clicked()
+                                if menu_check(
+                                    ui,
+                                    &tc,
+                                    self.side.open && !self.cfg.view.side_collapsed,
+                                    lk("c.sidebar", "Ctrl+B"),
+                                )
+                                .clicked()
                                 {
-                                    self.side.open = !self.side.open;
+                                    self.toggle_dock_open(crate::panels::Dock::Side);
                                 }
-                                if menu_check(ui, &tc, self.term.open, lk("c.terminal", "Ctrl+`"))
-                                    .clicked()
+                                if menu_check(
+                                    ui,
+                                    &tc,
+                                    self.term.open && !self.cfg.view.bottom_collapsed,
+                                    lk("c.terminal", "Ctrl+`"),
+                                )
+                                .clicked()
                                 {
-                                    self.term.open = !self.term.open;
+                                    self.toggle_dock_open(crate::panels::Dock::Bottom);
                                 }
                                 if menu_check(
                                     ui,

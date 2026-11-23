@@ -243,7 +243,6 @@ impl App {
         }
 
         self.ensure_installer_logo(ctx);
-        Self::render_comic_backdrop(ctx, "update_comic_modal_backdrop");
 
         let busy = self.upd.rx.is_some();
         if self.upd.open && matches!(self.upd.phase, Phase::Checking | Phase::Downloading(_)) {

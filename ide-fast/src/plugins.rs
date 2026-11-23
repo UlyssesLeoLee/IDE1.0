@@ -43,6 +43,17 @@ pub enum HotModuleKind {
 }
 
 impl HotModuleKind {
+    /// 返回热插拔扩展模块对应的插件清单 ID
+    pub fn plugin_id(self) -> &'static str {
+        match self {
+            Self::Mcp => "mcp",
+            Self::Hooks => "hooks",
+            Self::Skills => "skills",
+            Self::Mod => "mod",
+            Self::Automation => "automation",
+        }
+    }
+
     pub fn as_tag(&self) -> &'static str {
         match self {
             Self::Mcp => "MCP",
@@ -116,9 +127,43 @@ pub fn is_module_active(id: &str) -> bool {
     store::get(&root(), id).is_some_and(|p| p.enabled)
 }
 
+/// 按强类型枚举查询热插拔扩展模块是否安装且处于启用状态
+pub fn is_hot_module_active(kind: HotModuleKind) -> bool {
+    is_module_active(kind.plugin_id())
+}
+
+/// 返回当前活跃且启用的 `mcp` 插件清单中声明的外部服务器配置文件路径列表
+pub fn active_mcp_config_files() -> Vec<String> {
+    let Some(inst) = store::get(&root(), HotModuleKind::Mcp.plugin_id()) else {
+        return Vec::new();
+    };
+    if !inst.enabled {
+        return Vec::new();
+    }
+    let configured: Vec<String> = inst
+        .manifest
+        .contributes
+        .get("mcp")
+        .and_then(|v| v.get("configFiles"))
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(str::trim))
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
+    if configured.is_empty() {
+        vec![".mcp.json".into(), "mcp_servers.json".into()]
+    } else {
+        configured
+    }
+}
+
 /// 返回当前活跃且启用的 `mod` (Claude Mod) 插件所贡献的工作模式列表
 pub fn active_mod_modes() -> Vec<ClaudeModMode> {
-    let Some(inst) = store::get(&root(), "mod") else {
+    let Some(inst) = store::get(&root(), HotModuleKind::Mod.plugin_id()) else {
         return Vec::new();
     };
     if !inst.enabled {

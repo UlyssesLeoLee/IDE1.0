@@ -20,6 +20,25 @@ pub(crate) struct ComicFrameSpec<'a> {
     pub close_btn_id: &'a str,
 }
 
+impl ComicFrameSpec<'_> {
+    fn right_controls_count(&self) -> usize {
+        1 + usize::from(self.min_btn_id.is_some()) + usize::from(self.max_btn_id.is_some())
+    }
+
+    fn version_badge_center_x(&self, header_right: f32) -> f32 {
+        let offset = match self.right_controls_count() {
+            3 => 142.0,
+            2 => 112.0,
+            _ => 78.0,
+        };
+        header_right - offset
+    }
+
+    fn drag_right_x(&self, header_right: f32) -> f32 {
+        self.version_badge_center_x(header_right) - 44.0
+    }
+}
+
 /// 美漫外壳顶栏控制按钮交互结果
 pub(crate) struct ComicFrameResult {
     pub minimize_clicked: bool,
@@ -79,12 +98,7 @@ fn paint_comic_shell_chrome(
         Color32::WHITE,
     );
 
-    let ver_x = header_rect.right()
-        - match (spec.min_btn_id.is_some(), spec.max_btn_id.is_some()) {
-            (true, true) => 142.0,
-            (true, false) | (false, true) => 112.0,
-            (false, false) => 78.0,
-        };
+    let ver_x = spec.version_badge_center_x(header_rect.right());
     let ver_rect = Rect::from_center_size(pos2(ver_x, header_rect.center().y), vec2(76.0, 22.0));
     paint_comic_hard_shadow_rect(
         p,
@@ -112,16 +126,6 @@ fn paint_comic_shell_chrome(
 }
 
 impl App {
-    /// 绘制模态半透明漫画墨水暗化背景遮罩
-    pub(crate) fn render_comic_backdrop(ctx: &egui::Context, backdrop_id: &str) {
-        let screen_rect = ctx.content_rect();
-        let bg_painter = ctx.layer_painter(egui::LayerId::new(
-            egui::Order::Middle,
-            egui::Id::new(backdrop_id),
-        ));
-        bg_painter.rect_filled(screen_rect, 0.0, Color32::from_black_alpha(210));
-    }
-
     /// 渲染统一的美漫三渲二双栏外壳（左侧 3D 赛璐珞水晶展台 + 右侧自定义分镜内容）
     pub(crate) fn render_comic_shell(
         &mut self,
@@ -148,12 +152,7 @@ impl App {
             &spec,
         );
 
-        let drag_right = header_rect.right()
-            - match (spec.min_btn_id.is_some(), spec.max_btn_id.is_some()) {
-                (true, true) => 186.0,
-                (true, false) | (false, true) => 152.0,
-                (false, false) => 118.0,
-            };
+        let drag_right = spec.drag_right_x(header_rect.right());
         let drag_rect = Rect::from_min_max(
             pos2(wiz_rect.right() + 10.0, header_rect.top()),
             pos2(

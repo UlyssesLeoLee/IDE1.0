@@ -9,7 +9,18 @@
 use super::ctx::Ctx;
 use super::line_ops::split_line_at;
 use super::req_res::EditRes;
-use crate::text_util::slice;
+use crate::text_util::{chars_display_width, display_range_to_char_cols_slice, slice};
+
+const BOX_TAB_WIDTH: usize = 4;
+
+fn line_display_width(l: &[char]) -> usize {
+    chars_display_width(l, BOX_TAB_WIDTH)
+}
+
+/// 0-based visual display column range `[vcol0, vcol1]` -> character index range `(char_c0, char_c1)` on line `l`.
+fn display_range_to_char_range(l: &[char], vcol0: usize, vcol1: usize) -> (usize, usize) {
+    display_range_to_char_cols_slice(l, vcol0, vcol1, BOX_TAB_WIDTH, false)
+}
 
 /// 归一化后的矩形 + 它覆盖的各行
 struct BoxView {
@@ -50,10 +61,11 @@ impl BoxView {
     fn width(&self) -> usize {
         self.c1 - self.c0
     }
-    /// 挖掉一行里矩形覆盖的那段
+    /// 挖掉一行里矩形覆盖的那段 (按视觉显示列 `[c0, c1)` 映射到字符下标)
     fn hollow(&self, l: &[char]) -> Vec<char> {
-        let mut v = l[..self.c0.min(l.len())].to_vec();
-        v.extend_from_slice(&l[self.c1.min(l.len())..]);
+        let (c0, c1) = display_range_to_char_range(l, self.c0, self.c1);
+        let mut v = l[..c0].to_vec();
+        v.extend_from_slice(&l[c1..]);
         v
     }
     fn hollowed_rows(&self) -> Vec<Vec<char>> {
@@ -64,7 +76,8 @@ impl BoxView {
         let mut s = String::new();
         for l in &self.old {
             if self.width() > 0 {
-                s.push_str(&slice(l, self.c0, self.c1));
+                let (c0, c1) = display_range_to_char_range(l, self.c0, self.c1);
+                s.push_str(&slice(l, c0, c1));
             }
             s.push('\n');
         }
@@ -98,7 +111,8 @@ pub(super) fn delete(cx: &Ctx) -> EditRes {
         return rows_missing(cx);
     };
     let rows = b.hollowed_rows();
-    let cursor = [b.r0, b.c0.min(rows[0].len())]; // 注: 删除后光标在矩形左上角
+    let (char_c0, _) = display_range_to_char_range(&rows[0], b.c0, b.c0);
+    let cursor = [b.r0, char_c0.min(rows[0].len())]; // 注: 删除后光标在矩形左上角
     b.patch(rows, cursor)
         .tip(format!("列块已删除 ({}行 ×{}列)", b.n_rows(), b.width()))
 }
@@ -108,7 +122,14 @@ pub(super) fn cut(cx: &Ctx) -> EditRes {
         return rows_missing(cx);
     };
     let rows = b.hollowed_rows();
-    b.patch(rows, [b.r0, b.c0])
+    let (char_c0, _) = display_range_to_char_range(&rows[0], b.c0, b.c0);
+    let disp_w0 = line_display_width(&rows[0]);
+    let cut_col = if b.c0 > disp_w0 {
+        rows[0].len() + (b.c0 - disp_w0)
+    } else {
+        char_c0
+    };
+    b.patch(rows, [b.r0, cut_col])
         .tip("已剪切列块")
         .clip(Some(b.clip_text()))
 }
@@ -119,7 +140,8 @@ pub(super) fn enter(cx: &Ctx) -> EditRes {
         return rows_missing(cx);
     };
     let mut rows = b.hollowed_rows();
-    let c = b.c0.min(rows[0].len());
+    let (char_c0, _) = display_range_to_char_range(&rows[0], b.c0, b.c0);
+    let c = char_c0.min(rows[0].len());
     let (mut insert, pad_len) = split_line_at(&rows[0], c, cx.req.auto_indent, cx.req.smart_indent);
     insert.extend(rows.drain(1..).map(|v| v.into_iter().collect::<String>()));
     EditRes::splice(b.r0, b.n_rows(), insert, [b.r0 + 1, pad_len])
@@ -139,9 +161,10 @@ pub(super) fn replace(cx: &Ctx) -> EditRes {
         .map(|(i, l)| {
             let mut repl: Vec<char> = parts.get(i).copied().unwrap_or("").chars().collect();
             repl.resize(b.width(), ' ');
-            let mut v = l[..b.c0.min(l.len())].to_vec();
+            let (c0, c1) = display_range_to_char_range(l, b.c0, b.c1);
+            let mut v = l[..c0].to_vec();
             v.extend(repl);
-            v.extend_from_slice(&l[b.c1.min(l.len())..]);
+            v.extend_from_slice(&l[c1..]);
             v
         })
         .collect();
@@ -173,14 +196,18 @@ pub(super) fn insert(cx: &Ctx) -> EditRes {
             } else {
                 l.clone()
             };
-            v.resize(v.len().max(b.c0), ' ');
-            let tail = v.split_off(b.c0);
+            let disp_w = line_display_width(&v);
+            if disp_w < b.c0 {
+                v.extend(std::iter::repeat(' ').take(b.c0 - disp_w));
+            }
+            let (ins_at, _) = display_range_to_char_range(&v, b.c0, b.c0);
+            let tail = v.split_off(ins_at.min(v.len()));
             v.extend_from_slice(&add);
             v.extend(tail);
             v
         })
         .collect();
-    let to = b.c0 + add.len(); // 插入点右移「刚插入的字符数」列, 可以接着连续输入
+    let to = b.c0 + line_display_width(&add); // 插入点右移「刚插入的显示列宽」列, 可以接着连续输入
     b.patch(rows, [cx.row, cx.col])
         .box_sel(Some([b.r0, to, b.r1, to]))
         .tip(format!("列块插入 {} 行", b.n_rows()))
@@ -238,6 +265,22 @@ mod tests {
         assert_eq!(
             apply(BX, &r),
             vec!["abcdef!".to_string(), "gh    !".into(), "ijklmn!".into()]
+        );
+    }
+
+    #[test]
+    fn cjk_markdown_box_selection_aligns_by_visual_display_column() {
+        // 第 0 行: "| 中文 | OK |" -> "| "(2列) + "中文"(4列) + " | "(3列) + "OK"(2列)
+        // 第 1 行: "| abcd | OK |" -> "| "(2列) + "abcd"(4列) + " | "(3列) + "OK"(2列)
+        // 视觉列 [9, 11) 在两行都精准对准 "OK"
+        let md = &["| 中文 | OK |", "| abcd | OK |"];
+        let cp = run_box("box-copy", 0, 9, [0, 9, 1, 11], "", md);
+        assert_eq!(cp.clip.as_deref(), Some("OK\nOK\n"));
+
+        let ins = run_box("box-insert", 0, 9, [0, 9, 1, 11], "PASS", md);
+        assert_eq!(
+            apply(md, &ins),
+            vec!["| 中文 | PASS |".to_string(), "| abcd | PASS |".into()]
         );
     }
 }

@@ -1,0 +1,126 @@
+{
+  "suite": "IDE1.0 Live GUI E2E (Real Window Automation)",
+  "workspace_root": "tests/mock-project",
+  "report_path": "qa/live-gui-e2e-report.json",
+  "warmup_frames": 3,
+  "step_delay_ms": 800,
+  "steps": [
+    {
+      "id": "GUI-01",
+      "name": "打开 Mock Rust 源码文件 src/math.rs",
+      "op": "open_file",
+      "path": "src/math.rs"
+    },
+    {
+      "id": "GUI-02",
+      "name": "校验 math.rs 初始内容加载完成",
+      "op": "assert_doc_contains",
+      "text": "pub fn add"
+    },
+    {
+      "id": "GUI-03",
+      "name": "实时编辑活跃文档第 2 行为饱和加法",
+      "op": "patch_active_doc",
+      "start": 1,
+      "remove": 1,
+      "insert": ["    a.saturating_add(b)"]
+    },
+    {
+      "id": "GUI-04",
+      "name": "校验修改已即时生效到编辑器缓冲",
+      "op": "assert_doc_contains",
+      "text": "saturating_add"
+    },
+    {
+      "id": "GUI-05",
+      "name": "执行单步撤销还原源码",
+      "op": "undo_active_doc"
+    },
+    {
+      "id": "GUI-06",
+      "name": "校验撤销后文档已还原",
+      "op": "assert_doc_not_contains",
+      "text": "saturating_add"
+    },
+    {
+      "id": "GUI-07",
+      "name": "切换打开 NEMA 结构化文档 architecture.nema",
+      "op": "open_file",
+      "path": "knowledge/architecture.nema"
+    },
+    {
+      "id": "GUI-08",
+      "name": "校验 NEMA 文档内容完整性",
+      "op": "assert_doc_contains",
+      "text": "EditorKernel"
+    },
+    {
+      "id": "GUI-09",
+      "name": "打开桌面便笺并自动创建一条测试笔记",
+      "op": "open_sticky_notes",
+      "title": "GUI 实测便笺",
+      "content": "# 实测记录\n真实 GUI 自动操作正常"
+    },
+    {
+      "id": "GUI-10",
+      "name": "打开多 Agent 协同面板并扩展为 4 个 Agent",
+      "op": "open_ai_collab",
+      "count": 4
+    },
+    {
+      "id": "GUI-11",
+      "name": "切换底部 Rust 控制台并执行脚本指令",
+      "op": "open_rust_console",
+      "script": "ide::ops::collab_count(6)",
+      "expect": "6"
+    },
+    {
+      "id": "GUI-12",
+      "name": "打开安装向导并切换为全屏最大化",
+      "op": "open_installer_and_maximize"
+    },
+    {
+      "id": "GUI-13",
+      "name": "校验全屏与最大化模式四周 0px 贴紧边缘无内边距",
+      "op": "verify_fullscreen_edge_flush"
+    },
+    {
+      "id": "GUI-14",
+      "name": "打开 Markdown 文档校验加粗渲染、增量查找与 Alt 矩形列选对齐",
+      "op": "open_file",
+      "path": "docs/markdown-preview.md"
+    },
+    {
+      "id": "GUI-15",
+      "name": "校验 Markdown 星号与双下划线加粗语法及粗体字族渲染",
+      "op": "verify_markdown_bold_render"
+    },
+    {
+      "id": "GUI-16",
+      "name": "校验增量查找正反向步进与清空回退",
+      "op": "verify_incremental_search",
+      "text": "Ready"
+    },
+    {
+      "id": "GUI-17",
+      "name": "校验 Markdown 中英混排表格 Alt 矩形列选视觉列宽对齐",
+      "op": "verify_md_alt_box_selection"
+    },
+    {
+      "id": "GUI-18",
+      "name": "校验 Grep 跨文件检索、折叠侧栏自动展开与主编辑区结果标签页",
+      "op": "verify_grep_search",
+      "text": "EditorKernel"
+    },
+    {
+      "id": "GUI-19",
+      "name": "校验中国默认区域用户协议 v1.1 与 Hooks 插件生命周期功能",
+      "op": "verify_agreement_and_hooks"
+    },
+    {
+      "id": "GUI-20",
+      "name": "全部实测完毕后优雅关闭主窗口",
+      "op": "close_app"
+    }
+  ]
+}

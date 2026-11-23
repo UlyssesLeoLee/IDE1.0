@@ -312,7 +312,6 @@ impl App {
         }
 
         ctx.request_repaint();
-        Self::render_comic_backdrop(ctx, "log_cleanup_comic_modal_backdrop");
 
         let win_size = egui::vec2(440.0, 160.0);
         egui::Window::new("log_cleanup_modal")

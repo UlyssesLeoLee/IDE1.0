@@ -455,25 +455,44 @@ fn parse_inline(cs: &[char], st: &Span, out: &mut Vec<Span>) {
             i += n;
             continue;
         }
-        // 成对的样式: 记号 -> 改哪个标志
-        let pairs: [(&[char], fn(&mut Span)); 4] = [
+        // 成对的样式: 记号 -> 改哪个标志 (支持 **bold**、__bold__、~~strike~~、==mark==、*italic*)
+        let pairs: [(&[char], fn(&mut Span)); 5] = [
             (&['*', '*'], |s| s.bold = true),
+            (&['_', '_'], |s| s.bold = true),
             (&['~', '~'], |s| s.strike = true),
             (&['=', '='], |s| s.mark = true),
             (&['*'], |s| s.italic = true),
         ];
         let mut hit = false;
         for (pat, apply) in pairs {
-            if cs[i..].starts_with(pat)
+            let boundary_ok = if pat[0] == '_' {
+                i == 0 || !cs[i - 1].is_alphanumeric() && cs[i - 1] != '_'
+            } else {
+                true
+            };
+            if boundary_ok
+                && cs[i..].starts_with(pat)
                 && cs
                     .get(i + pat.len())
                     .map(|n| !n.is_whitespace())
                     .unwrap_or(false)
             {
-                if let Some(mut e) = find(cs, i + pat.len(), pat) {
-                    // `***x***` 这类连续星号: 取最后两个当收尾, 前面的留给内层
-                    while pat == ['*', '*'] && cs.get(e + 2) == Some(&'*') {
+                let mut search_from = i + pat.len();
+                while let Some(mut e) = find(cs, search_from, pat) {
+                    // `***x***` 或 `___x___` 连续记号: 取最后两个当收尾, 前面的留给内层
+                    while pat.len() == 2 && cs.get(e + 2) == Some(&pat[0]) {
                         e += 1;
+                    }
+                    let close_boundary_ok = if pat[0] == '_' {
+                        cs.get(e + pat.len())
+                            .map(|&ch| !ch.is_alphanumeric() && ch != '_')
+                            .unwrap_or(true)
+                    } else {
+                        true
+                    };
+                    if !close_boundary_ok {
+                        search_from = e + pat.len();
+                        continue;
                     }
                     if e > i + pat.len() {
                         flush(&mut plain, out);
@@ -482,8 +501,11 @@ fn parse_inline(cs: &[char], st: &Span, out: &mut Vec<Span>) {
                         parse_inline(&cs[i + pat.len()..e], &inner, out);
                         i = e + pat.len();
                         hit = true;
-                        break;
                     }
+                    break;
+                }
+                if hit {
+                    break;
                 }
             }
         }
@@ -688,5 +710,26 @@ mod tests {
         );
         assert_eq!(texts("lonely ** end"), vec!["lonely ** end"]);
         assert_eq!(texts("`a*b*c`"), vec!["a*b*c"], "代码里不再解析");
+    }
+
+    #[test]
+    fn double_underscore_and_asterisk_bold_render_without_breaking_snake_case() {
+        let spans = inline("前缀 **星号加粗** 与 __下划线加粗__ 以及 foo_bar_baz 标识符");
+        let b1 = spans
+            .iter()
+            .find(|s| s.text == "星号加粗")
+            .expect("星号加粗");
+        assert!(b1.bold && !b1.italic);
+        let b2 = spans
+            .iter()
+            .find(|s| s.text == "下划线加粗")
+            .expect("下划线加粗");
+        assert!(b2.bold && !b2.italic);
+        assert!(
+            spans
+                .iter()
+                .any(|s| s.text.contains("foo_bar_baz") && !s.bold && !s.italic),
+            "snake_case 不应被误解析为加粗或斜体"
+        );
     }
 }

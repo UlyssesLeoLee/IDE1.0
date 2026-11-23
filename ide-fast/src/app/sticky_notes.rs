@@ -552,6 +552,123 @@ impl StickyNotesState {
     pub fn active_note(&self) -> Option<&StickyNote> {
         self.notes.iter().find(|n| n.id == self.active_id)
     }
+
+    /// 执行 Agent 对便笺的读写与控制指令（供单/多 Agent 共用）
+    pub(crate) fn exec_tool(&mut self, name: &str, args: &Value) -> Value {
+        match name {
+            "sticky_note_list" => {
+                let list: Vec<Value> = self
+                    .notes
+                    .iter()
+                    .map(|n| {
+                        json!({
+                            "id": n.id,
+                            "title": n.title,
+                            "color_idx": n.color_idx,
+                            "pinned": n.pinned,
+                            "updated_at": n.updated_at,
+                            "content_preview": n.content.chars().take(80).collect::<String>(),
+                            "content_len": n.content.len(),
+                        })
+                    })
+                    .collect();
+                json!({
+                    "open": self.open,
+                    "active_id": self.active_id,
+                    "notes": list,
+                    "total": list.len(),
+                })
+            }
+            "sticky_note_create" => {
+                let content = args.get("content").and_then(Value::as_str).unwrap_or("");
+                let title = args.get("title").and_then(Value::as_str);
+                let color_idx = args
+                    .get("color_idx")
+                    .and_then(Value::as_u64)
+                    .map(|v| (v as usize).min(6))
+                    .unwrap_or(self.preferred_color_idx);
+                let pinned = args.get("pinned").and_then(Value::as_bool).unwrap_or(false);
+
+                let next_idx = self.notes.len() + 1;
+                let mut note = StickyNote::new(next_idx);
+                note.color_idx = color_idx;
+                note.pinned = pinned;
+                note.content = content.replace("\r\n", "\n").replace('\r', "\n");
+                if let Some(t) = title {
+                    if !t.trim().is_empty() {
+                        note.title = t.chars().take(24).collect();
+                    }
+                }
+                let note_id = note.id.clone();
+                let note_title = note.title.clone();
+                self.active_id = note_id.clone();
+                self.notes.push(note);
+                self.open = true;
+                self.mark_dirty();
+                json!({
+                    "success": true,
+                    "id": note_id,
+                    "title": note_title,
+                    "message": "便笺已成功创建并在桌面显示"
+                })
+            }
+            "sticky_note_update" => {
+                let Some(id) = args.get("id").and_then(Value::as_str) else {
+                    return json!({ "error": "缺少便笺 id 参数" });
+                };
+                let Some(note) = self.notes.iter_mut().find(|n| n.id == id) else {
+                    return json!({ "error": format!("未找到 ID 为 {} 的便笺", id) });
+                };
+                if let Some(content) = args.get("content").and_then(Value::as_str) {
+                    note.content = content.replace("\r\n", "\n").replace('\r', "\n");
+                    note.updated_at = current_timestamp();
+                }
+                if let Some(title) = args.get("title").and_then(Value::as_str) {
+                    note.title = title.chars().take(24).collect();
+                }
+                if let Some(color_idx) = args.get("color_idx").and_then(Value::as_u64) {
+                    note.color_idx = (color_idx as usize).min(6);
+                }
+                if let Some(pinned) = args.get("pinned").and_then(Value::as_bool) {
+                    note.pinned = pinned;
+                }
+                self.mark_dirty();
+                json!({
+                    "success": true,
+                    "id": id,
+                    "message": "便笺已成功更新"
+                })
+            }
+            "sticky_note_delete" => {
+                let Some(id) = args.get("id").and_then(Value::as_str) else {
+                    return json!({ "error": "缺少便笺 id 参数" });
+                };
+                let exists = self.notes.iter().any(|n| n.id == id);
+                if !exists {
+                    return json!({ "error": format!("未找到 ID 为 {} 的便笺", id) });
+                }
+                self.delete_note(id);
+                json!({
+                    "success": true,
+                    "deleted_id": id,
+                    "message": "便笺已成功删除"
+                })
+            }
+            "sticky_note_open" => {
+                let open = args.get("open").and_then(Value::as_bool).unwrap_or(true);
+                self.open = open;
+                if !open {
+                    self.pos_initialized = false;
+                }
+                json!({
+                    "success": true,
+                    "open": open,
+                    "message": if open { "便笺已在桌面显示" } else { "便笺已隐藏" }
+                })
+            }
+            other => json!({ "error": format!("未知便笺工具: {}", other) }),
+        }
+    }
 }
 
 /// 便笺色彩配置

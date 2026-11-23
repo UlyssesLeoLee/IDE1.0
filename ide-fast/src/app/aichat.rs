@@ -3,8 +3,9 @@
 
 use super::*;
 use crate::ai::{self, AiConfig, Event, Handle, Msg, ToolCall};
-use crate::app::agent_plugins::{dispatch_mcp_tool_blocking, AgentPluginRuntime};
+use crate::app::agent_plugins::{parse_patch_proposal, AgentPluginRuntime};
 use crate::app::collab::CollabMsg;
+use crate::plugins::{self, HotModuleKind};
 use ide_agent_router::{
     ContextCompactor, CookieJar, CookieStats, FileCookie, PrunePolicy, TaskState,
 };
@@ -264,7 +265,7 @@ impl App {
 
     /// 落盘前过一遍脱敏钩子 (Cookie 在磁盘上是明文, 不能把 API Key 带进去; 仅在 hooks 插件激活时生效)
     fn mask_secrets(&mut self, s: String) -> String {
-        if crate::plugins::is_module_active("hooks") {
+        if plugins::is_hot_module_active(HotModuleKind::Hooks) {
             self.ai.plugin_rt_mut().run_post_response_hook(s)
         } else {
             if let Some(rt) = self.ai.plugin_rt.as_mut() {
@@ -669,6 +670,14 @@ impl App {
                 .push(Item::Err("只读文档，无法直接应用修改".into()));
             return;
         }
+        if let Err(reason) = self
+            .ai
+            .plugin_rt_mut()
+            .check_tool_gate("propose_patch", &json!({ "prompt": q }))
+        {
+            self.ai.items.push(Item::Err(reason));
+            return;
+        }
         let doc_id = self.docs[i].id;
         let ws_root = find_workspace_root(self.docs[i].path.as_deref());
         let (run_cookie, _) = self.cookie_begin(i, &ws_root, q);
@@ -677,12 +686,13 @@ impl App {
         match self.docs[i].apply_line_patch(start, remove, insert.clone(), Some([start, 0])) {
             Ok(()) => {
                 let doc_name = self.docs[i].name.clone();
-                let reply = format!(
+                let raw_reply = format!(
                     "已根据需求在「{}」第 {} 行直接写入 {} 行内容（无需配置云端模型即可生效，Ctrl+Z 可撤销）。",
                     doc_name,
                     start + 1,
                     insert.len()
                 );
+                let reply = self.ai.plugin_rt_mut().run_post_response_hook(raw_reply);
                 self.docs[i].tip = tr("ai.applied").into();
                 let settled = run_cookie.map(|mut rc| {
                     rc.proposed = true;
@@ -745,7 +755,7 @@ impl App {
         // 文件即任务: 载入该文件的会话 Cookie (断点续航 + 局部不变量), 并把本轮意图记进去
         let (run_cookie, resume) = self.cookie_begin(i, &ws_root, &q);
 
-        let installed = editcore::plugin_host::store::list(&plugins::root());
+        let installed = self.ai.plugin_rt_mut().refresh_installed_plugins().to_vec();
         let active_mod = self.ai.active_mod.clone();
         let prepared = self.ai.plugin_rt_mut().prepare_agent_turn(
             &sys,
@@ -901,7 +911,7 @@ impl App {
             .iter()
             .find(|d| d.id == doc_id)
             .map_or(0, |d| d.lines.len());
-        let installed = editcore::plugin_host::store::list(&plugins::root());
+        let installed = self.ai.plugin_rt_mut().installed_plugins().to_vec();
         if let Some(run) = self.ai.run.as_mut() {
             run.slots = vec![None; turn.tool_calls.len()];
         }
@@ -918,38 +928,25 @@ impl App {
 
             // 3. 工具分发：MCP 外部工具 vs 插件扩展工具 vs 原生内建工具
             if call.name.starts_with("mcp_") {
-                let Some(mgr) = self.ai.plugin_rt_mut().mcp_manager_cloned() else {
-                    immediate.push((
-                        slot,
-                        call.clone(),
-                        json!({ "error": "MCP 插件模块已关闭或卸载" }),
-                    ));
-                    continue;
-                };
-                // MCP 工具：后台专用 Worker 线程异步执行，零阻塞 UI 渲染
-                let (tx, rx) = channel();
-                let full_name = call.name.clone();
-                let args_clone = args.clone();
                 let c = ctx.clone();
-                std::thread::Builder::new()
-                    .name(format!("mcp-{}", call.name))
-                    .spawn(move || {
-                        let v = dispatch_mcp_tool_blocking(Some(&mgr), &full_name, args_clone);
-                        let res = if let Some(err) = v["error"].as_str() {
-                            Err(err.to_string())
-                        } else {
-                            Ok(serde_json::to_string(&v).unwrap_or_else(|_| "{}".into()))
-                        };
-                        let _ = tx.send(res);
-                        c.request_repaint();
-                    })
-                    .ok();
-                if let Some(run) = self.ai.run.as_mut() {
-                    run.pending.push(Pending {
-                        slot,
-                        call: call.clone(),
-                        rx,
-                    });
+                match self.ai.plugin_rt_mut().spawn_mcp_tool_call(
+                    "mcp",
+                    call.name.clone(),
+                    args.clone(),
+                    move || c.request_repaint(),
+                ) {
+                    Ok(rx) => {
+                        if let Some(run) = self.ai.run.as_mut() {
+                            run.pending.push(Pending {
+                                slot,
+                                call: call.clone(),
+                                rx,
+                            });
+                        }
+                    }
+                    Err(err) => {
+                        immediate.push((slot, call.clone(), json!({ "error": err })));
+                    }
                 }
             } else if let Some((pid, tool)) = ai::split_plugin_tool(&call.name) {
                 if ai::plugin_tool_declared(&installed, &pid, &tool) {
@@ -962,7 +959,7 @@ impl App {
                     ));
                 }
             } else if call.name.starts_with("sticky_note_") {
-                let res = self.exec_sticky_note_tool(&call.name, &args);
+                let res = self.sticky_notes.exec_tool(&call.name, &args);
                 immediate.push((slot, call.clone(), res));
             } else {
                 immediate.push((
@@ -1053,19 +1050,7 @@ impl App {
             vec!["tool".into(), call.name.clone()],
         );
 
-        if result["kind"] == "patch_proposal" {
-            let start = result["start"].as_u64().unwrap_or(0) as usize;
-            let remove = result["remove"].as_u64().unwrap_or(0) as usize;
-            let insert: Vec<String> = result["insert"]
-                .as_array()
-                .map(|a| {
-                    a.iter()
-                        .filter_map(|v| v.as_str().map(String::from))
-                        .collect()
-                })
-                .unwrap_or_default();
-            let reason = result["reason"].as_str().unwrap_or("").to_string();
-
+        if let Some((start, remove, insert, reason)) = parse_patch_proposal(&result) {
             if self.ai.auto_apply {
                 let applied = match self.docs.iter_mut().find(|d| d.id == doc_id) {
                     Some(d) => match d.apply_line_patch(start, remove, insert.clone(), None) {
@@ -1175,7 +1160,7 @@ impl App {
                 .find(|m| m.role == "assistant")
                 .map(|m| m.content.as_str());
             let allow_auto_apply =
-                !crate::plugins::is_module_active("mod") || self.ai.active_mod == "code";
+                !plugins::is_hot_module_active(HotModuleKind::Mod) || self.ai.active_mod == "code";
             if self.ai.auto_apply && !auto_applied && allow_auto_apply {
                 if let Some(code_lines) = last_assistant.and_then(extract_fenced_code_block) {
                     if let Some(doc) = self.docs.iter_mut().find(|d| d.id == doc_id) {
@@ -1220,124 +1205,6 @@ impl App {
             }
             self.cookie_settle(doc_id, cookie, summary);
             self.ai.history = ai::trim_history(h);
-        }
-    }
-
-    /// 处理 Agent 对便笺的读写与控制指令
-    fn exec_sticky_note_tool(&mut self, name: &str, args: &Value) -> Value {
-        match name {
-            "sticky_note_list" => {
-                let list: Vec<Value> = self
-                    .sticky_notes
-                    .notes
-                    .iter()
-                    .map(|n| {
-                        json!({
-                            "id": n.id,
-                            "title": n.title,
-                            "color_idx": n.color_idx,
-                            "pinned": n.pinned,
-                            "updated_at": n.updated_at,
-                            "content_preview": n.content.chars().take(80).collect::<String>(),
-                            "content_len": n.content.len(),
-                        })
-                    })
-                    .collect();
-                json!({
-                    "open": self.sticky_notes.open,
-                    "active_id": self.sticky_notes.active_id,
-                    "notes": list,
-                    "total": list.len(),
-                })
-            }
-            "sticky_note_create" => {
-                let content = args.get("content").and_then(Value::as_str).unwrap_or("");
-                let title = args.get("title").and_then(Value::as_str);
-                let color_idx = args
-                    .get("color_idx")
-                    .and_then(Value::as_u64)
-                    .map(|v| (v as usize).min(6))
-                    .unwrap_or(self.sticky_notes.preferred_color_idx);
-                let pinned = args.get("pinned").and_then(Value::as_bool).unwrap_or(false);
-
-                let next_idx = self.sticky_notes.notes.len() + 1;
-                let mut note = crate::app::sticky_notes::StickyNote::new(next_idx);
-                note.color_idx = color_idx;
-                note.pinned = pinned;
-                note.content = content.replace("\r\n", "\n").replace('\r', "\n");
-                if let Some(t) = title {
-                    if !t.trim().is_empty() {
-                        note.title = t.chars().take(24).collect();
-                    }
-                }
-                let note_id = note.id.clone();
-                let note_title = note.title.clone();
-                self.sticky_notes.active_id = note_id.clone();
-                self.sticky_notes.notes.push(note);
-                self.sticky_notes.open = true;
-                self.sticky_notes.mark_dirty();
-                json!({
-                    "success": true,
-                    "id": note_id,
-                    "title": note_title,
-                    "message": "便笺已成功创建并在桌面显示"
-                })
-            }
-            "sticky_note_update" => {
-                let Some(id) = args.get("id").and_then(Value::as_str) else {
-                    return json!({ "error": "缺少便笺 id 参数" });
-                };
-                let Some(note) = self.sticky_notes.notes.iter_mut().find(|n| n.id == id) else {
-                    return json!({ "error": format!("未找到 ID 为 {} 的便笺", id) });
-                };
-                if let Some(content) = args.get("content").and_then(Value::as_str) {
-                    note.content = content.replace("\r\n", "\n").replace('\r', "\n");
-                    note.updated_at = crate::app::sticky_notes::current_timestamp();
-                }
-                if let Some(title) = args.get("title").and_then(Value::as_str) {
-                    note.title = title.chars().take(24).collect();
-                }
-                if let Some(color_idx) = args.get("color_idx").and_then(Value::as_u64) {
-                    note.color_idx = (color_idx as usize).min(6);
-                }
-                if let Some(pinned) = args.get("pinned").and_then(Value::as_bool) {
-                    note.pinned = pinned;
-                }
-                self.sticky_notes.mark_dirty();
-                json!({
-                    "success": true,
-                    "id": id,
-                    "message": "便笺已成功更新"
-                })
-            }
-            "sticky_note_delete" => {
-                let Some(id) = args.get("id").and_then(Value::as_str) else {
-                    return json!({ "error": "缺少便笺 id 参数" });
-                };
-                let exists = self.sticky_notes.notes.iter().any(|n| n.id == id);
-                if !exists {
-                    return json!({ "error": format!("未找到 ID 为 {} 的便笺", id) });
-                }
-                self.sticky_notes.delete_note(id);
-                json!({
-                    "success": true,
-                    "deleted_id": id,
-                    "message": "便笺已成功删除"
-                })
-            }
-            "sticky_note_open" => {
-                let open = args.get("open").and_then(Value::as_bool).unwrap_or(true);
-                self.sticky_notes.open = open;
-                if !open {
-                    self.sticky_notes.pos_initialized = false;
-                }
-                json!({
-                    "success": true,
-                    "open": open,
-                    "message": if open { "便笺已在桌面显示" } else { "便笺已隐藏" }
-                })
-            }
-            other => json!({ "error": format!("未知便笺工具: {}", other) }),
         }
     }
 

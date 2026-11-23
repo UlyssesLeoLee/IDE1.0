@@ -358,13 +358,9 @@ impl App {
         }
 
         self.ensure_installer_logo(ctx);
-        Self::render_comic_backdrop(ctx, "installer_comic_modal_backdrop");
 
         let win_size = if self.installer.maximized {
-            ctx.content_rect()
-                .shrink(12.0)
-                .size()
-                .max(Vec2::new(880.0, 640.0))
+            ctx.content_rect().size().max(Vec2::new(880.0, 640.0))
         } else {
             Vec2::new(880.0, 640.0)
         };

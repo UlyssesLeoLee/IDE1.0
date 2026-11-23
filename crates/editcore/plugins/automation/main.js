@@ -38,7 +38,10 @@ ide.register({
   "command:todos"(doc) {
     const items = collectTodos(doc && doc.text);
     if (items.length === 0) {
-      return { summary: "Automation: 当前文档没有未完成的 TODO / FIXME 项" };
+      return {
+        summary: "Automation: 当前文档没有未完成的 TODO / FIXME 项",
+        html: "<pre>[Automation 待办扫描]\n✅ 当前活动文档未发现 TODO / FIXME / HACK / XXX 待办标记。</pre>"
+      };
     }
     return {
       summary: `Automation: 扫描到 ${items.length} 个待办事项`,

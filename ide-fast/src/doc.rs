@@ -1493,30 +1493,43 @@ impl Doc {
         self.sel = None;
         self.extra.clear();
         self.box_sel = Some([row, col, row, col]);
-        self.cursor = [row, col];
+        let (char_col, _) = crate::view::display_range_to_char_cols(&self.lines[row], col, col, 4);
+        self.cursor = [row, char_col];
     }
 
     /// 键盘扩展矩形选区 (Sakura 的 `*_BoxSel` 系列): 锚点是现有矩形的起点 (没有矩形就是光标), 光标按 `key` 走 `times` 步 (`ctrl` = 按词 / 到文首文末 / 半页),
-    /// 矩形从锚点拉到新光标处。列按字符数算
+    /// 矩形从锚点拉到新光标处。列按视觉显示列对齐 (全角 CJK 占 2 列)
     pub fn box_nav(&mut self, key: &str, ctrl: bool, times: usize) {
-        let anchor = self.box_sel.map(|b| [b[0], b[1]]).unwrap_or(self.cursor);
+        let anchor = self.box_sel.map(|b| [b[0], b[1]]).unwrap_or_else(|| {
+            let [cr, cc] = self.cursor;
+            let r = cr.min(self.lines.len().saturating_sub(1));
+            [r, crate::view::display_col0(&self.lines[r], cc, 4)]
+        });
         for _ in 0..times.max(1) {
             self.nav(key, ctrl, false, 20);
         }
-        let [r, c] = self.cursor;
+        let [r, cc] = self.cursor;
+        let r = r.min(self.lines.len().saturating_sub(1));
+        let c = crate::view::display_col0(&self.lines[r], cc, 4);
         self.box_start(anchor[0], anchor[1]);
         self.box_drag(r, c);
-        self.cursor = [r, c];
+        self.cursor = [r, cc];
     }
 
     pub fn box_drag(&mut self, row: usize, col: usize) {
         if let Some(b) = self.box_sel.as_mut() {
             b[2] = row.min(self.lines.len() - 1);
             b[3] = col;
-            self.cursor = [
-                b[2],
-                col.min(self.lines.get(b[2]).map(|l| l.chars().count()).unwrap_or(0)),
-            ];
+            let r = b[2];
+            let char_col = self
+                .lines
+                .get(r)
+                .map(|l| {
+                    let (cc, _) = crate::view::display_range_to_char_cols(l, col, col, 4);
+                    cc.min(l.chars().count())
+                })
+                .unwrap_or(0);
+            self.cursor = [r, char_col];
         }
     }
 
@@ -1650,7 +1663,12 @@ impl Doc {
         forward: bool,
         start: [usize; 2],
     ) -> Result<bool, String> {
-        self.find_at(needle, o, forward, start, false)
+        let pos = if forward {
+            start
+        } else {
+            [start[0], start[1].saturating_add(1)]
+        };
+        self.find_at(needle, o, forward, pos, false)
     }
 
     #[cfg(test)]

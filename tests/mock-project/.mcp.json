@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "mock-local-fs": {
+      "command": "node",
+      "args": ["../../api/v1/mcp.js"],
+      "env": {
+        "IDE_MOCK_WORKSPACE": "tests/mock-project"
+      },
+      "disabled": true
+    }
+  }
+}

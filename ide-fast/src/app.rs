@@ -30,6 +30,7 @@ mod chrome;
 mod collab;
 mod dispatch;
 mod docks;
+pub(crate) mod e2e_driver;
 mod ghopts;
 mod glass_render;
 pub mod installer_ui;
@@ -82,6 +83,7 @@ pub struct FileDialogLoading {
 pub struct App {
     /// 后台文件选择器加载状态 (进度条 + 首次启动较慢)
     pub file_dialog_loading: Option<FileDialogLoading>,
+    pub(super) e2e_driver: Option<e2e_driver::E2eDriver>,
     /// 批次 10: 自动备份 / 文件锁 / 玻璃窗口 / 底部页签 (`app/sysopts.rs`)、Markdown 预览扩展 (`app/mdopts.rs`)、GitHub 插件窗口 (`app/ghopts.rs`)
     sys: sysopts::SysState,
     md10: mdopts::MdState,
@@ -340,6 +342,7 @@ impl App {
             force_exit: false,
             window_hidden: false,
             file_dialog_loading: None,
+            e2e_driver: None,
         };
         app.persist = persist;
         app.sys.decor = st.system_title_bar;
@@ -1605,7 +1608,6 @@ impl App {
         let hint = self.file_dialog_loading.as_ref().unwrap().hint.clone();
         let progress = self.file_dialog_loading.as_ref().unwrap().progress;
 
-        Self::render_comic_backdrop(ctx, "file_dialog_loading_backdrop");
         egui::Window::new(&title)
             .id(egui::Id::new("file_dialog_loading_comic_window"))
             .title_bar(false)
@@ -1687,8 +1689,8 @@ impl App {
         }
     }
 
-    /// Grep 的搜索根: 打开的文件夹; 没有就用当前文件所在目录, 再没有就是进程工作目录
-    fn grep_root(&mut self) -> Option<PathBuf> {
+    /// Grep 的搜索根: 打开的文件夹; 没有就用当前文件或任意已打开文件所在目录, 再没有就是进程工作目录
+    pub(super) fn grep_root(&mut self) -> Option<PathBuf> {
         self.side
             .root
             .clone()
@@ -1698,11 +1700,33 @@ impl App {
                     .as_ref()
                     .and_then(|p| p.parent().map(|d| d.to_path_buf()))
             })
+            .or_else(|| {
+                self.docs.iter().find_map(|d| {
+                    d.path
+                        .as_ref()
+                        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+                })
+            })
             .or_else(|| std::env::current_dir().ok())
     }
 
-    /// 打开 Grep 页并把焦点放到搜索框; 选区 (单行) 作搜索内容
-    fn focus_grep(&mut self) {
+    /// 在系统文件资源管理器中定位指定文件或打开目录
+    pub(super) fn reveal_in_file_manager(p: &std::path::Path) {
+        if cfg!(windows) {
+            if p.is_file() {
+                let _ = std::process::Command::new("explorer")
+                    .arg(format!("/select,{}", p.display()))
+                    .spawn();
+            } else if let Some(dir) = if p.is_dir() { Some(p) } else { p.parent() } {
+                let _ = std::process::Command::new("explorer").arg(dir).spawn();
+            }
+        } else if let Some(dir) = if p.is_dir() { Some(p) } else { p.parent() } {
+            let _ = std::process::Command::new("xdg-open").arg(dir).spawn();
+        }
+    }
+
+    /// 打开 Grep 页并把焦点放到搜索框; 选区 (单行) 作搜索内容; 同时确保左侧折叠停靠区展开
+    pub(super) fn focus_grep(&mut self) {
         if let Some(t) = self.cur().selected_text_single() {
             self.side.grep.o.pattern = if self.side.grep.o.regex {
                 crate::find::escape_regex(&t)
@@ -1711,8 +1735,10 @@ impl App {
             };
         }
         self.side.open = true;
+        self.cfg.view.side_collapsed = false;
         self.side.tab = Tab::Search;
         self.side.grep.focus_pattern = true;
+        self.expand_dock(crate::panels::Dock::Side);
     }
 
     fn grep_event(&mut self, ev: GEv) {
@@ -1734,6 +1760,29 @@ impl App {
                     self.side.grep.o.folders = d;
                 }
             }
+            GEv::BrowseFolder => {
+                let start_dir = self
+                    .side
+                    .grep
+                    .o
+                    .folders
+                    .split(';')
+                    .map(str::trim)
+                    .find(|s| !s.is_empty())
+                    .map(PathBuf::from)
+                    .filter(|p| p.is_dir())
+                    .or_else(|| self.grep_root());
+                let mut dlg = rfd::FileDialog::new();
+                if let Some(d) = start_dir {
+                    dlg = dlg.set_directory(d);
+                }
+                if let Some(picked) = dlg.pick_folder() {
+                    self.side.grep.o.folders = picked.display().to_string();
+                }
+            }
+            GEv::RevealPath(path) => {
+                Self::reveal_in_file_manager(std::path::Path::new(&path));
+            }
             GEv::ReplaceAll => self.grep_replace(),
             GEv::Open { path, line, text } => {
                 let o = self
@@ -1750,7 +1799,11 @@ impl App {
         }
     }
 
-    fn grep_start(&mut self) {
+    pub(super) fn grep_start(&mut self) {
+        self.side.open = true;
+        self.cfg.view.side_collapsed = false;
+        self.side.tab = Tab::Search;
+        self.expand_dock(crate::panels::Dock::Side);
         let Some(root) = self.grep_root() else {
             self.side.grep.msg = "找不到搜索位置".into();
             return;
@@ -1782,9 +1835,8 @@ impl App {
         } else {
             self.side.grep.start(root.clone());
         }
-        if let Some(id) = self.grep_doc {
-            self.reset_grep_doc(id);
-        }
+        // 默认把 Grep 查询结果以文本形式在主窗口编辑区作为标签页打开 (或复用已有 Grep 结果标签页)
+        self.open_grep_doc();
     }
 
     fn grep_replace(&mut self) {
@@ -2219,7 +2271,21 @@ impl App {
             Ok(()) => {
                 let ai = self.active.min(self.docs.len() - 1);
                 self.after_save(ai, &old_bk);
-                self.cur().tip = trf("dlg.saved", &[&path.display().to_string()]);
+                let mut saved_tip = trf("dlg.saved", &[&path.display().to_string()]);
+                if plugins::is_hot_module_active(plugins::HotModuleKind::Hooks) {
+                    let has_secret = self.cur().lines.iter().any(|l| {
+                        l.contains("sk-")
+                            || l.contains("ghp_")
+                            || l.contains("AKIA")
+                            || l.contains("-----BEGIN ")
+                    });
+                    if has_secret {
+                        saved_tip.push_str(
+                            " · [Hooks 巡检提醒: 检测到疑似明文密钥，建议执行 Hooks 安全巡检]",
+                        );
+                    }
+                }
+                self.cur().tip = saved_tip;
                 true
             }
             Err(e) => {
@@ -2654,6 +2720,26 @@ impl App {
                     ui.close();
                 }
             });
+            if r.enabled && !r.commands.is_empty() {
+                ui.horizontal_wrapped(|ui| {
+                    ui.add_space(24.0);
+                    ui.weak("快捷执行:");
+                    for (cmd_id, cmd_title) in &r.commands {
+                        let short_label = cmd_title
+                            .split_once(':')
+                            .map(|(_, tail)| tail.trim())
+                            .unwrap_or(cmd_title.as_str());
+                        if ui
+                            .small_button(format!("▶ {short_label}"))
+                            .on_hover_text(cmd_title)
+                            .clicked()
+                        {
+                            ui.close();
+                            self.run_plugin_command(&r.id, cmd_id, cmd_title);
+                        }
+                    }
+                });
+            }
             if r.id == "mod" && r.enabled && !r.mod_modes.is_empty() {
                 ui.horizontal(|ui| {
                     ui.add_space(24.0);
@@ -5048,17 +5134,28 @@ impl App {
                             }
                         }
                         if let Some(b) = d.box_sel {
-                            let (r0, r1, c0, c1) = (
+                            let (r0, r1, v0, v1) = (
                                 b[0].min(b[2]),
                                 b[0].max(b[2]),
                                 b[1].min(b[3]),
                                 b[1].max(b[3]),
                             );
                             if row >= r0 && row <= r1 {
+                                let (c0, c1) = crate::view::display_range_to_char_cols(
+                                    &d.lines[row],
+                                    v0,
+                                    v1,
+                                    tab,
+                                );
                                 let tail = rv.tail();
                                 let xx = |c: usize| {
-                                    rv.x_of(&painter, c.min(tail), &font, text_color)
-                                        + char_w * c.saturating_sub(tail) as f32
+                                    rv.x_of_with_spacing(
+                                        &painter,
+                                        c.min(tail),
+                                        &font,
+                                        text_color,
+                                        effective_letter_spacing,
+                                    ) + char_w * c.saturating_sub(tail) as f32
                                 };
                                 let (x_left, x_right) = (x0 + xx(c0), x0 + xx(c1));
                                 let stroke_col = if self.tc.is_translucent() {
@@ -5068,7 +5165,7 @@ impl App {
                                 };
                                 let border_stroke = egui::Stroke::new(1.8, stroke_col);
 
-                                if c1 > c0 {
+                                if v1 > v0 {
                                     // 模式 A: 选取范围可被覆盖 (矩形替换/覆盖模式)
                                     // 若本行字符未达到左边界 c0，则在尾部到 c0 间绘制轻微对齐导线
                                     if tail < c0 {
@@ -5180,15 +5277,15 @@ impl App {
 
                                 // 在最后一行底部绘制动态悬浮坐标/尺寸指示徽章
                                 if row == r1 {
-                                    let badge_text = if c1 > c0 {
+                                    let badge_text = if v1 > v0 {
                                         format!(
                                             "[列选区] 纵向覆盖选区 [R{}..{} ({}行) × C{}..{} ({}列)] (输入将覆盖此区域)",
                                             r0 + 1,
                                             r1 + 1,
                                             r1 - r0 + 1,
-                                            c0 + 1,
-                                            c1,
-                                            c1 - c0
+                                            v0 + 1,
+                                            v1,
+                                            v1 - v0
                                         )
                                     } else {
                                         format!(
@@ -5196,7 +5293,7 @@ impl App {
                                             r0 + 1,
                                             r1 + 1,
                                             r1 - r0 + 1,
-                                            c0 + 1
+                                            v0 + 1
                                         )
                                     };
                                     let badge_font = FontId::proportional(11.0);
@@ -5737,7 +5834,13 @@ impl App {
                             (x0 + p.x, rect.min.y + top(cr) + p.y)
                         } else {
                             (
-                                x0 + rv.x_of(&painter, cc.min(rv.tail()), &font, text_color),
+                                x0 + rv.x_of_with_spacing(
+                                    &painter,
+                                    cc.min(rv.tail()),
+                                    &font,
+                                    text_color,
+                                    effective_letter_spacing,
+                                ),
                                 rect.min.y + cr as f32 * row_h,
                             )
                         };
@@ -5903,8 +6006,17 @@ impl App {
                             );
                         }
                     }
-                    if resp.is_pointer_button_down_on() || resp.clicked() || resp.dragged() {
-                        if let Some(p) = resp.interact_pointer_pos() {
+                    if resp.is_pointer_button_down_on()
+                        || resp.clicked()
+                        || resp.double_clicked()
+                        || resp.triple_clicked()
+                        || resp.secondary_clicked()
+                        || resp.dragged()
+                    {
+                        if let Some(p) = resp
+                            .interact_pointer_pos()
+                            .or_else(|| ui.input(|i| i.pointer.latest_pos()))
+                        {
                             clicked = Some((
                                 p,
                                 ui.input(|i| i.modifiers.shift),
@@ -5924,12 +6036,12 @@ impl App {
                     } else {
                         0
                     };
-                    if resp.clicked() || resp.drag_started() {
+                    if resp.clicked() || resp.double_clicked() || resp.drag_started() {
                         resp.request_focus();
                     }
-                    (rect, x0)
+                    (rect, x0, resp)
                 });
-        let (rect, x0) = out.inner;
+        let (rect, x0, ed_resp) = out.inner;
         if let Some(rr) = ruler_rect {
             let rp = ui.painter_at(rr);
             rp.rect_filled(rr, 0.0, tc.bg_bar);
@@ -6053,7 +6165,7 @@ impl App {
             let rv = RowView::build(&d.lines[row], tab, kcols, view_x, char_w);
             let want = (p.x - x0).max(0.0);
             let col = if alt || d.box_sel.is_some() {
-                // Sakura 风格纵向列选: 文本范围内兼顾 CJK 宽字符与 Tab，超出文本部分按 char_w 自由向右延伸空白列
+                // Sakura 风格纵向列选: 文本范围内兼顾 CJK 宽字符与 Tab (转为 0 起算视觉显示列)，超出文本部分按 char_w 自由向右延伸空白列
                 let text_col = rv.col_at_with_spacing(
                     ctx,
                     want,
@@ -6062,17 +6174,24 @@ impl App {
                     wrap_w,
                     effective_letter_spacing,
                 );
+                let base_vcol = crate::view::display_col0(&d.lines[row], text_col, tab);
                 let line_len = d.lines[row].chars().count();
                 if text_col >= line_len {
-                    let line_w = rv.x_of(ui.painter(), line_len, &font, Color32::WHITE);
+                    let line_w = rv.x_of_with_spacing(
+                        ui.painter(),
+                        line_len,
+                        &font,
+                        Color32::WHITE,
+                        effective_letter_spacing,
+                    );
                     if want > line_w {
                         let extra = ((want - line_w + char_w * 0.4) / char_w).floor() as usize;
-                        line_len + extra
+                        base_vcol + extra
                     } else {
-                        text_col
+                        base_vcol
                     }
                 } else {
-                    text_col
+                    base_vcol
                 }
             } else {
                 rv.col_at_with_spacing(
@@ -6120,6 +6239,14 @@ impl App {
                 } else {
                     d.drag_to(row, col);
                 }
+            } else if ctx.input(|i| i.pointer.secondary_pressed() || i.pointer.secondary_clicked())
+            {
+                self.text_drag = None;
+                if d.grep_result || !in_sel {
+                    d.box_sel = None;
+                    d.extra.clear();
+                    d.cursor = [row, col.min(d.lines[row].chars().count())];
+                }
             } else if ctx.input(|i| i.pointer.any_pressed()) {
                 self.text_drag = None;
                 if alt {
@@ -6141,11 +6268,11 @@ impl App {
             } else if ctx.input(|i| i.pointer.any_released()) && self.text_drag.take().is_some() {
                 d.click(row, col, false); // 只是点了一下选区里面: 现在才把选区收起来放光标
             }
-            if multi_click == 2 && !dragging {
+            if multi_click == 2 {
                 if d.grep_result {
                     d.goto(row, 0);
                     self.jump_req = Some((d.id, row));
-                } else {
+                } else if !dragging {
                     d.edit("select-word", None);
                 }
             }
@@ -6153,6 +6280,7 @@ impl App {
                 d.select_line(row);
             }
         }
+        self.render_editor_context_menu(ctx, &ed_resp, ai);
         let _ = max_cols;
         // PowerShell 选区浮动执行胶囊 (对齐 Tauri/Web 体验: 浮现执行按钮 + Ctrl+Enter)
         let is_ps = self.docs[ai].is_powershell();
@@ -6203,6 +6331,300 @@ impl App {
             self.trace.mark("first frame");
         }
     }
+
+    /// 主窗口编辑区右键上下文菜单 (支持 Grep 结果标签页专属操作与常规代码编辑区快捷操作)
+    fn render_editor_context_menu(
+        &mut self,
+        ctx: &egui::Context,
+        ed_resp: &egui::Response,
+        ai: usize,
+    ) {
+        enum CtxAct {
+            JumpGrepRow(u64, usize),
+            CopyText(String, String),
+            RevealPath(PathBuf),
+            SetGrepFolder(String),
+            ExcludeGrepFile(String),
+            ExcludeGrepFolder(String),
+            RerunGrep,
+            EditCmd(&'static str),
+            PasteClip,
+            SelectAll,
+            SearchSelectionInGrep,
+        }
+
+        let is_grep_doc = self.docs[ai].grep_result;
+        let doc_id = self.docs[ai].id;
+        let cur_row = self.docs[ai].cursor[0].min(self.docs[ai].lines.len().saturating_sub(1));
+        let cur_col = self.docs[ai].cursor[1];
+        let cur_line = self.docs[ai]
+            .lines
+            .get(cur_row)
+            .cloned()
+            .unwrap_or_default();
+        let doc_path = self.docs[ai].path.clone();
+        let doc_name = self.docs[ai].name.clone();
+        let has_sel = self.docs[ai].sel.is_some();
+        let parsed_hit = if is_grep_doc {
+            grep::parse_result_line(&cur_line).or_else(|| {
+                self.docs[ai]
+                    .lines
+                    .iter()
+                    .find_map(|l| grep::parse_result_line(l))
+            })
+        } else {
+            None
+        };
+        let grep_root_path = self
+            .side
+            .grep
+            .last
+            .as_ref()
+            .map(|(_, r)| r.clone())
+            .or_else(|| self.side.root.clone());
+
+        let mut act: Option<CtxAct> = None;
+        ed_resp.context_menu(|ui| {
+            if is_grep_doc {
+                if let Some((target_path, target_line, target_col)) = &parsed_hit {
+                    let full_str = target_path.display().to_string();
+                    let fname = target_path
+                        .file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| full_str.clone());
+                    let rel_str = grep_root_path
+                        .as_ref()
+                        .and_then(|root| target_path.strip_prefix(root).ok())
+                        .map(|p| p.display().to_string())
+                        .unwrap_or_else(|| full_str.clone());
+                    let loc_str = format!("{full_str}:{target_line}:{target_col}");
+
+                    if ui
+                        .button(trz("📂 打开该文件并跳转到命中位置 (双击 / Enter)"))
+                        .clicked()
+                    {
+                        act = Some(CtxAct::JumpGrepRow(doc_id, cur_row));
+                        ui.close();
+                    }
+                    ui.separator();
+                    if ui.button(trz("📋 复制文件完整路径")).clicked() {
+                        act = Some(CtxAct::CopyText(full_str.clone(), "已复制完整路径".into()));
+                        ui.close();
+                    }
+                    if ui.button(trz("📄 复制相对路径")).clicked() {
+                        act = Some(CtxAct::CopyText(rel_str, "已复制相对路径".into()));
+                        ui.close();
+                    }
+                    if ui.button(trz("🏷️ 复制文件名")).clicked() {
+                        act = Some(CtxAct::CopyText(fname.clone(), "已复制文件名".into()));
+                        ui.close();
+                    }
+                    if ui.button(trz("📌 复制 路径:行:列 定位信息")).clicked() {
+                        act = Some(CtxAct::CopyText(loc_str, "已复制路径与行列号".into()));
+                        ui.close();
+                    }
+                    if ui.button(trz("📝 复制当前命中行内容")).clicked() {
+                        act = Some(CtxAct::CopyText(
+                            cur_line.clone(),
+                            "已复制当前命中行".into(),
+                        ));
+                        ui.close();
+                    }
+                    ui.separator();
+                    if ui.button(trz("🗂️ 在文件资源管理器中定位该文件")).clicked()
+                    {
+                        act = Some(CtxAct::RevealPath(target_path.clone()));
+                        ui.close();
+                    }
+                    if let Some(parent) = target_path.parent() {
+                        let parent_str = parent.display().to_string();
+                        if !parent_str.is_empty() {
+                            if ui
+                                .button(trz("🔍 以该文件所在目录作为 Grep 搜索文件夹"))
+                                .clicked()
+                            {
+                                act = Some(CtxAct::SetGrepFolder(parent_str.clone()));
+                                ui.close();
+                            }
+                            if let Some(dir_name) = parent
+                                .file_name()
+                                .map(|n| n.to_string_lossy().into_owned())
+                                .filter(|s| !s.is_empty())
+                            {
+                                if ui
+                                    .button(format!(
+                                        "{} ({dir_name})",
+                                        trz("🚫 在 Grep 中排除该文件夹")
+                                    ))
+                                    .clicked()
+                                {
+                                    act = Some(CtxAct::ExcludeGrepFolder(dir_name));
+                                    ui.close();
+                                }
+                            }
+                        }
+                    }
+                    if !fname.is_empty()
+                        && ui
+                            .button(format!("{} (!{fname})", trz("🚫 在 Grep 中排除该文件")))
+                            .clicked()
+                    {
+                        act = Some(CtxAct::ExcludeGrepFile(fname));
+                        ui.close();
+                    }
+                    ui.separator();
+                } else if let Some(root) = &grep_root_path {
+                    let root_str = root.display().to_string();
+                    if ui.button(trz("📋 复制当前 Grep 搜索目录路径")).clicked() {
+                        act = Some(CtxAct::CopyText(root_str, "已复制搜索目录路径".into()));
+                        ui.close();
+                    }
+                    if ui.button(trz("📝 复制当前行内容")).clicked() {
+                        act = Some(CtxAct::CopyText(cur_line.clone(), "已复制当前行".into()));
+                        ui.close();
+                    }
+                    ui.separator();
+                }
+
+                if has_sel && ui.button(trz("📋 复制选中文本 (Ctrl+C)")).clicked() {
+                    act = Some(CtxAct::EditCmd("copy"));
+                    ui.close();
+                }
+                if ui.button(trz("📑 复制全部 Grep 结果全文")).clicked() {
+                    let all_text = self.docs[ai].lines.join("\n");
+                    act = Some(CtxAct::CopyText(
+                        all_text,
+                        "已复制全部 Grep 结果全文".into(),
+                    ));
+                    ui.close();
+                }
+                if ui.button(trz("🔄 重新执行本次 Grep 检索")).clicked() {
+                    act = Some(CtxAct::RerunGrep);
+                    ui.close();
+                }
+            } else {
+                if ui.button(trz("✂ 剪切 (Ctrl+X)")).clicked() {
+                    act = Some(CtxAct::EditCmd("cut"));
+                    ui.close();
+                }
+                if ui.button(trz("📋 复制 (Ctrl+C)")).clicked() {
+                    act = Some(CtxAct::EditCmd("copy"));
+                    ui.close();
+                }
+                if ui.button(trz("📥 粘贴 (Ctrl+V)")).clicked() {
+                    act = Some(CtxAct::PasteClip);
+                    ui.close();
+                }
+                if ui.button(trz("全选 (Ctrl+A)")).clicked() {
+                    act = Some(CtxAct::SelectAll);
+                    ui.close();
+                }
+                ui.separator();
+                if let Some(p) = &doc_path {
+                    let full_str = p.display().to_string();
+                    let loc_str = format!("{}:{}:{}", full_str, cur_row + 1, cur_col + 1);
+                    if ui.button(trz("📋 复制文件完整路径")).clicked() {
+                        act = Some(CtxAct::CopyText(full_str, "已复制完整路径".into()));
+                        ui.close();
+                    }
+                    if ui.button(trz("📌 复制 路径:行:列")).clicked() {
+                        act = Some(CtxAct::CopyText(loc_str, "已复制路径与行列号".into()));
+                        ui.close();
+                    }
+                    if ui
+                        .button(trz("🗂️ 在文件资源管理器中定位当前文件"))
+                        .clicked()
+                    {
+                        act = Some(CtxAct::RevealPath(p.clone()));
+                        ui.close();
+                    }
+                }
+                if ui.button(trz("🏷️ 复制文件名")).clicked() {
+                    act = Some(CtxAct::CopyText(doc_name, "已复制文件名".into()));
+                    ui.close();
+                }
+                ui.separator();
+                if ui
+                    .button(trz("🔍 在 Grep 中搜索当前选中文本 / 打开 Grep (Ctrl+G)"))
+                    .clicked()
+                {
+                    act = Some(CtxAct::SearchSelectionInGrep);
+                    ui.close();
+                }
+            }
+        });
+
+        let Some(act) = act else { return };
+        match act {
+            CtxAct::JumpGrepRow(id, row) => {
+                let target_row = if grep::parse_result_line(&cur_line).is_some() {
+                    row
+                } else {
+                    self.docs[ai]
+                        .lines
+                        .iter()
+                        .position(|l| grep::parse_result_line(l).is_some())
+                        .unwrap_or(row)
+                };
+                self.jump_req = Some((id, target_row));
+            }
+            CtxAct::CopyText(text, tip) => {
+                self.put_clip(ctx, text);
+                self.docs[ai].tip = tip;
+            }
+            CtxAct::RevealPath(p) => {
+                Self::reveal_in_file_manager(&p);
+            }
+            CtxAct::SetGrepFolder(folder) => {
+                self.side.grep.o.folders = folder.clone();
+                self.focus_grep();
+                self.docs[ai].tip = format!("已将 Grep 搜索目录设为: {folder}");
+            }
+            CtxAct::ExcludeGrepFile(fname) => {
+                let pat = format!("!{fname}");
+                if !self.side.grep.o.files.contains(&pat) {
+                    if !self.side.grep.o.files.trim().is_empty() {
+                        self.side.grep.o.files.push(';');
+                    }
+                    self.side.grep.o.files.push_str(&pat);
+                }
+                self.docs[ai].tip = format!("已在 Grep 中添加排除文件: {pat}");
+            }
+            CtxAct::ExcludeGrepFolder(dir_name) => {
+                if !self
+                    .side
+                    .grep
+                    .o
+                    .exc_folders
+                    .split(';')
+                    .any(|x| x.trim() == dir_name)
+                {
+                    if !self.side.grep.o.exc_folders.trim().is_empty() {
+                        self.side.grep.o.exc_folders.push(';');
+                    }
+                    self.side.grep.o.exc_folders.push_str(&dir_name);
+                }
+                self.docs[ai].tip = format!("已在 Grep 中添加排除目录: {dir_name}");
+            }
+            CtxAct::RerunGrep => {
+                self.grep_start();
+            }
+            CtxAct::EditCmd(cmd) => {
+                if let Some(c) = self.docs[ai].edit(cmd, None) {
+                    self.put_clip(ctx, c);
+                }
+            }
+            CtxAct::PasteClip => {
+                ctx.send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+            }
+            CtxAct::SelectAll => {
+                self.docs[ai].select_all();
+            }
+            CtxAct::SearchSelectionInGrep => {
+                self.focus_grep();
+            }
+        }
+    }
 }
 
 /// 文件树: 目录用折叠头 (展开才读目录), 文件点击打开
@@ -6225,6 +6647,7 @@ enum TabCmd {
     Many(usize, CloseKind),
     Move(usize, bool),
     Group(usize, u8),
+    OpenGrepHit(usize),
 }
 
 /// 右侧停靠区 (Chat / 预览) 的宽度上限: 窄窗口里同时开侧栏 + 预览 + Chat 时, 至少给编辑区留 240px (不然编辑区被挤成 0 宽, 整块消失)
@@ -6889,16 +7312,6 @@ impl App {
             let i = self.active.min(self.docs.len() - 1);
             self.find.window(ctx, &mut self.docs[i]);
         }
-        // 查找栏 / 侧栏输入框 / 对话框 / 命令面板正在收键盘时, 编辑区不抢
-        let find_focus = self.cmdui.capturing()
-            || self.cmdui.is_palette_open()
-            || self.tools.pick.is_some()
-            || self.dialogs.goto_open
-            || (self.sticky_notes.open && self.sticky_notes.has_focus)
-            || ctx
-                .memory(|m| m.focused())
-                .map(|f| !self.editor_ids.contains(&f))
-                .unwrap_or(false);
         let is_md = {
             let n = self.docs[self.active.min(self.docs.len() - 1)]
                 .name
@@ -7090,6 +7503,16 @@ impl App {
         self.tab_bar(root, ctx);
         self.md_bar(root, ctx, is_md);
         self.nema_bar(root, ctx, is_nema);
+        // 查找栏 / 侧栏输入框 / 对话框 / 命令面板正在收键盘时, 编辑区不抢 (必须在 dock_side / dock_right / dock_bottom 之后计算, 确保本帧聚焦的搜索框立即生效)
+        let find_focus = self.cmdui.capturing()
+            || self.cmdui.is_palette_open()
+            || self.tools.pick.is_some()
+            || self.dialogs.goto_open
+            || (self.sticky_notes.open && self.sticky_notes.has_focus)
+            || ctx
+                .memory(|m| m.focused())
+                .map(|f| !self.editor_ids.contains(&f))
+                .unwrap_or(false);
         use crate::split::SplitKind as SK;
         let fill = if self.tc.is_translucent() {
             Color32::TRANSPARENT
@@ -7159,6 +7582,7 @@ impl App {
                 self.sys.restore = crate::backup::leftovers();
             }
         }
+        self.e2e_driver_tick(ctx);
     }
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {

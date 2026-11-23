@@ -488,6 +488,7 @@ impl App {
                 self.side.tab = Tab::Search;
                 self.side.grep.o.this_file = true;
                 self.side.grep.focus_pattern = true;
+                self.expand_dock(crate::panels::Dock::Side);
                 self.cur().tip = "已打开跨页 Grep 搜索: 输入关键词回车即可定位到分页与行号".into();
             }
             Some(StatusCmd::ReviewDoc) => {

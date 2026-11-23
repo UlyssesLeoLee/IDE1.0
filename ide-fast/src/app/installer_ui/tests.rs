@@ -89,6 +89,19 @@ fn test_user_agreement_content_loaded() {
     assert!(!super::USER_AGREEMENT_TEXT.is_empty());
     assert!(super::USER_AGREEMENT_TEXT.contains("IDE 1.0 最终用户许可与使用协议"));
     assert!(super::USER_AGREEMENT_TEXT.contains("开源发行版"));
+    assert!(
+        super::USER_AGREEMENT_TEXT.contains("默认适用区域：中华人民共和国（中国大陆地区）"),
+        "用户协议默认区域必须为中国"
+    );
+    assert!(
+        super::USER_AGREEMENT_TEXT.contains("中华人民共和国法律"),
+        "适用法律必须为中华人民共和国法律"
+    );
+    assert!(
+        !super::USER_AGREEMENT_TEXT.contains("日本国法律")
+            && !super::USER_AGREEMENT_TEXT.contains("东京地方裁判所"),
+        "不应残留旧版日本管辖条款"
+    );
 }
 
 #[test]

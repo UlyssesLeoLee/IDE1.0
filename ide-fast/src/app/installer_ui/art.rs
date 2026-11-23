@@ -479,22 +479,3 @@ pub fn paint_comic_window_btn_kind(
     }
     resp.clicked()
 }
-
-/// 纯自绘美漫窗口控制按钮 (提取公用逻辑，消除重复代码)
-pub fn paint_comic_window_btn(
-    ui: &mut egui::Ui,
-    center: egui::Pos2,
-    id_str: &str,
-    is_close: bool,
-) -> bool {
-    paint_comic_window_btn_kind(
-        ui,
-        center,
-        id_str,
-        if is_close {
-            ComicWindowBtnKind::Close
-        } else {
-            ComicWindowBtnKind::Minimize
-        },
-    )
-}

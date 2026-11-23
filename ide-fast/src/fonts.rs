@@ -510,6 +510,21 @@ pub fn load_ext(editor_file: &str, cjk_file: &str, lang: &str, need_bold: bool) 
                 }
             }
         }
+        if need_bold && ed_bold.is_none() && !is_retro {
+            for bold_fb in [
+                "consolab.ttf",
+                "segoeuib.ttf",
+                "msyhbd.ttc",
+                "CascadiaCode-Bold.otf",
+                "DejaVuSansMono-Bold.ttf",
+                "LiberationMono-Bold.ttf",
+            ] {
+                if let Some(b) = read_font_bytes(bold_fb) {
+                    ed_bold = Some(b);
+                    break;
+                }
+            }
+        }
         (ed, ed_bold)
     });
 

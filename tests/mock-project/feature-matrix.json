@@ -1,0 +1,193 @@
+{
+  "suite": "IDE1.0 Dedicated Mock-Project Feature Matrix",
+  "mockRoot": "tests/mock-project",
+  "features": [
+    {
+      "id": "F-01",
+      "name": "Mock 工程全资产与格式完整性校验",
+      "category": "Workspace Fixtures",
+      "kind": "asset_check",
+      "fast": true,
+      "fixtures": [
+        "Cargo.toml",
+        "CLAUDE.md",
+        ".mcp.json",
+        "src/main.rs",
+        "src/math.rs",
+        "src/service.rs",
+        "knowledge/architecture.nema",
+        "config/settings.json",
+        "docs/SPEC.md",
+        "docs/markdown-preview.md",
+        "scripts/automation.rs",
+        "fixtures/sticky-note-sample.json"
+      ]
+    },
+    {
+      "id": "F-02",
+      "name": "核心文本引擎、Diff、编码与 Agent API (editcore)",
+      "category": "Core Engine",
+      "kind": "cargo_test",
+      "package": "editcore",
+      "filter": "",
+      "fast": false,
+      "fixtures": ["src/math.rs", "docs/SPEC.md"]
+    },
+    {
+      "id": "F-03",
+      "name": "NEMA v1.5 编解码与语法封闭性 (nema-codec)",
+      "category": "NEMA Protocol",
+      "kind": "cargo_test",
+      "package": "nema-codec",
+      "filter": "",
+      "fast": true,
+      "fixtures": ["knowledge/architecture.nema"]
+    },
+    {
+      "id": "F-04",
+      "name": "Agent 路由、Skills、Hooks、Memory、LoopBreaker 与沙盒 (ide-agent-router)",
+      "category": "Agent Router",
+      "kind": "cargo_test",
+      "package": "ide-agent-router",
+      "filter": "",
+      "fast": true,
+      "fixtures": ["CLAUDE.md", ".mcp.json", "config/settings.json"]
+    },
+    {
+      "id": "F-05",
+      "name": "Blender 风格 Rust 控制台 DSL (ide-mcp + ide-fast rust_console)",
+      "category": "Rust Console DSL",
+      "kind": "cargo_test_multi",
+      "steps": [
+        { "package": "ide-mcp", "filter": "" },
+        { "package": "ide-fast", "filter": "rust_console" }
+      ],
+      "fast": true,
+      "fixtures": ["scripts/automation.rs"]
+    },
+    {
+      "id": "F-06",
+      "name": "惰性插件运行时与 MCP/Skills/Mod/Hooks 热插拔门控 (agent_plugins)",
+      "category": "Agent Plugins",
+      "kind": "cargo_test",
+      "package": "ide-fast",
+      "filter": "agent_plugins",
+      "fast": true,
+      "fixtures": ["CLAUDE.md", ".mcp.json"]
+    },
+    {
+      "id": "F-07",
+      "name": "单 Agent 对话、Cookie 生命周期与模型隔离 (aichat)",
+      "category": "Single Agent",
+      "kind": "cargo_test",
+      "package": "ide-fast",
+      "filter": "aichat",
+      "fast": false,
+      "fixtures": ["CLAUDE.md", "config/settings.json"]
+    },
+    {
+      "id": "F-08",
+      "name": "多 Agent 协同、并行分区、LoopBreaker 隔离与工具对等 (collab)",
+      "category": "Multi-Agent Collab",
+      "kind": "cargo_test",
+      "package": "ide-fast",
+      "filter": "collab",
+      "fast": true,
+      "fixtures": ["src/main.rs", "src/service.rs", "fixtures/sticky-note-sample.json"]
+    },
+    {
+      "id": "F-09",
+      "name": "安装向导全屏最大化、协议优先与无暗色遮罩 (installer_ui)",
+      "category": "Installer UI",
+      "kind": "cargo_test",
+      "package": "ide-fast",
+      "filter": "installer_ui",
+      "fast": true,
+      "fixtures": ["docs/SPEC.md"]
+    },
+    {
+      "id": "F-10",
+      "name": "桌面便笺 CRUD、Markdown 就地编辑与 Agent 工具 (sticky_notes)",
+      "category": "Sticky Notes",
+      "kind": "cargo_test",
+      "package": "ide-fast",
+      "filter": "sticky_notes",
+      "fast": false,
+      "fixtures": ["fixtures/sticky-note-sample.json", "docs/markdown-preview.md"]
+    },
+    {
+      "id": "F-11",
+      "name": "终端子系统 ANSI TrueColor、CLIXML 与 OSC 133 (terminal)",
+      "category": "Terminal",
+      "kind": "cargo_test",
+      "package": "ide-fast",
+      "filter": "terminal",
+      "fast": false,
+      "fixtures": ["scripts/automation.rs"]
+    },
+    {
+      "id": "F-12",
+      "name": "主题渲染与状态栏国际化模板完整性 (view + i18n)",
+      "category": "UI & i18n",
+      "kind": "cargo_test_multi",
+      "steps": [
+        { "package": "ide-fast", "filter": "every_literal_status_tip_has_a_message_template" },
+        { "package": "ide-fast", "filter": "view::tests" }
+      ],
+      "fast": true,
+      "fixtures": ["docs/markdown-preview.md"]
+    },
+    {
+      "id": "F-13",
+      "name": "Vercel MCP Serverless 单元测试 (tests/mcp-vercel-unit.test.mjs)",
+      "category": "Serverless MCP",
+      "kind": "node_test",
+      "script": "tests/mcp-vercel-unit.test.mjs",
+      "fast": true,
+      "fixtures": [".mcp.json"]
+    },
+    {
+      "id": "F-14",
+      "name": "Git / NEMA 双模式协同合并 E2E (mock-project/collab-modes-e2e.mjs)",
+      "category": "Collab Engine E2E",
+      "kind": "node_script",
+      "script": "tests/mock-project/collab-modes-e2e.mjs",
+      "fast": true,
+      "fixtures": ["knowledge/architecture.nema", "src/math.rs", "src/service.rs"]
+    },
+    {
+      "id": "F-15",
+      "name": "全工作区代码格式与 Clippy 零警告门禁 (fmt + clippy)",
+      "category": "Repo Quality Gate",
+      "kind": "quality_gate",
+      "fast": false,
+      "fixtures": ["Cargo.toml"]
+    },
+    {
+      "id": "F-16",
+      "name": "生产二进制 --smoke-test 冷启动自检",
+      "category": "Release Smoke Test",
+      "kind": "binary_smoke",
+      "fast": true,
+      "fixtures": ["Cargo.toml"]
+    },
+    {
+      "id": "F-17",
+      "name": "真实启动 IDE1.0 GUI 窗口自动操作实测 (run-live-gui.ps1)",
+      "category": "Live GUI E2E",
+      "kind": "ps_script",
+      "script": "tests/mock-project/run-live-gui.ps1",
+      "fast": false,
+      "fixtures": ["src/math.rs", "knowledge/architecture.nema", "live-gui-plan.json"]
+    },
+    {
+      "id": "F-18",
+      "name": "核心模块覆盖率门禁 (Node 分支 + Rust llvm-cov)",
+      "category": "Coverage Gate",
+      "kind": "ps_script",
+      "script": "tests/mock-project/run-coverage-gate.ps1",
+      "fast": false,
+      "fixtures": [".mcp.json", "knowledge/architecture.nema"]
+    }
+  ]
+}

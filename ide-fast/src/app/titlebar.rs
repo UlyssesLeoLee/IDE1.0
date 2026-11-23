@@ -221,10 +221,10 @@ pub fn grips_active(system_title_bar: bool, maximized: bool, fullscreen: bool) -
     !system_title_bar && !maximized && !fullscreen
 }
 
-/// Windows 无边框 + 可调大小的窗口最大化后, 实际矩形比工作区每边大出这么多 (逻辑点); 内容要缩进这么多
-pub const MAX_OVERSHOOT: f32 = 8.0;
+/// Windows 无边框 + 可调大小的窗口最大化/全屏后紧贴边缘 (不额外缩进内边距)
+pub const MAX_OVERSHOOT: f32 = 0.0;
 
-/// 内容缩进: 只有自绘标题栏 + 最大化 (非全屏) 才需要
+/// 内容缩进: 全屏与最大化四边一律贴紧视口边缘 (0.0)
 pub fn max_inset(system_title_bar: bool, maximized: bool, fullscreen: bool) -> f32 {
     if !system_title_bar && maximized && !fullscreen && cfg!(windows) {
         MAX_OVERSHOOT
@@ -253,7 +253,7 @@ impl App {
                 i.viewport().fullscreen.unwrap_or(false),
             )
         });
-        max_inset(self.cfg.system_title_bar, m, f)
+        max_inset(self.cfg.system_title_bar, m, self.fullscreen || f)
     }
 
     /// 顶部这一条: 按模式画系统菜单行 / 自绘标题栏 / 全屏时的菜单行
@@ -829,7 +829,11 @@ impl App {
                 i.viewport().fullscreen.unwrap_or(false),
             )
         });
-        if !grips_active(self.cfg.system_title_bar, maximized, full) {
+        if !grips_active(
+            self.cfg.system_title_bar,
+            maximized,
+            self.fullscreen || full,
+        ) {
             return;
         }
         let win = ctx.content_rect();
@@ -1293,9 +1297,10 @@ mod tests {
     #[test]
     fn only_a_maximized_custom_window_is_inset() {
         assert_eq!(
-            max_inset(false, true, false),
-            if cfg!(windows) { MAX_OVERSHOOT } else { 0.0 }
+            MAX_OVERSHOOT, 0.0,
+            "全屏与最大化四周必须紧贴屏幕边缘无内边距"
         );
+        assert_eq!(max_inset(false, true, false), 0.0);
         assert_eq!(max_inset(true, true, false), 0.0);
         assert_eq!(max_inset(false, false, false), 0.0);
         assert_eq!(max_inset(false, true, true), 0.0);

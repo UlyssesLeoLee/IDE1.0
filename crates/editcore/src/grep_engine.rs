@@ -167,29 +167,109 @@ pub fn is_dir_exclude(pat: &str, dir_name: &str, dir_rel: &str) -> bool {
 
 /// 文件是否通过 include / exclude 过滤. exclude 优先.
 pub fn file_passes(name: &str, inc: &[String], exc: &[String], case_sensitive: bool) -> bool {
-    for e in exc {
-        let bare = e.trim();
-        let bare = bare.strip_prefix('!').unwrap_or(bare).trim();
-        if bare.is_empty() {
-            continue;
+    CompiledFileFilter::new(inc, exc, case_sensitive).passes(name)
+}
+
+/// 预编译的文件名 Glob 过滤器：避免在遍历数万个文件时对每个文件重复编译正则 AST。
+/// 常见模式（精确匹配、`*.ext` 后缀匹配、`*` 全通配）直接走零分配字符串比较。
+enum CompiledGlob {
+    Any,
+    Exact(String),
+    Suffix(String),
+    Prefix(String),
+    Re(MiniRegex),
+}
+
+impl CompiledGlob {
+    fn compile(pat: &str, case_sensitive: bool) -> Option<Self> {
+        let p = pat.trim();
+        if p.is_empty() {
+            return None;
         }
-        let hit = if bare.contains('*') || bare.contains('?') {
-            glob_match(name, bare, case_sensitive)
+        let norm = if case_sensitive {
+            p.to_string()
         } else {
-            name == bare
+            p.to_lowercase()
         };
-        if hit {
-            return false;
+        if norm == "*" || norm == "*.*" {
+            return Some(CompiledGlob::Any);
+        }
+        if !norm.contains('*') && !norm.contains('?') {
+            return Some(CompiledGlob::Exact(norm));
+        }
+        if let Some(rest) = norm.strip_prefix('*') {
+            if !rest.contains('*') && !rest.contains('?') {
+                return Some(CompiledGlob::Suffix(rest.to_string()));
+            }
+        }
+        if let Some(rest) = norm.strip_suffix('*') {
+            if !rest.contains('*') && !rest.contains('?') {
+                return Some(CompiledGlob::Prefix(rest.to_string()));
+            }
+        }
+        let re_src = glob_to_regex(&norm);
+        MiniRegex::new(&re_src, true).ok().map(CompiledGlob::Re)
+    }
+
+    #[inline]
+    fn matches(&self, target_norm: &str) -> bool {
+        match self {
+            CompiledGlob::Any => true,
+            CompiledGlob::Exact(s) => target_norm == s,
+            CompiledGlob::Suffix(s) => target_norm.ends_with(s.as_str()),
+            CompiledGlob::Prefix(s) => target_norm.starts_with(s.as_str()),
+            CompiledGlob::Re(re) => re.full_match(target_norm),
         }
     }
-    // include 为空 = 不过滤 (调用方没给 include_globs, 或给了空列表).
-    // 这里必须显式判空: `inc.iter().any(...)` 对空列表返回 false, 会把**所有**文件
-    // 都排掉 —— 这是第一版把所有搜索都跑出 0 结果的根因.
-    if inc.is_empty() {
-        return true;
+}
+
+struct CompiledFileFilter {
+    inc: Vec<CompiledGlob>,
+    exc: Vec<CompiledGlob>,
+    case_sensitive: bool,
+}
+
+impl CompiledFileFilter {
+    fn new(inc: &[String], exc: &[String], case_sensitive: bool) -> Self {
+        let exc_compiled = exc
+            .iter()
+            .filter_map(|e| {
+                let bare = e.trim();
+                let bare = bare.strip_prefix('!').unwrap_or(bare).trim();
+                CompiledGlob::compile(bare, case_sensitive)
+            })
+            .collect();
+        let inc_compiled = inc
+            .iter()
+            .filter_map(|g| CompiledGlob::compile(g, case_sensitive))
+            .collect();
+        Self {
+            inc: inc_compiled,
+            exc: exc_compiled,
+            case_sensitive,
+        }
     }
-    inc.iter()
-        .any(|g| glob_match(name, g.trim(), case_sensitive))
+
+    #[inline]
+    fn passes(&self, name: &str) -> bool {
+        if self.exc.is_empty() && self.inc.is_empty() {
+            return true;
+        }
+        let cow: std::borrow::Cow<'_, str> = if self.case_sensitive {
+            std::borrow::Cow::Borrowed(name)
+        } else {
+            std::borrow::Cow::Owned(name.to_lowercase())
+        };
+        for e in &self.exc {
+            if e.matches(&cow) {
+                return false;
+            }
+        }
+        if self.inc.is_empty() {
+            return true;
+        }
+        self.inc.iter().any(|g| g.matches(&cow))
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -253,130 +333,158 @@ pub fn walk(
 
 /// 判断能否走字节级快速路径。
 ///
-/// 快速路径只处理**字面量**搜索: 正则要走 MiniRegex, whole_word 需要词边界判定,
-/// 两者都必须在解码后的文本上做, 走字节路径只会更慢或算错。
+/// 快速路径处理**字面量**搜索（含区分/忽略大小写与 `whole_word` 整词匹配）：
+/// - 预构建 `memchr::memmem::Finder`（内部采用 AVX2/SSE2 双字节稀有度 SIMD 预筛）；
+/// - `whole_word` 在命中偏移两侧直接按字节判定 ASCII 词边界（`is_word_byte`），
+///   无需退化到逐行 `chars().collect::<Vec<char>>()`；
+/// - 忽略大小写且搜索词含 ASCII 字母时，采用原地 `memchr2(lo, hi)` + `eq_ignore_ascii_case`
+///   零分配扫描，彻底消除为每个文件分配整份 `raw.to_ascii_lowercase()` 的内存拷贝开销。
 fn can_use_fast_path(m: &Matcher) -> Option<LiteralNeedle> {
     match m {
         Matcher::Literal {
             needle,
             folded,
             whole_word,
-        } if !*whole_word && !needle.is_empty() => Some(LiteralNeedle {
-            bytes: if folded.is_some() {
-                needle.to_lowercase().into_bytes()
+        } if !needle.is_empty() => {
+            // 若忽略大小写且搜索词含非 ASCII 大小写字母（如希腊/西里尔/全角拉丁字母），
+            // 回退到完整 Unicode 解码匹配路径；中文汉字与日文假名无大小写，继续走 SIMD 快速路径。
+            if folded.is_some()
+                && needle
+                    .chars()
+                    .any(|c| !c.is_ascii() && (c.is_lowercase() || c.is_uppercase()))
+            {
+                return None;
+            }
+            let bytes = if let Some(f) = folded {
+                f.as_bytes().to_vec()
             } else {
                 needle.as_bytes().to_vec()
-            },
-        }),
+            };
+            let has_ascii_alpha = bytes.iter().any(|b| b.is_ascii_alphabetic());
+            let finder = memchr::memmem::Finder::new(&bytes).into_owned();
+            Some(LiteralNeedle {
+                bytes,
+                finder,
+                whole_word: *whole_word,
+                has_ascii_alpha,
+            })
+        }
         _ => None,
     }
 }
 
 struct LiteralNeedle {
     bytes: Vec<u8>,
+    finder: memchr::memmem::Finder<'static>,
+    whole_word: bool,
+    has_ascii_alpha: bool,
 }
 
-/// 在 `buf` 里找 needle 的所有命中, 返回每处的**起始字节偏移**。
-///
-/// 用 `memchr` 以 needle 首字节做 SIMD 预筛, 命中才比对剩余字节 —— 这正是 ripgrep
-/// 的核心技巧。实测在 210 MB 语料上比「逐行 decode + str::contains」快 8.5 倍
-/// (crates/editcore/tests/grep_bench.rs 可复现)。
-///
-/// needle 长为 1 时 memchr 的 SIMD 就是全部工作量; 长 > 1 时只有首字节参与 SIMD,
-/// 其余字节仍然逐个比 —— 这是 memchr2 才有的进一步优化, 但它需要非 ASCII 字节处理,
-/// 对 Grep 的常见场景 (ASCII 关键字) 收益有限, 先不引。
-fn find_byte_matches(buf: &[u8], needle: &[u8]) -> Vec<usize> {
-    let Some(&first) = needle.first() else {
-        return Vec::new();
-    };
-    let mut out = Vec::new();
-    let mut from = 0usize;
-    while from < buf.len() {
-        let Some(off) = memchr::memchr(first, &buf[from..]) else {
-            break;
-        };
-        let at = from + off;
-        // 边界检查要放在切片之前 —— 否则最后几个字节的越界部分会 panic
-        if at + needle.len() <= buf.len() && &buf[at..at + needle.len()] == needle {
-            out.push(at);
-            from = at + needle.len(); // 不重叠: needle 自身含 first, 从末尾继续
-        } else {
-            from = at + 1;
-        }
+#[inline]
+fn is_word_byte(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'_'
+}
+
+#[inline]
+fn word_boundary_ok(buf: &[u8], at: usize, len: usize) -> bool {
+    let left_ok = at == 0 || !is_word_byte(buf[at - 1]);
+    let right_ok = at + len >= buf.len() || !is_word_byte(buf[at + len]);
+    left_ok && right_ok
+}
+
+/// 在 `buf` 中从 `from` 起查找下一处命中偏移（支持区分大小写 SIMD Finder 与零分配忽略大小写搜索）。
+#[inline]
+fn find_next_match(buf: &[u8], from: usize, needle: &LiteralNeedle, fold: bool) -> Option<usize> {
+    let nlen = needle.bytes.len();
+    if from + nlen > buf.len() {
+        return None;
     }
-    out
+    if !fold || !needle.has_ascii_alpha {
+        return needle.finder.find(&buf[from..]).map(|off| from + off);
+    }
+    // 忽略大小写且含 ASCII 字母：用首字节的小写与大写双路 SIMD 预筛，命中后比较完整窗口
+    let b0_lo = needle.bytes[0].to_ascii_lowercase();
+    let b0_hi = needle.bytes[0].to_ascii_uppercase();
+    let tail = &needle.bytes[1..];
+    let mut cur = from;
+    while cur + nlen <= buf.len() {
+        let off = if b0_lo != b0_hi {
+            memchr::memchr2(b0_lo, b0_hi, &buf[cur..])?
+        } else {
+            memchr::memchr(b0_lo, &buf[cur..])?
+        };
+        let at = cur + off;
+        if at + nlen > buf.len() {
+            return None;
+        }
+        if buf[at + 1..at + nlen].eq_ignore_ascii_case(tail) {
+            return Some(at);
+        }
+        cur = at + 1;
+    }
+    None
 }
 
-/// 从 `buf` 中切出包含 `[start, end)` 那一行的文本 (不含行尾 `\n` / `\r`)。
+/// 从 `buf` 中切出包含 `start` 那一行的范围 `(line_start, line_end_with_lf, trimmed_text)`。
 ///
-/// 只在命中处才切 —— 非命中区域完全不 decode, 这是省时间的大头。
-fn line_at(buf: &[u8], start: usize, fold: bool) -> String {
-    let line_start = buf[..start]
-        .iter()
-        .rposition(|&b| b == b'\n')
+/// 只在命中处才用 `memrchr` / `memchr` 定位行边界 —— 非命中区域完全不 decode。
+#[inline]
+fn line_slice_at(buf: &[u8], start: usize) -> (usize, usize, String) {
+    let line_start = memchr::memrchr(b'\n', &buf[..start])
         .map(|i| i + 1)
         .unwrap_or(0);
-    let line_end = buf[start..]
-        .iter()
-        .position(|&b| b == b'\n')
-        .map(|i| start + i)
-        .unwrap_or(buf.len());
-    // 去掉 Windows 的 \r
-    let line_end = if line_end > line_start && buf[line_end - 1] == b'\r' {
+    let (line_end, next_line_start) = match memchr::memchr(b'\n', &buf[start..]) {
+        Some(i) => (start + i, start + i + 1),
+        None => (buf.len(), buf.len()),
+    };
+    let trimmed_end = if line_end > line_start && buf[line_end - 1] == b'\r' {
         line_end - 1
     } else {
         line_end
     };
-    let raw = &buf[line_start..line_end];
-    if fold {
-        String::from_utf8_lossy(raw).to_lowercase()
-    } else {
-        String::from_utf8_lossy(raw).into_owned()
-    }
+    let raw = &buf[line_start..trimmed_end];
+    let text = match std::str::from_utf8(raw) {
+        Ok(s) => s.to_string(),
+        Err(_) => String::from_utf8_lossy(raw).into_owned(),
+    };
+    (line_start, next_line_start, text)
 }
 
 /// 字节级扫描单个文件, 返回命中的 `(行号, 行文本)`。
 ///
-/// 行号算法: 因为命中偏移**单调递增**, 只需在两个命中之间数换行, 不必从头数 ——
-/// 这是能省掉 O(n²) 的关键。
+/// 核心加速点：
+/// 1. 零分配流式迭代：不再构造全量 `Vec<usize>`，也不再对整个文件执行 `to_ascii_lowercase()`；
+/// 2. 同一行命中后直接跳到 `next_line_start`，跳过该行剩余所有字节；
+/// 3. 行号只在相邻两次命中区间内用 SIMD `memchr_iter(b'\n')` 累加。
 fn scan_buf_fast(raw: &[u8], needle: &LiteralNeedle, fold: bool, max: usize) -> Vec<(u64, String)> {
-    // 忽略大小写时, 对**内容**做 ASCII 小写化, 与 needle 的小写形式同源。
-    // 只小写化 buffer: needle 在构造时已经小写过了。不这么做的话 needle="hello"
-    // 永远匹配不到 "Hello" —— 这正是 case_insensitive_when_flag_off 用例抓到的。
-    //
-    // 只处理 ASCII: needle 是 UTF-8, 非 ASCII 字符的小写化要按 Unicode 规则,
-    // 逐字节 to_ascii_lowercase 不会破坏 UTF-8 序列 (>=0x80 的字节原样保留),
-    // 所以对中文/假名 needle 无影响; 对 ASCII needle 则完全正确。
-    let lowered;
-    let buf = if fold {
-        lowered = raw.to_ascii_lowercase();
-        &lowered[..]
-    } else {
-        raw
-    };
-    let hits = find_byte_matches(buf, &needle.bytes);
-    if hits.is_empty() {
+    if max == 0 || raw.len() < needle.bytes.len() {
         return Vec::new();
     }
+    let nlen = needle.bytes.len();
     let mut out = Vec::new();
     let mut line = 1u64;
-    let mut counted_to = 0usize; // 已经数过换行的位置
-    let mut last_line = 0u64; // 上一个命中所在行号 (同一行只出一次)
-    for at in hits {
-        if at < counted_to {
+    let mut counted_to = 0usize;
+    let mut from = 0usize;
+
+    while let Some(at) = find_next_match(raw, from, needle, fold) {
+        if needle.whole_word && !word_boundary_ok(raw, at, nlen) {
+            from = at + 1;
             continue;
         }
-        line += memchr::memchr_iter(b'\n', &buf[counted_to..at]).count() as u64;
-        counted_to = at;
-        if line == last_line {
-            continue; // 同一行多次出现只报一次 (与逐行实现语义一致)
-        }
-        last_line = line;
-        // 注意: 行文本要从**原文**切, 不能用小写化后的 buf —— 否则用户看到的
-        // 结果全是小写, 与文件内容不符。
-        let _ = fold;
-        out.push((line, line_at(raw, at, false)));
+        line += memchr::memchr_iter(b'\n', &raw[counted_to..at]).count() as u64;
+        let (_line_start, next_line_start, text) = line_slice_at(raw, at);
+        out.push((line, text));
         if out.len() >= max {
+            break;
+        }
+        // 同一行多次出现只报一次：直接跳到下一行起点，同时行号 +1
+        if next_line_start <= raw.len() && next_line_start > at {
+            if next_line_start > 0 && raw[next_line_start - 1] == b'\n' {
+                line += 1;
+            }
+            counted_to = next_line_start;
+            from = next_line_start;
+        } else {
             break;
         }
     }
@@ -399,11 +507,12 @@ fn resolve_search_folder(root: &Path, candidate: &Path) -> Option<PathBuf> {
     // 目录可能还没被创建 (用户先填了路径再保存), 此时 canonicalize 会失败;
     // 回退到「手工消解 . 与 ..」的规范化, 不能因为路径不存在就放行。
     let cand = match candidate.canonicalize() {
-        Ok(p) => p,
+        Ok(p) => strip_verbatim_prefix(&p),
         Err(_) => lexical_normalize(candidate),
     };
     let root_n = root
         .canonicalize()
+        .map(|p| strip_verbatim_prefix(&p))
         .unwrap_or_else(|_| lexical_normalize(root));
 
     // 前缀比较必须按**路径分量**而不是字符串 —— 否则 `E:/proj-evil` 会被 `E:/proj` 命中.
@@ -516,9 +625,11 @@ pub fn resolve_search_folders(
     Ok(out)
 }
 
-/// 规范化路径: 存在就用 `canonicalize` (顺带解析符号链接), 不存在则手工消解 `.` / `..`.
+/// 规范化路径: 存在就用 `canonicalize` (顺带解析符号链接并剥除 Windows `\\?\` 前缀), 不存在则手工消解 `.` / `..`.
 fn canonical_or_lexical(p: &Path) -> PathBuf {
-    p.canonicalize().unwrap_or_else(|_| lexical_normalize(p))
+    p.canonicalize()
+        .map(|c| strip_verbatim_prefix(&c))
+        .unwrap_or_else(|_| lexical_normalize(p))
 }
 
 // ---------------------------------------------------------------------------
@@ -606,18 +717,78 @@ fn collect_candidates(
 fn filtered_files(root: &Path, opts: &SearchOptions) -> Result<Vec<(PathBuf, String)>, String> {
     let case_sensitive = opts.case_sensitive.unwrap_or(false);
     let (files, inc, exc) = collect_candidates(root, opts)?;
-    let mut out = Vec::new();
+    let filter = CompiledFileFilter::new(&inc, &exc, case_sensitive);
+    let mut out = Vec::with_capacity(files.len());
     for f in files {
         // `canonicalize()` 在 Windows 上会加 `\?\` 前缀, 展示前剥掉。
         let f = strip_verbatim_prefix(&f);
         let Some(name) = f.file_name().map(|s| s.to_string_lossy().to_string()) else {
             continue;
         };
-        if file_passes(&name, &inc, &exc, case_sensitive) {
+        if filter.passes(&name) {
             out.push((f, name));
         }
     }
     Ok(out)
+}
+
+/// 快速判断原始字节是否可直接按字节切片执行 SIMD 预筛（无需事先全文件 UTF-8 校验或编码转换）：
+/// - 对纯 ASCII 检索词：在 UTF-8 / Shift-JIS / EUC-JP / GBK / Latin1 等所有 ASCII 兼容单/多字节编码中，
+///   ASCII 字节序列在原始字节流中必然原样出现（绝无假阴性）。只要文件不是 UTF-16（无 UTF-16 BOM 且前 4KB 无 NUL）
+///   且不含 ISO-2022-JP 转义 (`0x1b`)，就可以直接用 SIMD `find_next_match` 先判存！
+///   99% 未命中的文件直接 0 拷贝跳过，无需做整文件 `std::str::from_utf8` 扫描。
+#[inline]
+fn raw_slice_for_ascii_prescan(
+    raw: &[u8],
+    forced: Option<Charset>,
+    needle_is_ascii: bool,
+) -> Option<&[u8]> {
+    if !needle_is_ascii {
+        return None;
+    }
+    if matches!(
+        forced,
+        Some(Charset::Utf16Le | Charset::Utf16Be | Charset::Iso2022Jp | Charset::Utf7)
+    ) {
+        return None;
+    }
+    if raw.starts_with(&[0xFF, 0xFE]) || raw.starts_with(&[0xFE, 0xFF]) {
+        return None;
+    }
+    let body = if raw.starts_with(&[0xEF, 0xBB, 0xBF]) {
+        &raw[3..]
+    } else {
+        raw
+    };
+    let sample = &body[..body.len().min(4096)];
+    if memchr::memchr2(0u8, 0x1b, sample).is_some() {
+        return None;
+    }
+    Some(body)
+}
+
+#[inline]
+fn raw_slice_for_fast_scan(raw: &[u8], forced: Option<Charset>) -> Option<&[u8]> {
+    match forced {
+        Some(Charset::Utf8) | None => {}
+        _ => return None,
+    }
+    if raw.starts_with(&[0xFF, 0xFE]) || raw.starts_with(&[0xFE, 0xFF]) {
+        return None;
+    }
+    let body = if raw.starts_with(&[0xEF, 0xBB, 0xBF]) {
+        &raw[3..]
+    } else {
+        raw
+    };
+    if memchr::memchr2(0u8, 0x1b, body).is_some() {
+        return None;
+    }
+    if forced == Some(Charset::Utf8) || std::str::from_utf8(body).is_ok() {
+        Some(body)
+    } else {
+        None
+    }
 }
 
 pub fn search(root: &Path, opts: &SearchOptions) -> Result<Vec<SearchResult>, String> {
@@ -637,7 +808,7 @@ pub fn search(root: &Path, opts: &SearchOptions) -> Result<Vec<SearchResult>, St
     // G-01 空条件 = 文件名搜索: 不看内容, 按文件名 patterns 返回文件列表 (line = 0)
     let name_only = opts.pattern.trim().is_empty();
 
-    // 能否走字节级快速路径 (字面量 + 不带词边界). 正则 / whole_word 必须走解码路径.
+    // 能否走字节级快速路径 (字面量 + 含或不含词边界).
     let fast = if name_only {
         None
     } else {
@@ -661,24 +832,45 @@ pub fn search(root: &Path, opts: &SearchOptions) -> Result<Vec<SearchResult>, St
         let Ok(raw) = fs::read(&f) else {
             continue;
         };
-        // 按文件判别编码 (BOM -> UTF-8 校验 -> SJIS/EUC/JIS/UTF-16 启发式); 用户显式指定则以其为准。
-        let text = decode_for_grep(&raw, forced_charset);
-        let path_s = f.to_string_lossy().into_owned();
         if let Some(needle) = &fast {
-            // 字节级路径: 在 UTF-8 文本上 SIMD 找偏移, 只在命中处切行 (行号按解码后的文本数, 与原文件一致).
             let fold = !case_sensitive;
-            for (line, text) in scan_buf_fast(text.as_bytes(), needle, fold, budget) {
-                results.push(SearchResult {
-                    path: path_s.clone(),
-                    line,
-                    text,
-                });
+            let needle_ascii = needle.bytes.is_ascii();
+            // 阶段 1: 纯 ASCII 检索词零拷贝 SIMD 预筛 —— 未命中的文件直接跳过，省去整文件 UTF-8 校验
+            if let Some(prescan_body) =
+                raw_slice_for_ascii_prescan(&raw, forced_charset, needle_ascii)
+            {
+                if find_next_match(prescan_body, 0, needle, fold).is_none() {
+                    continue;
+                }
+            }
+            // 阶段 2: 已确认可能命中 —— 若文件为合法 UTF-8 则直接在原切片切行，否则按真实编码解码后切行
+            let path_s = f.to_string_lossy().into_owned();
+            if let Some(body) = raw_slice_for_fast_scan(&raw, forced_charset) {
+                for (line, text) in scan_buf_fast(body, needle, fold, budget) {
+                    results.push(SearchResult {
+                        path: path_s.clone(),
+                        line,
+                        text,
+                    });
+                }
+            } else {
+                let text = decode_for_grep(&raw, forced_charset);
+                for (line, text) in scan_buf_fast(text.as_bytes(), needle, fold, budget) {
+                    results.push(SearchResult {
+                        path: path_s.clone(),
+                        line,
+                        text,
+                    });
+                }
             }
             if results.len() >= max {
                 break 'outer;
             }
             continue;
         }
+        let path_s = f.to_string_lossy().into_owned();
+        // 按文件判别编码 (BOM -> UTF-8 校验 -> SJIS/EUC/JIS/UTF-16 启发式); 用户显式指定则以其为准。
+        let text = decode_for_grep(&raw, forced_charset);
         for (i, line) in text.lines().enumerate() {
             if matcher.matches(line) {
                 results.push(SearchResult {
@@ -1391,9 +1583,8 @@ fn decode_raw(bytes: &[u8], cs: Charset) -> Result<(String, bool, usize), String
 /// 的常见情形直接借用原字节, 不付解码代价.
 pub fn decode_for_grep(bytes: &[u8], forced: Option<Charset>) -> Cow<'_, str> {
     if forced.is_none()
-        && !bytes.contains(&0u8)
-        && !bytes.contains(&0x1b)
         && !bytes.starts_with(&[0xEF, 0xBB, 0xBF])
+        && memchr::memchr2(0u8, 0x1b, bytes).is_none()
     {
         if let Ok(s) = std::str::from_utf8(bytes) {
             return Cow::Borrowed(s);

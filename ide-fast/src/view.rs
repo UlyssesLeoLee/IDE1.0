@@ -544,21 +544,27 @@ pub fn display_col(line: &str, col: usize, tab: usize) -> usize {
     x + 1
 }
 
+/// 字符列 -> 0 起算的显示列 (Tab 按 tab 宽对齐, 全角字符占 2 列; 超出行尾的部分按 1 列/格顺延)
+pub fn display_col0(line: &str, col: usize, tab: usize) -> usize {
+    let len = line.chars().count();
+    display_col(line, col.min(len), tab).saturating_sub(1) + col.saturating_sub(len)
+}
+
+/// 0 起算的显示列区间 `[vcol0, vcol1]` -> 当前行对应的字符列区间 `(char_c0, char_c1)`
+/// (越过行尾的部分按 1 列/格顺延到 `line_len` 之后)
+pub fn display_range_to_char_cols(
+    line: &str,
+    vcol0: usize,
+    vcol1: usize,
+    tab: usize,
+) -> (usize, usize) {
+    let chars: Vec<char> = line.chars().collect();
+    editcore::text_util::display_range_to_char_cols_slice(&chars, vcol0, vcol1, tab, true)
+}
+
 /// 东亚宽字符占 2 列 (够状态栏用的近似: CJK / 假名 / 全角形)
 pub fn wide(c: char) -> usize {
-    let n = c as u32;
-    if (0x1100..=0x115F).contains(&n)
-        || (0x2E80..=0xA4CF).contains(&n)
-        || (0xAC00..=0xD7A3).contains(&n)
-        || (0xF900..=0xFAFF).contains(&n)
-        || (0xFE30..=0xFE6F).contains(&n)
-        || (0xFF00..=0xFF60).contains(&n)
-        || (0xFFE0..=0xFFE6).contains(&n)
-    {
-        2
-    } else {
-        1
-    }
+    editcore::text_util::char_display_width(c)
 }
 
 /// 选区统计: (字符数, 行数); 换行不计入字符数

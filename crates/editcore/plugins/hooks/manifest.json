@@ -12,6 +12,7 @@
   "contributes": {
     "hooks": [
       { "id": "path-sanitizer", "stage": "pre_tool_call", "label": "目录穿越与私钥防泄露" },
+      { "id": "loop-breaker", "stage": "pre_tool_call", "label": "死循环工具调用自省熔断" },
       { "id": "payload-limit", "stage": "post_tool_call", "label": "超大上下文截断保护 (20K)" },
       { "id": "secret-mask", "stage": "post_response", "label": "API Key 与敏感凭证自动脱敏" }
     ],
