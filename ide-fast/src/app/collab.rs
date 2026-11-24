@@ -1835,7 +1835,20 @@ fn poll_single_subagent_run(
                         json!({ "error": "便笺状态不可用" })
                     }
                 } else {
-                    ai::exec_builtin(&call.name, &args, doc_rows)
+                    let (doc_lines, ws_root) = run
+                        .target_doc_id
+                        .and_then(|id| docs.iter().find(|d| d.id == id))
+                        .or_else(|| docs.first())
+                        .map(|d| {
+                            (
+                                d.lines.clone(),
+                                super::aichat::find_workspace_root(d.path.as_deref()),
+                            )
+                        })
+                        .unwrap_or_else(|| {
+                            (vec![String::new(); doc_rows], std::path::PathBuf::from("."))
+                        });
+                    ai::exec_builtin_with_doc(&call.name, &args, &doc_lines, Some(&ws_root))
                 };
                 let (final_val, shift) = finalize_subagent_tool_result(
                     agent,

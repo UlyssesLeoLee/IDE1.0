@@ -1,0 +1,169 @@
+{
+  "FailedTests": 0,
+  "Finished": true,
+  "PassedTests": 20,
+  "Results": [
+    {
+      "Detail": "已打开并聚焦文件: E:\\IDE1.0\\tests/mock-project\\src/math.rs",
+      "Error": "",
+      "Id": "GUI-01",
+      "Name": "打开 Mock Rust 源码文件 src/math.rs",
+      "Op": "open_file",
+      "Status": "Passed"
+    },
+    {
+      "Detail": "断言命中文本: pub fn add",
+      "Error": "",
+      "Id": "GUI-02",
+      "Name": "校验 math.rs 初始内容加载完成",
+      "Op": "assert_doc_contains",
+      "Status": "Passed"
+    },
+    {
+      "Detail": "已对活跃文档应用行补丁 (start=1, remove=1, insert=1行)",
+      "Error": "",
+      "Id": "GUI-03",
+      "Name": "实时编辑活跃文档第 2 行为饱和加法",
+      "Op": "patch_active_doc",
+      "Status": "Passed"
+    },
+    {
+      "Detail": "断言命中文本: saturating_add",
+      "Error": "",
+      "Id": "GUI-04",
+      "Name": "校验修改已即时生效到编辑器缓冲",
+      "Op": "assert_doc_contains",
+      "Status": "Passed"
+    },
+    {
+      "Detail": "已执行活跃文档撤销",
+      "Error": "",
+      "Id": "GUI-05",
+      "Name": "执行单步撤销还原源码",
+      "Op": "undo_active_doc",
+      "Status": "Passed"
+    },
+    {
+      "Detail": "断言确认不包含: saturating_add",
+      "Error": "",
+      "Id": "GUI-06",
+      "Name": "校验撤销后文档已还原",
+      "Op": "assert_doc_not_contains",
+      "Status": "Passed"
+    },
+    {
+      "Detail": "已打开并聚焦文件: E:\\IDE1.0\\tests/mock-project\\knowledge/architecture.nema",
+      "Error": "",
+      "Id": "GUI-07",
+      "Name": "切换打开 NEMA 结构化文档 architecture.nema",
+      "Op": "open_file",
+      "Status": "Passed"
+    },
+    {
+      "Detail": "断言命中文本: EditorKernel",
+      "Error": "",
+      "Id": "GUI-08",
+      "Name": "校验 NEMA 文档内容完整性",
+      "Op": "assert_doc_contains",
+      "Status": "Passed"
+    },
+    {
+      "Detail": "已打开桌面便笺并创建笔记: GUI 实测便笺",
+      "Error": "",
+      "Id": "GUI-09",
+      "Name": "打开桌面便笺并自动创建一条测试笔记",
+      "Op": "open_sticky_notes",
+      "Status": "Passed"
+    },
+    {
+      "Detail": "已打开多 Agent 协同面板 (agents=4)",
+      "Error": "",
+      "Id": "GUI-10",
+      "Name": "打开多 Agent 协同面板并扩展为 4 个 Agent",
+      "Op": "open_ai_collab",
+      "Status": "Passed"
+    },
+    {
+      "Detail": "Rust 控制台执行 `ide::ops::collab_count(6)` 成功: ide::ops::collab_count: updated active collab agents to 6 (collab panel opened)",
+      "Error": "",
+      "Id": "GUI-11",
+      "Name": "切换底部 Rust 控制台并执行脚本指令",
+      "Op": "open_rust_console",
+      "Status": "Passed"
+    },
+    {
+      "Detail": "安装向导已打开并进入最大化状态",
+      "Error": "",
+      "Id": "GUI-12",
+      "Name": "打开安装向导并切换为全屏最大化",
+      "Op": "open_installer_and_maximize",
+      "Status": "Passed"
+    },
+    {
+      "Detail": "全屏与最大化模式四周 0px 贴边无内边距校验通过",
+      "Error": "",
+      "Id": "GUI-13",
+      "Name": "校验全屏与最大化模式四周 0px 贴紧边缘无内边距",
+      "Op": "verify_fullscreen_edge_flush",
+      "Status": "Passed"
+    },
+    {
+      "Detail": "已打开并聚焦文件: E:\\IDE1.0\\tests/mock-project\\docs/markdown-preview.md",
+      "Error": "",
+      "Id": "GUI-14",
+      "Name": "打开 Markdown 文档校验加粗渲染、增量查找与 Alt 矩形列选对齐",
+      "Op": "open_file",
+      "Status": "Passed"
+    },
+    {
+      "Detail": "Markdown 加粗渲染校验通过 (bold_spans=2, family=Name(\"editor-bold\"))",
+      "Error": "",
+      "Id": "GUI-15",
+      "Name": "校验 Markdown 星号与双下划线加粗语法及粗体字族渲染",
+      "Op": "verify_markdown_bold_render",
+      "Status": "Passed"
+    },
+    {
+      "Detail": "增量查找校验通过 (`Ready` 正反向步进与清空回退全部准确)",
+      "Error": "",
+      "Id": "GUI-16",
+      "Name": "校验增量查找正反向步进与清空回退",
+      "Op": "verify_incremental_search",
+      "Status": "Passed"
+    },
+    {
+      "Detail": "Markdown 文档中英混排 Alt 矩形列选对齐与编辑校验通过",
+      "Error": "",
+      "Id": "GUI-17",
+      "Name": "校验 Markdown 中英混排表格 Alt 矩形列选视觉列宽对齐",
+      "Op": "verify_md_alt_box_selection",
+      "Status": "Passed"
+    },
+    {
+      "Detail": "Grep 检索校验通过 (`EditorKernel` 命中 3 处, 折叠侧栏自动展开、主编辑区 `Grep 结果` 标签页默认打开与双击跳转解析均正常)",
+      "Error": "",
+      "Id": "GUI-18",
+      "Name": "校验 Grep 跨文件检索、折叠侧栏自动展开与主编辑区结果标签页",
+      "Op": "verify_grep_search",
+      "Status": "Passed"
+    },
+    {
+      "Detail": "中国默认区域用户协议 v1.1 与 Hooks 插件全生命周期钩子校验通过",
+      "Error": "",
+      "Id": "GUI-19",
+      "Name": "校验中国默认区域用户协议 v1.1 与 Hooks 插件生命周期功能",
+      "Op": "verify_agreement_and_hooks",
+      "Status": "Passed"
+    },
+    {
+      "Detail": "触发主窗口优雅退出",
+      "Error": "",
+      "Id": "GUI-20",
+      "Name": "全部实测完毕后优雅关闭主窗口",
+      "Op": "close_app",
+      "Status": "Passed"
+    }
+  ],
+  "Suite": "IDE1.0 Live GUI E2E (Real Window Automation)",
+  "TotalTests": 20
+}

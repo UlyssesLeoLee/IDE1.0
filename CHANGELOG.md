@@ -10,7 +10,7 @@
 
 #### 2. Grep 检索体验升级与 SIMD + 多核分片并行性能优化 (`editcore::grep_engine`, `ide-fast/src/grep.rs`, `app.rs`, `tabbar.rs`)
 - **折叠侧栏 `Ctrl+G` 自动展开**：当左侧边栏处于折叠状态（`side_collapsed = true`）时按下 `Ctrl+G`，自动展开侧栏并聚焦搜索框。
-- **主编辑区默认打开 `Grep 结果` 标签页**：执行 Grep 查询时默认在主窗口编辑区打开（或复用并激活）文本形式的 **`Grep 结果`** 标签页，流式写入命中结果。
+- **主编辑区默认打开 `Grep 结果` 标签页 &「结果不开标签页」开关按钮**：执行 Grep 查询时默认在主窗口编辑区打开（或复用并激活）文本形式的 **`Grep 结果`** 标签页；原“结果开成标签”按钮升级为可切换的 **`结果不开标签页`** 开关按钮，点击开启后自动关闭主编辑区结果标签页，使查询结果仅显示在左侧面板下方的结果栏位中。
 - **双击打开文件与全功能右键菜单**：支持在 `Grep 结果` 主编辑区、标签页及左侧结果列表双击跳转到目标文件对应行列，并提供丰富右键菜单（打开文件并跳转、复制完整路径/相对路径/文件名/`路径:行:列`/命中行文本、在资源管理器中定位、设为 Grep 搜索目录、排除该文件/文件夹、复制全部结果、重新检索）。
 - **文件夹栏右侧浏览按钮**：在 Grep 文件夹输入栏右侧新增 **`📁 浏览…`** 按钮，一键呼出系统原生目录选择器。
 - **SIMD `memmem::Finder` 与多核并行检索**：引入 `memchr::memmem::Finder` 双字节稀有度 SIMD 搜索、纯 ASCII 检索词零拷贝预筛、零分配原地大小写不敏感扫描、`whole_word` 字节级边界检查、预编译 Glob 过滤器（`CompiledFileFilter`）以及多核分片保序并行流水线，在 210 MB / 3000 文件基准测试中吞吐量达 **1,694 MB/s**（耗时仅 123ms）。
@@ -19,7 +19,16 @@
 - **全屏/最大化四周 0px 贴紧边缘**：`MAX_OVERSHOOT` 归零，`maximized_inset` 在全屏与普通窗口均返回 `0.0`。
 - **Markdown 加粗与 Alt 矩形列选视觉对齐**：支持 `**bold**` 与 `__bold__`（含对称词边界校验）及独立粗体字族 `editor_bold_family()`；`editcore::text_util` 统一导出包含 `\t` 宽度对齐的 CJK/ASCII 视觉显示列映射，彻底消除 Markdown 表格中英混排 Alt 矩形列选错位。
 - **增量查找 (`isearch`) 修复**：完善正反向步进、锚点记忆与清空关键字回退起点。
-- **Hooks / MCP / Automation 插件可用性增强**：插件面板内联展示快捷执行按钮；`hooks:audit`、`mcp:status`、`automation:todos` 始终弹出可视化结果详情窗口；保存文件（`Ctrl+S`）、单 Agent 与多 Agent 协同全链路挂载 `Hooks` 生命周期安全校验。
+- **Hooks / Skills / MCP 支持添加用户自定义与第三方扩展**：
+  - 插件面板内联展示快捷执行按钮以及 **`➕ 新建/编辑自定义...`** 与 **`📥 导入第三方...`** 操作入口，保存配置文件（`Ctrl+S`）即刻自动热重载；
+  - **Hooks**：支持通过工作区 `.hooks.json` / `.hooks/*.json` 或全局 `custom_hooks/*.json` 添加自定义与第三方生命周期规则（`pre_input_prefix`、`pre_input_block_patterns`、`blocked_tools`、`pre_tool_block_patterns`、`mask_patterns`）；
+  - **Skills**：支持加载工作区 `.skills/<id>/SKILL.md`、`.skills/*.md`、`.skills/*.json`、第三方兼容目录 `.claude/skills/`、`.claude/commands/*.md`、`.agents/skills/` 及全局 `custom_skills/`；
+  - **MCP**：支持合并加载全局 `mcp_servers.json` / `custom_mcp/*.json` 与工作区 `.mcp.json` / `.cursor/mcp.json`，兼容标准 `mcpServers` 与第三方 `servers` 格式；
+  - `hooks:audit`、`mcp:status`、`automation:todos` 始终弹出可视化结果详情窗口。
+- **零启动开销 Function Calling 与 ReAct 推理闭环增强** (`editcore::agent_api`, `ide-fast/src/ai/*`, `aichat.rs`, `collab.rs`)：
+  - **静态 `OnceLock` 工具表缓存**：`editcore::agent_api::tools_json()` 采用 `OnceLock` 惰性初始化缓存，进程冷启动 0 开销，运行期构建工具表零重复 JSON 解析；
+  - **ReAct 观测与结构化思考工具集**：新增 `read_doc_lines`（按需读取活跃文档指定行区间，自动注入文档缓冲免模型重传全文）、`workspace_grep`（基于 1,694 MB/s SIMD 引擎跨文件检索）、`react_thought`（显式记录 `thought` / `plan` / `reflection` 推理轨迹）；
+  - **多格式 Function Calling 兼容与自我修正**：`SseParser` 同时支持 OpenAI `delta.tool_calls`、旧版 `function_call`、`reasoning_content` 思维链汇聚以及开源/推理模型的内联 `<tool_call>{...}</tool_call>` 零正则提取；`parse_args` 自动容错剥离 Markdown 代码块围栏与双重转义 JSON，`auto_apply` 模式下向下一轮 ReAct 精确回传最新文档行数（`new_total_rows`）。
 - **90%+ 覆盖率与真机 GUI 20 步 E2E 门禁**：新增 `e2e_driver.rs` 真机 20 步 GUI 自动化实测与 `run-coverage-gate.ps1` 90%+ 分支/区域覆盖率门禁。
 
 ---

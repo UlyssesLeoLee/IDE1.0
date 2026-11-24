@@ -28,11 +28,12 @@ ide.register({
     const lineCount = text ? text.split("\n").length : 0;
     const findings = scanText(text);
     const activeHooks = [
-      "• Pre-Input: 注入工程安全与编码规范提醒",
-      "• Pre-Tool (path-sanitizer): 拦截系统目录与 .. 路径越界写操作",
+      "• Pre-Input: 注入工程安全与编码规范提醒（支持 .hooks.json 自定义 pre_input_prefix / pre_input_block_patterns）",
+      "• Pre-Tool (path-sanitizer): 拦截系统目录与 .. 路径越界写操作（支持自定义 blocked_tools / pre_tool_block_patterns）",
       "• Pre-Tool (loop-breaker): 拦截连续 3 次重复死循环工具调用",
       "• Post-Tool (payload-limit): 单次工具返回超 20,000 字符自动截断",
-      "• Post-Response (secret-mask): 自动脱敏响应中的 sk-/ghp_/AKIA/PEM 凭证"
+      "• Post-Response (secret-mask): 自动脱敏响应中的凭证（支持自定义/第三方 mask_patterns 如 glpat-/xoxb-/AIza）",
+      "• 自定义与第三方扩展: 支持工作区 .hooks.json / .hooks/*.json 及全局 custom_hooks/*.json（插件面板可一键新建/导入）"
     ].join("\n");
     if (findings.length === 0) {
       return {

@@ -899,6 +899,12 @@ impl App {
             }
             return;
         }
+        if !turn.reasoning.trim().is_empty() {
+            let summary: String = turn.reasoning.trim().chars().take(400).collect();
+            self.ai
+                .items
+                .push(Item::Sys(format!("[ReAct 思维链] {summary}")));
+        }
         run.msgs.push(ai::assistant_message(&turn));
         run.round += 1;
         if turn.tool_calls.is_empty() || run.round >= ai::MAX_ROUNDS {
@@ -906,11 +912,12 @@ impl App {
             return;
         }
         let doc_id = run.doc_id;
-        let rows = self
+        let (doc_lines, ws_root) = self
             .docs
             .iter()
             .find(|d| d.id == doc_id)
-            .map_or(0, |d| d.lines.len());
+            .map(|d| (d.lines.clone(), find_workspace_root(d.path.as_deref())))
+            .unwrap_or_else(|| (Vec::new(), std::path::PathBuf::from(".")));
         let installed = self.ai.plugin_rt_mut().installed_plugins().to_vec();
         if let Some(run) = self.ai.run.as_mut() {
             run.slots = vec![None; turn.tool_calls.len()];
@@ -965,7 +972,7 @@ impl App {
                 immediate.push((
                     slot,
                     call.clone(),
-                    ai::exec_builtin(&call.name, &args, rows),
+                    ai::exec_builtin_with_doc(&call.name, &args, &doc_lines, Some(&ws_root)),
                 ));
             }
         }
@@ -1050,21 +1057,37 @@ impl App {
             vec!["tool".into(), call.name.clone()],
         );
 
+        let mut obs_result = result.clone();
+        if call.name == "react_thought" {
+            if let Some(th) = result["thought"].as_str().filter(|s| !s.is_empty()) {
+                let plan = result["plan"].as_str().unwrap_or("");
+                let note = if plan.is_empty() {
+                    format!("[ReAct 思考] {th}")
+                } else {
+                    format!("[ReAct 思考] {th} → 计划: {plan}")
+                };
+                self.ai.items.push(Item::Sys(note));
+            }
+        }
         if let Some((start, remove, insert, reason)) = parse_patch_proposal(&result) {
             if self.ai.auto_apply {
                 let applied = match self.docs.iter_mut().find(|d| d.id == doc_id) {
                     Some(d) => match d.apply_line_patch(start, remove, insert.clone(), None) {
                         Ok(()) => {
                             d.tip = tr("ai.applied").into();
-                            Ok(format!(
-                                "[OK] 已免点击直接应用到当前文件 (第 {} 行, 插入 {} 行){}",
-                                start + 1,
-                                insert.len(),
-                                if reason.is_empty() {
-                                    String::new()
-                                } else {
-                                    format!(": {reason}")
-                                }
+                            let new_total = d.lines.len();
+                            Ok((
+                                new_total,
+                                format!(
+                                    "[OK] 已免点击直接应用到当前文件 (第 {} 行, 插入 {} 行){}",
+                                    start + 1,
+                                    insert.len(),
+                                    if reason.is_empty() {
+                                        String::new()
+                                    } else {
+                                        format!(": {reason}")
+                                    }
+                                ),
                             ))
                         }
                         Err(e) => Err(e),
@@ -1072,7 +1095,7 @@ impl App {
                     None => Err("目标文档已关闭".into()),
                 };
                 match applied {
-                    Ok(ok_msg) => {
+                    Ok((new_total, ok_msg)) => {
                         if let Some(run) = self.ai.run.as_mut() {
                             run.auto_applied = true;
                             if let Some(rc) = run.cookie.as_mut() {
@@ -1081,9 +1104,17 @@ impl App {
                         }
                         self.cookie_mark(doc_id, TaskState::Verified);
                         self.ai.items.push(Item::Sys(ok_msg));
+                        obs_result = json!({
+                            "status": "applied_to_document",
+                            "start": start,
+                            "remove": remove,
+                            "inserted_lines": insert.len(),
+                            "new_total_rows": new_total
+                        });
                     }
                     Err(e) => {
-                        self.ai.items.push(Item::Err(e));
+                        self.ai.items.push(Item::Err(e.clone()));
+                        obs_result = json!({ "error": e });
                     }
                 }
             } else {
@@ -1110,7 +1141,7 @@ impl App {
         }
         if let Some(run) = self.ai.run.as_mut() {
             if let Some(s) = run.slots.get_mut(slot) {
-                *s = Some(ai::tool_message(&call.id, &result));
+                *s = Some(ai::tool_message(&call.id, &obs_result));
             }
         }
     }

@@ -504,8 +504,26 @@ impl App {
                 if sample_hit.is_none() {
                     return Err("Grep 结果行双击跳转解析 parse_result_line 返回 None".into());
                 }
+                // 校验点击「结果不开标签页」按钮后，关闭主编辑区的 Grep 结果标签页，且再次搜索不会创建标签页（结果仅在下方列表）
+                self.grep_event(crate::grep::Ev::ToggleNoTab(true));
+                if self.grep_doc.is_some() || self.docs.iter().any(|d| d.grep_result) {
+                    return Err(
+                        "开启「结果不开标签页」后，主编辑区的 Grep 结果标签页未被关闭".into(),
+                    );
+                }
+                self.grep_start();
+                if self.grep_doc.is_some() || self.docs.iter().any(|d| d.grep_result) {
+                    return Err(
+                        "「结果不开标签页」开启状态下，grep_start 仍打开了主编辑区标签页".into(),
+                    );
+                }
+                // 恢复默认（关闭「结果不开标签页」），立即恢复主编辑区标签页
+                self.grep_event(crate::grep::Ev::ToggleNoTab(false));
+                if self.grep_doc.is_none() || !self.docs[self.active].grep_result {
+                    return Err("关闭「结果不开标签页」后未恢复主编辑区 Grep 结果标签页".into());
+                }
                 Ok(format!(
-                    "Grep 检索校验通过 (`{query}` 命中 {total_hits} 处, 折叠侧栏自动展开、主编辑区 `Grep 结果` 标签页默认打开与双击跳转解析均正常)"
+                    "Grep 检索校验通过 (`{query}` 命中 {total_hits} 处, 折叠侧栏展开、默认标签页、「结果不开标签页」切换与双击跳转全部正常)"
                 ))
             }
             "verify_agreement_and_hooks" => {
@@ -514,6 +532,73 @@ impl App {
                     || !agreement.contains("中华人民共和国法律")
                 {
                     return Err("用户协议默认适用区域未更新为中华人民共和国（中国大陆地区）".into());
+                }
+                // 校验用户自定义与第三方 Hooks / Skills / MCP 扩展加载与执行
+                let mut custom_pipe = ide_agent_router::HookPipeline::default();
+                let added_hooks = custom_pipe.load_custom_hooks_from_str(
+                    r#"{"hooks":[{"name":"UserCustomHook","enabled":true,"pre_input_prefix":"[CustomGuard]","mask_patterns":["glpat-"]}]}"#,
+                );
+                if added_hooks != 1 {
+                    return Err("自定义/第三方 Hook JSON 解析加载失败".into());
+                }
+                let custom_masked = custom_pipe
+                    .execute_post_response("gitlab=glpat-secret12345".into())
+                    .map_err(|e| format!("自定义 Hook 执行失败: {e}"))?;
+                if !custom_masked.contains("glpat-****") {
+                    return Err(format!(
+                        "自定义 Hook 未对第三方 glpat- 令牌脱敏: {custom_masked}"
+                    ));
+                }
+                let third_party_mcp = ide_agent_router::McpConfig::from_json_str(
+                    r#"{"servers":{"third-party-srv":{"command":"npx","args":["-y","@third/mcp"]}}}"#,
+                )
+                .map_err(|e| format!("第三方 servers 格式 MCP 配置解析失败: {e}"))?;
+                if !third_party_mcp.mcp_servers.contains_key("third-party-srv") {
+                    return Err("第三方 MCP 配置未正确注册 third-party-srv".into());
+                }
+                // 校验 Function Calling 与 ReAct 核心工具 (react_thought / read_doc_lines / workspace_grep / <tool_call> 提取)
+                let doc_sample = vec![
+                    "fn main() {".to_string(),
+                    "    println!(\"hi\");".into(),
+                    "}".into(),
+                ];
+                let th_res = crate::ai::exec_builtin_with_doc(
+                    "react_thought",
+                    &json!({ "thought": "先定位入口函数", "plan": "读取第 1-2 行", "reflection": "无异常" }),
+                    &doc_sample,
+                    Some(&driver.workspace_root),
+                );
+                if th_res["status"] != "recorded" {
+                    return Err(format!("ReAct react_thought 工具返回异常: {th_res}"));
+                }
+                let rd_res = crate::ai::exec_builtin_with_doc(
+                    "read_doc_lines",
+                    &json!({ "start_line": 1, "end_line": 2 }),
+                    &doc_sample,
+                    Some(&driver.workspace_root),
+                );
+                if rd_res["total_rows"] != 3
+                    || !rd_res["content"]
+                        .as_str()
+                        .unwrap_or("")
+                        .contains("fn main()")
+                {
+                    return Err(format!("ReAct read_doc_lines 工具返回异常: {rd_res}"));
+                }
+                let (cleaned_txt, react_calls) = crate::ai::extract_inline_react_tool_calls(
+                    "Thought: 准备读取代码\n<tool_call>{\"name\":\"read_doc_lines\",\"arguments\":{\"start_line\":1,\"end_line\":5}}</tool_call>",
+                );
+                if react_calls.len() != 1
+                    || react_calls[0].name != "read_doc_lines"
+                    || cleaned_txt.contains("<tool_call>")
+                {
+                    return Err(format!(
+                        "ReAct <tool_call> 提取失败: calls={react_calls:?}, text={cleaned_txt}"
+                    ));
+                }
+                let fenced_args = crate::ai::parse_args("```json\n{\"start_line\": 10}\n```");
+                if fenced_args["start_line"] != 10 {
+                    return Err("Function Calling parse_args 未能剥离 Markdown 代码块围栏".into());
                 }
                 let rt = self.ai.plugin_rt_mut();
                 let pre = rt.run_pre_input_hook("请检查当前代码".to_string())?;
@@ -532,7 +617,10 @@ impl App {
                         "Hooks Post-Response secret-mask 未对明文 sk- 密钥脱敏: {masked}"
                     ));
                 }
-                Ok("中国默认区域用户协议 v1.1 与 Hooks 插件全生命周期钩子校验通过".into())
+                Ok(
+                    "中国默认区域用户协议 v1.1 与自定义/第三方 Hooks · Skills · MCP 扩展校验通过"
+                        .into(),
+                )
             }
             "verify_incremental_search" => {
                 let needle = step.text.as_deref().unwrap_or("Ready");

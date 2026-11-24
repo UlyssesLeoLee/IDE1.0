@@ -3,8 +3,8 @@
 use super::sse::Turn;
 use serde_json::{json, Value};
 
-/// 工具往返的最大轮数 (和 Tauri 版同量级)
-pub const MAX_ROUNDS: usize = 6;
+/// 工具往返的最大轮数 (支持多步 ReAct: Thought -> Grep/ReadLines -> ProposePatch -> Verify)
+pub const MAX_ROUNDS: usize = 10;
 /// 单个工具结果回给模型的字符上限
 pub const MAX_TOOL_RESULT: usize = 20_000;
 
@@ -110,12 +110,30 @@ pub fn vet_plugin_patch(r: &Value, total_rows: usize) -> Value {
 
 // ---------- 工具往返 ----------
 
-/// 模型给的 arguments 串 -> JSON 对象; 空 / 非法 = 空对象 (和 Tauri 版一样)
+/// 模型给的 arguments 串 -> JSON 对象; 支持剥离 Markdown 代码围栏与双重转义 JSON 字符串; 空 / 非法 = 空对象
 pub fn parse_args(s: &str) -> Value {
-    serde_json::from_str::<Value>(s)
-        .ok()
-        .filter(Value::is_object)
-        .unwrap_or_else(|| json!({}))
+    let trimmed = s.trim();
+    if trimmed.is_empty() {
+        return json!({});
+    }
+    let unfenced = trimmed
+        .strip_prefix("```json")
+        .or_else(|| trimmed.strip_prefix("```"))
+        .map(|body| body.trim_end_matches("```").trim())
+        .unwrap_or(trimmed);
+    if let Ok(v) = serde_json::from_str::<Value>(unfenced) {
+        if v.is_object() {
+            return v;
+        }
+        if let Some(inner_str) = v.as_str() {
+            if let Ok(inner_v) = serde_json::from_str::<Value>(inner_str.trim()) {
+                if inner_v.is_object() {
+                    return inner_v;
+                }
+            }
+        }
+    }
+    json!({})
 }
 
 /// 执行内建工具。propose_patch 的 total_rows 一律用真实行数 (不信模型报的)
@@ -123,6 +141,38 @@ pub fn exec_builtin(name: &str, args: &Value, total_rows: usize) -> Value {
     let mut a = args.clone();
     if name == "propose_patch" {
         a["total_rows"] = json!(total_rows);
+    }
+    editcore::agent_api::call(name, &a).unwrap_or_else(|e| json!({ "error": e }))
+}
+
+/// 带活跃文档行与工作区上下文执行内建 ReAct 工具：
+/// - `propose_patch`: 注入真实 `total_rows`；
+/// - `read_doc_lines`: 自动注入当前文档 `lines`（模型只需传 `start_line` / `end_line`）；
+/// - `search_text`: 若模型未显式传 `lines`，自动注入当前文档 `lines`；
+/// - `workspace_grep`: 若模型未显式传 `workspace_root`，自动注入当前工作区根路径。
+pub fn exec_builtin_with_doc(
+    name: &str,
+    args: &Value,
+    doc_lines: &[String],
+    ws_root: Option<&std::path::Path>,
+) -> Value {
+    let mut a = args.clone();
+    match name {
+        "propose_patch" => {
+            a["total_rows"] = json!(doc_lines.len());
+        }
+        "read_doc_lines" => {
+            a["lines"] = json!(doc_lines);
+        }
+        "search_text" if a.get("lines").and_then(Value::as_array).is_none() => {
+            a["lines"] = json!(doc_lines);
+        }
+        "workspace_grep" if a.get("workspace_root").and_then(Value::as_str).is_none() => {
+            if let Some(root) = ws_root {
+                a["workspace_root"] = json!(root.to_string_lossy());
+            }
+        }
+        _ => {}
     }
     editcore::agent_api::call(name, &a).unwrap_or_else(|e| json!({ "error": e }))
 }

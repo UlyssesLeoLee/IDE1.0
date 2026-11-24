@@ -264,7 +264,45 @@ impl SkillRegistry {
         matches
     }
 
-    /// 从目录中扫描自定义技能文件 (支持 `.skills/<id>/SKILL.md` 与 `.skills/*.json`)
+    /// 从单个技能文件加载（支持 `SKILL.md`、任意 `<name>.md` 或 `<name>.json`，兼容自定义与第三方技能格式）
+    pub fn load_from_file(&mut self, path: &Path) -> bool {
+        if !path.is_file() {
+            return false;
+        }
+        let ext = path
+            .extension()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        let Ok(content) = std::fs::read_to_string(path) else {
+            return false;
+        };
+        if ext == "json" {
+            if let Ok(mut skill) = serde_json::from_str::<Skill>(&content) {
+                skill.is_builtin = false;
+                self.register(skill);
+                return true;
+            }
+            return false;
+        }
+        if ext == "md" {
+            let id_source = if path
+                .file_name()
+                .is_some_and(|n| n.eq_ignore_ascii_case("SKILL.md"))
+            {
+                path.parent().unwrap_or(path)
+            } else {
+                path
+            };
+            if let Some(skill) = parse_skill_markdown(id_source, &content) {
+                self.register(skill);
+                return true;
+            }
+        }
+        false
+    }
+
+    /// 从目录中扫描自定义与第三方技能文件 (支持 `<dir>/<id>/SKILL.md`、`<dir>/*.md` 与 `<dir>/*.json`)
     /// 仅在显式调用时运行，绝不在启动主路径上阻塞
     pub fn load_from_dir(&mut self, dir: &Path) {
         if !dir.is_dir() {
@@ -276,37 +314,58 @@ impl SkillRegistry {
             Err(_) => return,
         };
 
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_file() && path.extension().is_some_and(|ext| ext == "json") {
-                if let Ok(content) = std::fs::read_to_string(&path) {
-                    if let Ok(skill) = serde_json::from_str::<Skill>(&content) {
-                        self.register(skill);
-                    }
-                }
+        let mut paths: Vec<_> = entries.flatten().map(|e| e.path()).collect();
+        paths.sort();
+
+        for path in paths {
+            if path.is_file() {
+                let _ = self.load_from_file(&path);
             } else if path.is_dir() {
                 let skill_md = path.join("SKILL.md");
                 if skill_md.is_file() {
-                    if let Ok(content) = std::fs::read_to_string(&skill_md) {
-                        if let Some(skill) = parse_skill_markdown(&path, &content) {
-                            self.register(skill);
-                        }
-                    }
+                    let _ = self.load_from_file(&skill_md);
                 }
             }
         }
     }
+
+    /// 自动扫描工作区与用户全局目录下的所有自定义及第三方技能
+    /// 支持目录：
+    /// - 用户全局 `<user_dir>/custom_skills`
+    /// - 工作区 `.skills`、`.claude/skills`、`.claude/commands`、`.agents/skills`、`skills`
+    pub fn load_workspace_and_user_skills(&mut self, ws_root: &Path, user_dir: Option<&Path>) {
+        if let Some(udir) = user_dir {
+            self.load_from_dir(&udir.join("custom_skills"));
+        }
+        for rel in [
+            ".skills",
+            ".claude/skills",
+            ".claude/commands",
+            ".agents/skills",
+            "skills",
+        ] {
+            self.load_from_dir(&ws_root.join(rel));
+        }
+    }
 }
 
-/// 解析带有 YAML frontmatter 的 `SKILL.md`
-fn parse_skill_markdown(folder: &Path, content: &str) -> Option<Skill> {
-    let folder_name = folder.file_name()?.to_string_lossy().to_string();
+/// 解析带有 YAML frontmatter 的 `SKILL.md` 或独立 `<skill-id>.md`
+fn parse_skill_markdown(id_path: &Path, content: &str) -> Option<Skill> {
+    let raw_stem = if id_path.is_file() {
+        id_path.file_stem()?.to_string_lossy().to_string()
+    } else {
+        id_path.file_name()?.to_string_lossy().to_string()
+    };
+    let folder_name = raw_stem.trim().to_string();
+    if folder_name.is_empty() || folder_name.eq_ignore_ascii_case("README") {
+        return None;
+    }
     if !content.starts_with("---") {
         return Some(Skill::new(
             folder_name.clone(),
-            folder_name,
-            "Custom Workspace Skill",
-            vec![format!("/{}", folder.file_name()?.to_string_lossy())],
+            folder_name.clone(),
+            "Custom / 3rd-Party Skill",
+            vec![format!("/{folder_name}")],
             content.to_string(),
         ));
     }

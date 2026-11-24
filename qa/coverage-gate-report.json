@@ -1,0 +1,91 @@
+﻿{
+    "GeneratedAt":  "2026-11-23T13:37:31-08:00",
+    "Suite":  "IDE1.0 Core Modules Coverage Gate (Node Branch + Rust llvm-cov)",
+    "Thresholds":  {
+                       "MinRustRegionPct":  90,
+                       "MinNodeAllBranchPct":  90
+                   },
+    "NodeServerlessMcp":  {
+                              "AllFiles":  {
+                                               "LinePct":  98.96,
+                                               "BranchPct":  91,
+                                               "FuncPct":  95.19
+                                           },
+                              "Files":  [
+                                            {
+                                                "File":  "_auth.js",
+                                                "LinePct":  100,
+                                                "BranchPct":  88.89,
+                                                "FuncPct":  100
+                                            },
+                                            {
+                                                "File":  "_merge.js",
+                                                "LinePct":  95.85,
+                                                "BranchPct":  91.98,
+                                                "FuncPct":  90.63
+                                            },
+                                            {
+                                                "File":  "_rust_eval.js",
+                                                "LinePct":  99.63,
+                                                "BranchPct":  93.4,
+                                                "FuncPct":  100
+                                            },
+                                            {
+                                                "File":  "_state.js",
+                                                "LinePct":  100,
+                                                "BranchPct":  100,
+                                                "FuncPct":  100
+                                            },
+                                            {
+                                                "File":  "_store.js",
+                                                "LinePct":  100,
+                                                "BranchPct":  89.94,
+                                                "FuncPct":  100
+                                            },
+                                            {
+                                                "File":  "mcp.js",
+                                                "LinePct":  100,
+                                                "BranchPct":  85.96,
+                                                "FuncPct":  100
+                                            },
+                                            {
+                                                "File":  "mcp-vercel-unit.test.mjs",
+                                                "LinePct":  99.05,
+                                                "BranchPct":  92.38,
+                                                "FuncPct":  94.26
+                                            }
+                                        ]
+                          },
+    "RustCrates":  [
+                       {
+                           "Package":  "nema-codec",
+                           "RegionsTotal":  6935,
+                           "RegionsMiss":  619,
+                           "RegionPct":  91.07,
+                           "FuncTotal":  264,
+                           "FuncMiss":  32,
+                           "FuncPct":  87.88,
+                           "LinesTotal":  4221,
+                           "LinesMiss":  371,
+                           "LinePct":  91.21,
+                           "Note":  "Stable rustc llvm-cov tracks Region/Function/Line coverage (Branch column is \u0027-\u0027 without nightly MC/DC)"
+                       },
+                       {
+                           "Package":  "ide-mcp",
+                           "RegionsTotal":  6116,
+                           "RegionsMiss":  583,
+                           "RegionPct":  90.47,
+                           "FuncTotal":  266,
+                           "FuncMiss":  37,
+                           "FuncPct":  86.09,
+                           "LinesTotal":  4106,
+                           "LinesMiss":  397,
+                           "LinePct":  90.33,
+                           "Note":  "Stable rustc llvm-cov tracks Region/Function/Line coverage (Branch column is \u0027-\u0027 without nightly MC/DC)"
+                       }
+                   ],
+    "GatePassed":  true,
+    "GateFailures":  [
+
+                     ]
+}

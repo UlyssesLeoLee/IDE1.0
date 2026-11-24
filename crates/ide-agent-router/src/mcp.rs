@@ -143,10 +143,10 @@ pub struct McpServerConfig {
     pub disabled: bool,
 }
 
-/// MCP 全局/工作区配置文件格式 (`.mcp.json` 或 `mcp_servers.json`)
+/// MCP 全局/工作区配置文件格式 (`.mcp.json`、`mcp_servers.json` 或第三方 `servers` 格式)
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 pub struct McpConfig {
-    #[serde(default, rename = "mcpServers")]
+    #[serde(default, rename = "mcpServers", alias = "servers")]
     pub mcp_servers: HashMap<String, McpServerConfig>,
 }
 

@@ -1,0 +1,211 @@
+﻿{
+    "GeneratedAt":  "2026-11-23T13:37:32-08:00",
+    "Suite":  "IDE1.0 Dedicated Mock-Project Feature Matrix",
+    "MockProject":  "E:\\IDE1.0\\tests\\mock-project",
+    "FastMode":  false,
+    "TotalTests":  18,
+    "PassedTests":  18,
+    "SkippedTests":  0,
+    "FailedTests":  0,
+    "ElapsedSec":  892.12,
+    "Results":  [
+                    {
+                        "Order":  1,
+                        "Id":  "F-01",
+                        "Name":  "Mock 工程全资产与格式完整性校验",
+                        "Category":  "Workspace Fixtures",
+                        "Kind":  "asset_check",
+                        "Status":  "Passed",
+                        "DurationSec":  0.11,
+                        "Detail":  "12 fixtures verified",
+                        "Error":  ""
+                    },
+                    {
+                        "Order":  2,
+                        "Id":  "F-02",
+                        "Name":  "核心文本引擎、Diff、编码与 Agent API (editcore)",
+                        "Category":  "Core Engine",
+                        "Kind":  "cargo_test",
+                        "Status":  "Passed",
+                        "DurationSec":  173.26,
+                        "Detail":  "editcore: 660 passed (9 suite(s))",
+                        "Error":  ""
+                    },
+                    {
+                        "Order":  3,
+                        "Id":  "F-03",
+                        "Name":  "NEMA v1.5 编解码与语法封闭性 (nema-codec)",
+                        "Category":  "NEMA Protocol",
+                        "Kind":  "cargo_test",
+                        "Status":  "Passed",
+                        "DurationSec":  27.2,
+                        "Detail":  "nema-codec: 30 passed (5 suite(s))",
+                        "Error":  ""
+                    },
+                    {
+                        "Order":  4,
+                        "Id":  "F-04",
+                        "Name":  "Agent 路由、Skills、Hooks、Memory、LoopBreaker 与沙盒 (ide-agent-router)",
+                        "Category":  "Agent Router",
+                        "Kind":  "cargo_test",
+                        "Status":  "Passed",
+                        "DurationSec":  76.89,
+                        "Detail":  "ide-agent-router: 66 passed (6 suite(s))",
+                        "Error":  ""
+                    },
+                    {
+                        "Order":  5,
+                        "Id":  "F-05",
+                        "Name":  "Blender 风格 Rust 控制台 DSL (ide-mcp + ide-fast rust_console)",
+                        "Category":  "Rust Console DSL",
+                        "Kind":  "cargo_test_multi",
+                        "Status":  "Passed",
+                        "DurationSec":  172.67,
+                        "Detail":  "ide-mcp: 31 passed (7 suite(s)); ide-fast: 3 passed (1 suite(s))",
+                        "Error":  ""
+                    },
+                    {
+                        "Order":  6,
+                        "Id":  "F-06",
+                        "Name":  "惰性插件运行时与 MCP/Skills/Mod/Hooks 热插拔门控 (agent_plugins)",
+                        "Category":  "Agent Plugins",
+                        "Kind":  "cargo_test",
+                        "Status":  "Passed",
+                        "DurationSec":  3.32,
+                        "Detail":  "ide-fast: 5 passed (1 suite(s))",
+                        "Error":  ""
+                    },
+                    {
+                        "Order":  7,
+                        "Id":  "F-07",
+                        "Name":  "单 Agent 对话、Cookie 生命周期与模型隔离 (aichat)",
+                        "Category":  "Single Agent",
+                        "Kind":  "cargo_test",
+                        "Status":  "Passed",
+                        "DurationSec":  2.25,
+                        "Detail":  "ide-fast: 17 passed (1 suite(s))",
+                        "Error":  ""
+                    },
+                    {
+                        "Order":  8,
+                        "Id":  "F-08",
+                        "Name":  "多 Agent 协同、并行分区、LoopBreaker 隔离与工具对等 (collab)",
+                        "Category":  "Multi-Agent Collab",
+                        "Kind":  "cargo_test",
+                        "Status":  "Passed",
+                        "DurationSec":  3.03,
+                        "Detail":  "ide-fast: 24 passed (1 suite(s))",
+                        "Error":  ""
+                    },
+                    {
+                        "Order":  9,
+                        "Id":  "F-09",
+                        "Name":  "安装向导全屏最大化、协议优先与无暗色遮罩 (installer_ui)",
+                        "Category":  "Installer UI",
+                        "Kind":  "cargo_test",
+                        "Status":  "Passed",
+                        "DurationSec":  7.77,
+                        "Detail":  "ide-fast: 26 passed (1 suite(s))",
+                        "Error":  ""
+                    },
+                    {
+                        "Order":  10,
+                        "Id":  "F-10",
+                        "Name":  "桌面便笺 CRUD、Markdown 就地编辑与 Agent 工具 (sticky_notes)",
+                        "Category":  "Sticky Notes",
+                        "Kind":  "cargo_test",
+                        "Status":  "Passed",
+                        "DurationSec":  4.41,
+                        "Detail":  "ide-fast: 17 passed (1 suite(s))",
+                        "Error":  ""
+                    },
+                    {
+                        "Order":  11,
+                        "Id":  "F-11",
+                        "Name":  "终端子系统 ANSI TrueColor、CLIXML 与 OSC 133 (terminal)",
+                        "Category":  "Terminal",
+                        "Kind":  "cargo_test",
+                        "Status":  "Passed",
+                        "DurationSec":  10.6,
+                        "Detail":  "ide-fast: 19 passed (1 suite(s))",
+                        "Error":  ""
+                    },
+                    {
+                        "Order":  12,
+                        "Id":  "F-12",
+                        "Name":  "主题渲染与状态栏国际化模板完整性 (view + i18n)",
+                        "Category":  "UI \u0026 i18n",
+                        "Kind":  "cargo_test_multi",
+                        "Status":  "Passed",
+                        "DurationSec":  8.81,
+                        "Detail":  "ide-fast: 1 passed (1 suite(s)); ide-fast: 29 passed (1 suite(s))",
+                        "Error":  ""
+                    },
+                    {
+                        "Order":  13,
+                        "Id":  "F-13",
+                        "Name":  "Vercel MCP Serverless 单元测试 (tests/mcp-vercel-unit.test.mjs)",
+                        "Category":  "Serverless MCP",
+                        "Kind":  "node_test",
+                        "Status":  "Passed",
+                        "DurationSec":  1.83,
+                        "Detail":  "node --test tests/mcp-vercel-unit.test.mjs OK",
+                        "Error":  ""
+                    },
+                    {
+                        "Order":  14,
+                        "Id":  "F-14",
+                        "Name":  "Git / NEMA 双模式协同合并 E2E (mock-project/collab-modes-e2e.mjs)",
+                        "Category":  "Collab Engine E2E",
+                        "Kind":  "node_script",
+                        "Status":  "Passed",
+                        "DurationSec":  0.75,
+                        "Detail":  "node tests/mock-project/collab-modes-e2e.mjs OK",
+                        "Error":  ""
+                    },
+                    {
+                        "Order":  15,
+                        "Id":  "F-15",
+                        "Name":  "全工作区代码格式与 Clippy 零警告门禁 (fmt + clippy)",
+                        "Category":  "Repo Quality Gate",
+                        "Kind":  "quality_gate",
+                        "Status":  "Passed",
+                        "DurationSec":  11.55,
+                        "Detail":  "cargo fmt + clippy (5 crates --all-targets -D warnings) OK",
+                        "Error":  ""
+                    },
+                    {
+                        "Order":  16,
+                        "Id":  "F-16",
+                        "Name":  "生产二进制 --smoke-test 冷启动自检",
+                        "Category":  "Release Smoke Test",
+                        "Kind":  "binary_smoke",
+                        "Status":  "Passed",
+                        "DurationSec":  2.55,
+                        "Detail":  "E:\\IDE1.0\\dist-fast\\IDE1.0-0.9.4-windows-x64.exe --smoke-test OK",
+                        "Error":  ""
+                    },
+                    {
+                        "Order":  17,
+                        "Id":  "F-17",
+                        "Name":  "真实启动 IDE1.0 GUI 窗口自动操作实测 (run-live-gui.ps1)",
+                        "Category":  "Live GUI E2E",
+                        "Kind":  "ps_script",
+                        "Status":  "Passed",
+                        "DurationSec":  59.07,
+                        "Detail":  "tests/mock-project/run-live-gui.ps1 OK",
+                        "Error":  ""
+                    },
+                    {
+                        "Order":  18,
+                        "Id":  "F-18",
+                        "Name":  "核心模块覆盖率门禁 (Node 分支 + Rust llvm-cov)",
+                        "Category":  "Coverage Gate",
+                        "Kind":  "ps_script",
+                        "Status":  "Passed",
+                        "DurationSec":  323.17,
+                        "Detail":  "tests/mock-project/run-coverage-gate.ps1 OK",
+                        "Error":  ""
+                    }
+                ]
+}

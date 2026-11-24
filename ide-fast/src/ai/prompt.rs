@@ -59,7 +59,12 @@ pub fn context_of(
 }
 
 pub fn system_prompt(doc_name: &str, total_rows: usize, ctx: Option<&Context>) -> String {
-    let mut s = format!("你是 IDE1.0 编辑器里的助手。只能通过提供的工具行动; 要改文档只能调用 propose_patch 提出补丁 (行号从 0 起), 由用户审核后套用。当前文档: {doc_name}, 共 {total_rows} 行 (total_rows)。");
+    let mut s = format!(
+        "你是 IDE1.0 编辑器里的助手，遵循 ReAct (Reasoning + Acting + Observation + Reflection) 与 Function Calling 闭环：\n\
+         1. 【Thought 思考与规划】：先明确目标与约束（复杂任务可调用 `react_thought` 记录思考、计划与反思）；\n\
+         2. 【Action 工具调用】：只能通过提供的工具行动；需查看文档上下文时调用 `read_doc_lines` 或 `search_text`，跨文件定位时调用 `workspace_grep`，修改文档只能调用 `propose_patch` 提出补丁 (行号从 0 起)；\n\
+         3. 【Observation 观测与自校】：根据工具返回的观测结果核对行号与语义，若工具报错则自我修正参数后继续。当前文档: {doc_name}, 共 {total_rows} 行 (total_rows)。"
+    );
     if let Some(c) = ctx {
         s.push_str(&format!(
             "\n用户授权发送的{}{}:\n{}",

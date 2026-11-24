@@ -33,6 +33,8 @@ pub struct AgentPluginRuntime {
     rules_engine: Option<WorkspaceRulesEngine>,
     memory_engine: Option<AgentMemoryEngine>,
     hooks: Option<HookPipeline>,
+    hooks_loaded_root: Option<PathBuf>,
+    skills_loaded_root: Option<PathBuf>,
     loop_breaker: Option<LoopBreaker>,
     mcp: Option<McpManager>,
     mcp_loaded_root: Option<PathBuf>,
@@ -58,12 +60,14 @@ impl AgentPluginRuntime {
         }
         if !plugins::is_hot_module_active(HotModuleKind::Skills) {
             self.skills = None;
+            self.skills_loaded_root = None;
         }
         if !plugins::is_hot_module_active(HotModuleKind::Mod) {
             self.rules_engine = None;
         }
         if !plugins::is_hot_module_active(HotModuleKind::Hooks) {
             self.hooks = None;
+            self.hooks_loaded_root = None;
             self.loop_breaker = None;
         }
         if !Self::any_agent_plugin_active() {
@@ -74,6 +78,16 @@ impl AgentPluginRuntime {
     /// 同步释放已被用户禁用或卸载的热插拔子模块与缓存（MCP / Skills / Mod / Hooks / Memory）
     pub fn unload_disabled_modules(&mut self) {
         self.unload_disabled_engines();
+        self.installed_cache = None;
+    }
+
+    /// 强制热重载所有自定义与第三方 Hooks、Skills、MCP 配置（在用户新建/编辑/导入扩展后调用）
+    pub fn reload_custom_extensions(&mut self) {
+        self.reset_mcp();
+        self.skills = None;
+        self.skills_loaded_root = None;
+        self.hooks = None;
+        self.hooks_loaded_root = None;
         self.installed_cache = None;
     }
 
@@ -102,7 +116,7 @@ impl AgentPluginRuntime {
             .get_or_insert_with(|| editcore::plugin_host::store::list(&plugins::root()))
     }
 
-    /// 确保当前工作区的 MCP 外部配置已登记（按 `mcp` 插件清单声明的 `configFiles` 顺序探测）
+    /// 确保当前工作区与全局用户目录下的所有自定义及第三方 MCP 服务器配置已合并登记
     pub fn ensure_mcp_config(&mut self, ws_root: &Path) {
         let config_files = plugins::active_mcp_config_files();
         if config_files.is_empty() {
@@ -112,15 +126,83 @@ impl AgentPluginRuntime {
         if self.mcp_loaded_root.as_deref() == Some(ws_root) && self.mcp.is_some() {
             return;
         }
-        let mgr = self.mcp.get_or_insert_with(McpManager::default);
+        let mgr = self.mcp.insert(McpManager::default());
+        let user_root = plugins::root();
+        // 1. 先加载用户全局自定义/第三方 MCP 配置 (<plugins_root>/mcp_servers.json, .mcp.json, custom_mcp/*.json)
+        for rel in &config_files {
+            let global_cand = user_root.join(rel);
+            if let Some(cfg) = McpConfig::load_from_file(&global_cand) {
+                mgr.load_config(cfg);
+            }
+        }
+        if let Ok(rd) = std::fs::read_dir(user_root.join("custom_mcp")) {
+            let mut files: Vec<_> = rd.flatten().map(|e| e.path()).collect();
+            files.sort();
+            for p in files {
+                if p.extension().is_some_and(|ext| ext == "json") {
+                    if let Some(cfg) = McpConfig::load_from_file(&p) {
+                        mgr.load_config(cfg);
+                    }
+                }
+            }
+        }
+        // 2. 再合并加载当前工作区下的自定义/第三方 MCP 配置 (.mcp.json, mcp_servers.json, .cursor/mcp.json)
         for rel in &config_files {
             let candidate = ws_root.join(rel);
             if let Some(cfg) = McpConfig::load_from_file(&candidate) {
                 mgr.load_config(cfg);
-                break;
             }
         }
+        let cursor_mcp = ws_root.join(".cursor/mcp.json");
+        if let Some(cfg) = McpConfig::load_from_file(&cursor_mcp) {
+            mgr.load_config(cfg);
+        }
         self.mcp_loaded_root = Some(ws_root.to_path_buf());
+    }
+
+    /// 确保当前工作区与用户全局目录下的自定义及第三方 Hooks 已挂载
+    pub fn ensure_hooks_config(&mut self, ws_root: &Path) {
+        if !plugins::is_hot_module_active(HotModuleKind::Hooks) {
+            self.hooks = None;
+            self.hooks_loaded_root = None;
+            return;
+        }
+        if self.hooks_loaded_root.as_deref() == Some(ws_root) && self.hooks.is_some() {
+            return;
+        }
+        let mut pipeline = HookPipeline::default();
+        let user_root = plugins::root();
+        let _ = pipeline.load_workspace_and_user_hooks(ws_root, Some(&user_root));
+        self.hooks = Some(pipeline);
+        self.hooks_loaded_root = Some(ws_root.to_path_buf());
+    }
+
+    fn active_hook_pipeline(&mut self) -> &mut HookPipeline {
+        if self.hooks.is_none() {
+            let mut pipeline = HookPipeline::default();
+            let user_root = plugins::root();
+            let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+            let _ = pipeline.load_workspace_and_user_hooks(&cwd, Some(&user_root));
+            self.hooks = Some(pipeline);
+        }
+        self.hooks.as_mut().expect("hooks initialized")
+    }
+
+    /// 确保当前工作区与用户全局目录下的自定义及第三方 Skills 已扫描加载
+    pub fn ensure_skills_config(&mut self, ws_root: &Path) {
+        if !plugins::is_hot_module_active(HotModuleKind::Skills) {
+            self.skills = None;
+            self.skills_loaded_root = None;
+            return;
+        }
+        if self.skills_loaded_root.as_deref() == Some(ws_root) && self.skills.is_some() {
+            return;
+        }
+        let mut reg = SkillRegistry::default();
+        let user_root = plugins::root();
+        reg.load_workspace_and_user_skills(ws_root, Some(&user_root));
+        self.skills = Some(reg);
+        self.skills_loaded_root = Some(ws_root.to_path_buf());
     }
 
     /// 克隆当前活跃的 MCP 管理器用于后台工作线程并发调用（若 `"mcp"` 未激活则返回 `None`）
@@ -165,21 +247,20 @@ impl AgentPluginRuntime {
     pub fn run_pre_input_hook(&mut self, input: String) -> Result<String, String> {
         if !plugins::is_hot_module_active(HotModuleKind::Hooks) {
             self.hooks = None;
+            self.hooks_loaded_root = None;
             return Ok(input);
         }
-        self.hooks
-            .get_or_insert_with(HookPipeline::default)
-            .execute_pre_input(input)
+        self.active_hook_pipeline().execute_pre_input(input)
     }
 
     /// 执行 `PostResponse` 脱敏/后处理钩子（仅当 `"hooks"` 插件激活时生效）
     pub fn run_post_response_hook(&mut self, text: String) -> String {
         if !plugins::is_hot_module_active(HotModuleKind::Hooks) {
             self.hooks = None;
+            self.hooks_loaded_root = None;
             return text;
         }
-        self.hooks
-            .get_or_insert_with(HookPipeline::default)
+        self.active_hook_pipeline()
             .execute_post_response(text.clone())
             .unwrap_or(text)
     }
@@ -191,8 +272,16 @@ impl AgentPluginRuntime {
         args: &Value,
     ) -> Result<(), String> {
         breaker.check_and_record(tool_name, args)?;
+        if hooks.is_none() {
+            let mut pipeline = HookPipeline::default();
+            let user_root = plugins::root();
+            let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+            let _ = pipeline.load_workspace_and_user_hooks(&cwd, Some(&user_root));
+            *hooks = Some(pipeline);
+        }
         hooks
-            .get_or_insert_with(HookPipeline::default)
+            .as_ref()
+            .expect("hooks initialized")
             .execute_pre_tool_call(tool_name, args)
     }
 
@@ -205,6 +294,7 @@ impl AgentPluginRuntime {
     ) -> Result<(), String> {
         if !plugins::is_hot_module_active(HotModuleKind::Hooks) {
             self.hooks = None;
+            self.hooks_loaded_root = None;
             self.loop_breaker = None;
             return Ok(());
         }
@@ -215,6 +305,7 @@ impl AgentPluginRuntime {
     pub fn check_tool_gate(&mut self, tool_name: &str, args: &Value) -> Result<(), String> {
         if !plugins::is_hot_module_active(HotModuleKind::Hooks) {
             self.hooks = None;
+            self.hooks_loaded_root = None;
             self.loop_breaker = None;
             return Ok(());
         }
@@ -226,11 +317,11 @@ impl AgentPluginRuntime {
     pub fn run_post_tool_hook(&mut self, tool_name: &str, result: Value) -> Value {
         if !plugins::is_hot_module_active(HotModuleKind::Hooks) {
             self.hooks = None;
+            self.hooks_loaded_root = None;
             return result;
         }
         let masked = self
-            .hooks
-            .get_or_insert_with(HookPipeline::default)
+            .active_hook_pipeline()
             .execute_post_tool_call(tool_name, result.to_string());
         serde_json::from_str(&masked).unwrap_or(result)
     }
@@ -261,9 +352,11 @@ impl AgentPluginRuntime {
         F: FnOnce(&str) -> String,
     {
         self.unload_disabled_engines();
+        self.ensure_hooks_config(ws_root);
 
         let (matched_skill, effective_prompt) =
             if plugins::is_hot_module_active(HotModuleKind::Skills) {
+                self.ensure_skills_config(ws_root);
                 let registry = self.skills.get_or_insert_with(SkillRegistry::default);
                 if let Some((skill, rest)) = registry.match_prompt(raw_prompt) {
                     (Some(skill.clone()), rest.to_string())

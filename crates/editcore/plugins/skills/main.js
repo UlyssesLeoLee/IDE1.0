@@ -9,9 +9,18 @@ const SKILLS = [
 
 ide.register({
   "command:list"() {
+    const builtinList = SKILLS.map(s => `${s.trigger}  ${s.name} (${s.id})`).join("\n");
+    const extInfo = [
+      "",
+      "[自定义与第三方 Skills 扩展支持]",
+      "• 工作区目录: .skills/<id>/SKILL.md、.skills/*.md、.skills/*.json",
+      "• 第三方兼容目录: .claude/skills/、.claude/commands/*.md、.agents/skills/",
+      "• 全局自定义目录: <plugins_root>/custom_skills/",
+      "• 可在「插件」面板点击「➕ 新建自定义 Skill」或「📥 导入第三方 Skill」一键添加并热重载"
+    ].join("\n");
     return {
-      summary: `Skills 模块已启用 (${SKILLS.length} 个核心技能)`,
-      html: `<pre>${SKILLS.map(s => `${s.trigger}  ${s.name} (${s.id})`).join("\n")}</pre>`
+      summary: `Skills 模块已启用 (${SKILLS.length} 个内建技能 + 支持自定义与第三方 SKILL.md / JSON 扩展)`,
+      html: `<pre>${builtinList}\n${extInfo}</pre>`
     };
   },
   "agent.tool:list_skills"() {

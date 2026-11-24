@@ -1748,7 +1748,18 @@ impl App {
                 self.side.grep.cancel();
                 self.side.grep.msg = format!("已停止, {} 处命中", self.side.grep.results.len());
             }
-            GEv::ResultDoc => self.open_grep_doc(),
+            GEv::ResultDoc => {
+                self.side.grep.o.no_tab = false;
+                self.open_grep_doc();
+            }
+            GEv::ToggleNoTab(no_tab) => {
+                self.side.grep.o.no_tab = no_tab;
+                if no_tab {
+                    self.close_grep_doc();
+                } else if self.side.grep.last.is_some() {
+                    self.open_grep_doc();
+                }
+            }
             GEv::UseCurDir => {
                 if let Some(d) = self
                     .cur()
@@ -1835,8 +1846,31 @@ impl App {
         } else {
             self.side.grep.start(root.clone());
         }
-        // 默认把 Grep 查询结果以文本形式在主窗口编辑区作为标签页打开 (或复用已有 Grep 结果标签页)
-        self.open_grep_doc();
+        if self.side.grep.o.no_tab {
+            // 开启「结果不开标签页」时，结果只显示在下方结果栏位，关闭已有的 Grep 结果标签页
+            self.close_grep_doc();
+        } else {
+            // 默认把 Grep 查询结果以文本形式在主窗口编辑区作为标签页打开 (或复用已有 Grep 结果标签页)
+            self.open_grep_doc();
+        }
+    }
+
+    /// 关闭主编辑区中的 `Grep 结果` 标签页（用于开启「结果不开标签页」模式时，让结果只出现在下方结果栏位）
+    pub(super) fn close_grep_doc(&mut self) {
+        if let Some(id) = self.grep_doc.take() {
+            if let Some(i) = self.docs.iter().position(|d| d.id == id) {
+                if self.docs.len() > 1 {
+                    self.docs.remove(i);
+                    if self.active >= self.docs.len() {
+                        self.active = self.docs.len() - 1;
+                    }
+                } else {
+                    let new_id = self.id();
+                    self.docs[0] = Doc::untitled(new_id, 0);
+                    self.active = 0;
+                }
+            }
+        }
     }
 
     fn grep_replace(&mut self) {
@@ -2284,6 +2318,22 @@ impl App {
                             " · [Hooks 巡检提醒: 检测到疑似明文密钥，建议执行 Hooks 安全巡检]",
                         );
                     }
+                }
+                let path_norm = path.to_string_lossy().replace('\\', "/");
+                if path_norm.ends_with(".hooks.json")
+                    || path_norm.ends_with("hooks.json")
+                    || path_norm.ends_with("SKILL.md")
+                    || path_norm.ends_with(".mcp.json")
+                    || path_norm.ends_with("mcp_servers.json")
+                    || path_norm.contains("/.hooks/")
+                    || path_norm.contains("/.skills/")
+                    || path_norm.contains("/.claude/")
+                    || path_norm.contains("/custom_hooks/")
+                    || path_norm.contains("/custom_skills/")
+                    || path_norm.contains("/custom_mcp/")
+                {
+                    self.ai.plugin_rt_mut().reload_custom_extensions();
+                    saved_tip.push_str(" · [已热重载自定义/第三方 Hooks · Skills · MCP 配置]");
                 }
                 self.cur().tip = saved_tip;
                 true
@@ -2740,6 +2790,79 @@ impl App {
                     }
                 });
             }
+            if r.enabled && matches!(r.id.as_str(), "hooks" | "skills" | "mcp") {
+                ui.horizontal_wrapped(|ui| {
+                    ui.add_space(24.0);
+                    ui.weak("自定义/第三方:");
+                    match r.id.as_str() {
+                        "hooks" => {
+                            if ui
+                                .small_button("➕ 新建/编辑自定义 Hook")
+                                .on_hover_text(
+                                    "在工作区创建或打开 .hooks.json，自定义输入注入、工具拦截与第三方凭证脱敏规则",
+                                )
+                                .clicked()
+                            {
+                                ui.close();
+                                self.open_or_create_custom_hooks_file();
+                            }
+                            if ui
+                                .small_button("📥 导入第三方 Hook (.json)")
+                                .on_hover_text("从本地选择第三方或团队共享的 Hook 规则 JSON 文件并导入")
+                                .clicked()
+                            {
+                                ui.close();
+                                self.import_third_party_hook_file();
+                            }
+                        }
+                        "skills" => {
+                            if ui
+                                .small_button("➕ 新建自定义 Skill")
+                                .on_hover_text(
+                                    "在工作区 .skills/ 创建并打开自定义 SKILL.md 技能模板（支持 /slash 快捷触发）",
+                                )
+                                .clicked()
+                            {
+                                ui.close();
+                                self.open_or_create_custom_skill_file();
+                            }
+                            if ui
+                                .small_button("📥 导入第三方 Skill (.md/.json)")
+                                .on_hover_text(
+                                    "导入第三方 SKILL.md、Claude Code 命令 (.md) 或 JSON 技能定义文件",
+                                )
+                                .clicked()
+                            {
+                                ui.close();
+                                self.import_third_party_skill_file();
+                            }
+                        }
+                        "mcp" => {
+                            if ui
+                                .small_button("➕ 添加/编辑 MCP 服务")
+                                .on_hover_text(
+                                    "创建或打开 .mcp.json，添加自定义本地 MCP 服务或 npx/uvx 第三方 MCP Server",
+                                )
+                                .clicked()
+                            {
+                                ui.close();
+                                self.open_or_create_custom_mcp_file();
+                            }
+                            if ui
+                                .small_button("📥 导入第三方 MCP 配置 (.json)")
+                                .on_hover_text(
+                                    "导入第三方 .mcp.json / mcp_servers.json / claude_desktop_config.json 并自动合并",
+                                )
+                                .clicked()
+                            {
+                                ui.close();
+                                self.import_third_party_mcp_file();
+                            }
+                        }
+                        _ => {}
+                    }
+                });
+            }
             if r.id == "mod" && r.enabled && !r.mod_modes.is_empty() {
                 ui.horizontal(|ui| {
                     ui.add_space(24.0);
@@ -2802,6 +2925,222 @@ impl App {
                 }
             });
         }
+    }
+
+    /// 获取用于存放自定义 Hooks / Skills / MCP 的目标工作区根目录（无工作区时回退到全局插件目录）
+    fn extension_target_root(&mut self) -> PathBuf {
+        self.grep_root().unwrap_or_else(plugins::root)
+    }
+
+    /// 创建或打开工作区 `.hooks.json` 自定义/第三方 Hook 规则配置文件
+    pub(super) fn open_or_create_custom_hooks_file(&mut self) {
+        let root = self.extension_target_root();
+        let target = root.join(".hooks.json");
+        if !target.exists() {
+            let template = r#"{
+  "hooks": [
+    {
+      "name": "CustomSecurityAndStyleHook",
+      "description": "用户自定义或第三方导入的生命周期安全与规范钩子",
+      "enabled": true,
+      "pre_input_prefix": "[Custom Hook] 请严格保持代码简洁与边界安全。",
+      "pre_input_block_patterns": [],
+      "blocked_tools": [],
+      "pre_tool_block_patterns": ["rm -rf /", "DROP DATABASE"],
+      "mask_patterns": ["glpat-", "xoxb-", "AIza"]
+    }
+  ]
+}
+"#;
+            let _ = std::fs::write(&target, template);
+        }
+        self.ai.plugin_rt_mut().reload_custom_extensions();
+        self.open_at(&target, 1, 0);
+        self.cur().tip = format!("已打开自定义/第三方 Hooks 配置文件: {}", target.display());
+    }
+
+    /// 导入外部/第三方 Hook JSON 配置文件到全局 `custom_hooks/` 目录并立即热重载
+    pub(super) fn import_third_party_hook_file(&mut self) {
+        let Some(picked) = rfd::FileDialog::new()
+            .add_filter("Hook 规则配置 (*.json)", &["json"])
+            .pick_file()
+        else {
+            return;
+        };
+        let Ok(raw) = std::fs::read_to_string(&picked) else {
+            self.cur().tip = "读取第三方 Hook 文件失败".into();
+            return;
+        };
+        let mut test_pipe = ide_agent_router::HookPipeline::new();
+        let added = test_pipe.load_custom_hooks_from_str(&raw);
+        if added == 0 {
+            self.cur().tip =
+                "未在所选 JSON 中识别到有效的 Hook 规则（需包含 name 字段或 hooks 数组）".into();
+            return;
+        }
+        let dest_dir = plugins::root().join("custom_hooks");
+        let _ = std::fs::create_dir_all(&dest_dir);
+        let fname = picked
+            .file_name()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "third_party_hook.json".into());
+        let dest = dest_dir.join(&fname);
+        if let Err(e) = std::fs::write(&dest, &raw) {
+            self.cur().tip = format!("写入第三方 Hook 失败: {e}");
+            return;
+        }
+        self.ai.plugin_rt_mut().reload_custom_extensions();
+        self.open_at(&dest, 1, 0);
+        self.cur().tip = format!("已导入并启用 {added} 条第三方 Hook 规则 ({fname})");
+    }
+
+    /// 创建或打开工作区 `.skills/custom-skill/SKILL.md` 自定义技能模板
+    pub(super) fn open_or_create_custom_skill_file(&mut self) {
+        let root = self.extension_target_root();
+        let skill_dir = root.join(".skills").join("my-skill");
+        let _ = std::fs::create_dir_all(&skill_dir);
+        let target = skill_dir.join("SKILL.md");
+        if !target.exists() {
+            let template = r#"---
+name: 自定义专项技能 (My Custom Skill)
+description: 用户自定义或团队共享的 AI 研发技能，在聊天框输入 /my-skill 即可触发
+trigger: /my-skill
+tags: custom, workflow
+---
+
+你是一位资深系统架构师与代码专家。请按以下步骤处理用户的请求：
+1. 明确边界条件、状态不变量与异常处理；
+2. 给出最小化、可验证的高质量代码实现；
+3. 说明关键设计权衡与测试要点。
+"#;
+            let _ = std::fs::write(&target, template);
+        }
+        self.ai.plugin_rt_mut().reload_custom_extensions();
+        self.open_at(&target, 1, 0);
+        self.cur().tip = format!(
+            "已打开自定义 Skill 模板 ({})，保存后可通过 /my-skill 触发",
+            target.display()
+        );
+    }
+
+    /// 导入外部/第三方 Skill 文件（支持 `SKILL.md`、Claude Code `*.md` 命令或 `*.json` 技能包）
+    pub(super) fn import_third_party_skill_file(&mut self) {
+        let Some(picked) = rfd::FileDialog::new()
+            .add_filter("Skill 技能文件 (*.md;*.json)", &["md", "json"])
+            .pick_file()
+        else {
+            return;
+        };
+        let Ok(raw) = std::fs::read_to_string(&picked) else {
+            self.cur().tip = "读取第三方 Skill 文件失败".into();
+            return;
+        };
+        let ext = picked
+            .extension()
+            .and_then(|s| s.to_str())
+            .unwrap_or("md")
+            .to_ascii_lowercase();
+        let dest_base = plugins::root().join("custom_skills");
+        let _ = std::fs::create_dir_all(&dest_base);
+        let dest = if picked
+            .file_name()
+            .is_some_and(|n| n.eq_ignore_ascii_case("SKILL.md"))
+        {
+            let folder_name = picked
+                .parent()
+                .and_then(|p| p.file_name())
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "third-party-skill".into());
+            let sub = dest_base.join(folder_name);
+            let _ = std::fs::create_dir_all(&sub);
+            sub.join("SKILL.md")
+        } else {
+            let fname = picked
+                .file_name()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_else(|| format!("third_party_skill.{ext}"));
+            dest_base.join(fname)
+        };
+        if let Err(e) = std::fs::write(&dest, &raw) {
+            self.cur().tip = format!("写入第三方 Skill 失败: {e}");
+            return;
+        }
+        let mut test_reg = ide_agent_router::SkillRegistry::new();
+        let ok = test_reg.load_from_file(&dest);
+        self.ai.plugin_rt_mut().reload_custom_extensions();
+        self.open_at(&dest, 1, 0);
+        if ok {
+            self.cur().tip = format!("已导入并启用第三方 Skill: {}", dest.display());
+        } else {
+            self.cur().tip = format!("已打开第三方 Skill 文件: {}", dest.display());
+        }
+    }
+
+    /// 创建或打开工作区 `.mcp.json`（用于添加用户自己的或第三方的 MCP Server）
+    pub(super) fn open_or_create_custom_mcp_file(&mut self) {
+        let root = self.extension_target_root();
+        let target = root.join(".mcp.json");
+        if !target.exists() {
+            let template = r#"{
+  "mcpServers": {
+    "my-custom-mcp": {
+      "command": "node",
+      "args": ["path/to/your-mcp-server.js"],
+      "env": {},
+      "disabled": false
+    },
+    "third-party-filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "."],
+      "env": {},
+      "disabled": true
+    }
+  }
+}
+"#;
+            let _ = std::fs::write(&target, template);
+        }
+        self.ai.plugin_rt_mut().reload_custom_extensions();
+        self.open_at(&target, 1, 0);
+        self.cur().tip = format!(
+            "已打开 MCP 服务器配置文件 ({})，支持添加自定义与第三方 MCP Server",
+            target.display()
+        );
+    }
+
+    /// 导入外部/第三方 MCP 配置文件（`.mcp.json` / `mcp_servers.json` / `claude_desktop_config.json`）并合并注册
+    pub(super) fn import_third_party_mcp_file(&mut self) {
+        let Some(picked) = rfd::FileDialog::new()
+            .add_filter("MCP 配置文件 (*.json)", &["json"])
+            .pick_file()
+        else {
+            return;
+        };
+        let Some(incoming) = ide_agent_router::McpConfig::load_from_file(&picked) else {
+            self.cur().tip = "解析第三方 MCP 配置文件失败（需符合 JSON 格式）".into();
+            return;
+        };
+        if incoming.mcp_servers.is_empty() {
+            self.cur().tip = "所选 JSON 文件中未包含 mcpServers（或 servers）配置项".into();
+            return;
+        }
+        let count = incoming.mcp_servers.len();
+        let global_path = plugins::root().join("mcp_servers.json");
+        let mut merged =
+            ide_agent_router::McpConfig::load_from_file(&global_path).unwrap_or_default();
+        for (k, v) in incoming.mcp_servers {
+            merged.mcp_servers.insert(k, v);
+        }
+        if let Ok(pretty) = serde_json::to_string_pretty(&merged) {
+            let _ = std::fs::create_dir_all(plugins::root());
+            let _ = std::fs::write(&global_path, pretty);
+        }
+        self.ai.plugin_rt_mut().reload_custom_extensions();
+        self.open_at(&global_path, 1, 0);
+        self.cur().tip = format!(
+            "已成功合并导入 {count} 个自定义/第三方 MCP 服务器配置（共 {} 个活跃服务）",
+            merged.mcp_servers.len()
+        );
     }
 
     /// 把当前文档的文本当 Sakura 宏运行 (作用在上一份活动的另一个文档上; 只有一份就作用在自己上)

@@ -44,6 +44,8 @@ pub struct GrepOpts {
     pub outside: bool,
     /// 只搜当前文件 (用编辑器里的当前正文, 含未保存的修改)
     pub this_file: bool,
+    /// 开启后，查询结果不在主窗口编辑区作为标签页打开，仅显示在下方结果栏位
+    pub no_tab: bool,
     pub fmt: Fmt,
 }
 
@@ -63,6 +65,7 @@ impl Default for GrepOpts {
             sub: true,
             outside: false,
             this_file: false,
+            no_tab: false,
             fmt: Fmt::Normal,
         }
     }
@@ -724,6 +727,7 @@ pub enum Ev {
     Stop,
     ReplaceAll,
     ResultDoc,
+    ToggleNoTab(bool),
     UseCurDir,
     BrowseFolder,
     RevealPath(String),
@@ -1020,14 +1024,20 @@ impl Grep {
             } else if ui.button(crate::i18n::trz("搜索")).clicked() {
                 ev.push(Ev::Start);
             }
+            let no_tab_label = if self.o.no_tab {
+                crate::i18n::trz("✓ 结果不开标签页")
+            } else {
+                crate::i18n::trz("结果不开标签页")
+            };
             if ui
-                .button(crate::i18n::trz("结果开成标签"))
+                .selectable_label(self.o.no_tab, no_tab_label)
                 .tip(crate::i18n::trz(
-                    "把结果放进一个只读标签: 可复制、可 Ctrl+F, Enter / 双击命中行跳转",
+                    "点击切换：开启后 Grep 查询结果不在主编辑区打开标签页，仅显示在下方结果栏位中",
                 ))
                 .clicked()
             {
-                ev.push(Ev::ResultDoc);
+                self.o.no_tab = !self.o.no_tab;
+                ev.push(Ev::ToggleNoTab(self.o.no_tab));
             }
         });
         ui.add(

@@ -7,7 +7,9 @@
 
 #![forbid(unsafe_code)]
 
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::path::Path;
 
 /// 拦截器处置决议
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -67,7 +69,85 @@ impl HookPipeline {
     }
 
     pub fn add_hook(&mut self, hook: Box<dyn AgentHook>) {
+        let name = hook.name().to_string();
+        self.hooks.retain(|h| h.name() != name);
         self.hooks.push(hook);
+    }
+
+    /// 返回当前已挂载的全部 Hook 名称清单（含内建、用户自定义与第三方 Hook）
+    pub fn hook_names(&self) -> Vec<String> {
+        self.hooks.iter().map(|h| h.name().to_string()).collect()
+    }
+
+    /// 从单个 JSON 配置文件加载用户自定义或第三方 Hook 规则（支持 `{"hooks": [...]}` 或单条对象）
+    pub fn load_custom_hooks_from_file(&mut self, path: &Path) -> usize {
+        let Ok(raw) = std::fs::read_to_string(path) else {
+            return 0;
+        };
+        self.load_custom_hooks_from_str(&raw)
+    }
+
+    /// 从 JSON 字符串加载自定义或第三方 Hook 规则
+    pub fn load_custom_hooks_from_str(&mut self, raw: &str) -> usize {
+        let specs: Vec<CustomHookSpec> =
+            if let Ok(cfg) = serde_json::from_str::<CustomHooksConfig>(raw) {
+                cfg.hooks
+            } else if let Ok(list) = serde_json::from_str::<Vec<CustomHookSpec>>(raw) {
+                list
+            } else if let Ok(single) = serde_json::from_str::<CustomHookSpec>(raw) {
+                vec![single]
+            } else {
+                return 0;
+            };
+        let mut added = 0usize;
+        for spec in specs {
+            if spec.enabled && !spec.name.trim().is_empty() {
+                self.add_hook(Box::new(CustomRuleHook::new(spec)));
+                added += 1;
+            }
+        }
+        added
+    }
+
+    /// 从目录扫描所有 `*.json` 自定义或第三方 Hook 文件
+    pub fn load_custom_hooks_from_dir(&mut self, dir: &Path) -> usize {
+        let Ok(rd) = std::fs::read_dir(dir) else {
+            return 0;
+        };
+        let mut paths: Vec<_> = rd
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.is_file() && p.extension().is_some_and(|ext| ext == "json"))
+            .collect();
+        paths.sort();
+        let mut total = 0usize;
+        for p in paths {
+            total += self.load_custom_hooks_from_file(&p);
+        }
+        total
+    }
+
+    /// 自动加载工作区与用户全局目录下的自定义及第三方 Hooks
+    /// 探测顺序：
+    /// 1. 用户全局 `<user_dir>/custom_hooks.json` 与 `<user_dir>/custom_hooks/*.json`
+    /// 2. 工作区 `.hooks.json`、`hooks.json`、`.hooks/*.json`、`.claude/hooks/*.json`
+    pub fn load_workspace_and_user_hooks(
+        &mut self,
+        ws_root: &Path,
+        user_dir: Option<&Path>,
+    ) -> usize {
+        let mut count = 0usize;
+        if let Some(udir) = user_dir {
+            count += self.load_custom_hooks_from_file(&udir.join("custom_hooks.json"));
+            count += self.load_custom_hooks_from_dir(&udir.join("custom_hooks"));
+        }
+        for rel_file in [".hooks.json", "hooks.json", ".ide-hooks.json"] {
+            count += self.load_custom_hooks_from_file(&ws_root.join(rel_file));
+        }
+        for rel_dir in [".hooks", ".claude/hooks"] {
+            count += self.load_custom_hooks_from_dir(&ws_root.join(rel_dir));
+        }
+        count
     }
 
     /// 执行输入前置拦截链
@@ -228,13 +308,20 @@ impl AgentHook for SensitiveDataMaskHook {
 
 /// 快速字符级脱敏 (扫描 `sk-` 开头的密钥)
 fn mask_secrets(input: &str) -> String {
+    mask_token_prefix(input, "sk-")
+}
+
+fn mask_token_prefix(input: &str, prefix: &str) -> String {
+    if prefix.is_empty() || !input.contains(prefix) {
+        return input.to_string();
+    }
     let mut out = String::with_capacity(input.len());
     let mut rest = input;
-
-    while let Some(idx) = rest.find("sk-") {
+    while let Some(idx) = rest.find(prefix) {
         out.push_str(&rest[..idx]);
-        out.push_str("sk-****");
-        let token_slice = &rest[idx + 3..];
+        out.push_str(prefix);
+        out.push_str("****");
+        let token_slice = &rest[idx + prefix.len()..];
         let end_idx = token_slice
             .find(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '_')
             .unwrap_or(token_slice.len());
@@ -242,6 +329,135 @@ fn mask_secrets(input: &str) -> String {
     }
     out.push_str(rest);
     out
+}
+
+// ---------- 用户自定义与第三方可扩展 Hook 规范 ----------
+
+fn default_hook_enabled() -> bool {
+    true
+}
+
+/// 用户自定义或第三方导入的声明式 Hook 规则
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CustomHookSpec {
+    /// 钩子唯一名称（同名规则自动热更新覆盖）
+    pub name: String,
+    /// 规则描述（如来源的第三方包名或用途）
+    #[serde(default)]
+    pub description: String,
+    /// 是否启用
+    #[serde(default = "default_hook_enabled")]
+    pub enabled: bool,
+    /// 在 `pre_input` 阶段向用户输入追加的安全/规范前置提示
+    #[serde(default)]
+    pub pre_input_prefix: Option<String>,
+    /// 在 `pre_input` 阶段拦截的违禁词列表
+    #[serde(default)]
+    pub pre_input_block_patterns: Vec<String>,
+    /// 在 `pre_tool_call` 阶段禁止调用的工具名列表
+    #[serde(default)]
+    pub blocked_tools: Vec<String>,
+    /// 在 `pre_tool_call` 阶段拦截的参数子串（如危险命令 `rm -rf`、敏感路径等）
+    #[serde(default)]
+    pub pre_tool_block_patterns: Vec<String>,
+    /// 在 `post_tool_call` 与 `post_response` 阶段自动脱敏的自定义或第三方 Token 前缀（如 `glpat-`, `xoxb-`, `AIza`）
+    #[serde(default)]
+    pub mask_patterns: Vec<String>,
+}
+
+/// 自定义与第三方 Hook 配置文件结构（`.hooks.json` / `custom_hooks.json`）
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CustomHooksConfig {
+    #[serde(default)]
+    pub hooks: Vec<CustomHookSpec>,
+}
+
+/// 执行用户自定义或第三方声明式规则的 Hook 实例
+pub struct CustomRuleHook {
+    spec: CustomHookSpec,
+}
+
+impl CustomRuleHook {
+    pub fn new(spec: CustomHookSpec) -> Self {
+        Self { spec }
+    }
+}
+
+impl AgentHook for CustomRuleHook {
+    fn name(&self) -> &str {
+        &self.spec.name
+    }
+
+    fn pre_input(&self, input: &str) -> HookDecision {
+        for pat in &self.spec.pre_input_block_patterns {
+            if !pat.is_empty() && input.contains(pat.as_str()) {
+                return HookDecision::Reject(format!(
+                    "触发自定义/第三方 Hook '{}' 输入拦截规则: 包含禁止模式 '{}'",
+                    self.spec.name, pat
+                ));
+            }
+        }
+        if let Some(prefix) = &self.spec.pre_input_prefix {
+            let p = prefix.trim();
+            if !p.is_empty() && !input.contains(p) {
+                return HookDecision::Modify(format!("{p}\n{input}"));
+            }
+        }
+        HookDecision::Continue
+    }
+
+    fn pre_tool_call(&self, tool: &str, args: &Value) -> HookDecision {
+        if self.spec.blocked_tools.iter().any(|t| t == tool) {
+            return HookDecision::Reject(format!(
+                "触发自定义/第三方 Hook '{}' 工具封禁策略: 禁止调用 '{}'",
+                self.spec.name, tool
+            ));
+        }
+        if !self.spec.pre_tool_block_patterns.is_empty() {
+            let args_s = args.to_string();
+            for pat in &self.spec.pre_tool_block_patterns {
+                if !pat.is_empty() && args_s.contains(pat.as_str()) {
+                    return HookDecision::Reject(format!(
+                        "触发自定义/第三方 Hook '{}' 参数拦截策略: 检测到 '{}'",
+                        self.spec.name, pat
+                    ));
+                }
+            }
+        }
+        HookDecision::Continue
+    }
+
+    fn post_tool_call(&self, _tool: &str, result: &str) -> HookDecision {
+        let mut current = result.to_string();
+        let mut modified = false;
+        for pat in &self.spec.mask_patterns {
+            if !pat.is_empty() && current.contains(pat.as_str()) {
+                current = mask_token_prefix(&current, pat);
+                modified = true;
+            }
+        }
+        if modified {
+            HookDecision::Modify(current)
+        } else {
+            HookDecision::Continue
+        }
+    }
+
+    fn post_response(&self, response: &str) -> HookDecision {
+        let mut current = response.to_string();
+        let mut modified = false;
+        for pat in &self.spec.mask_patterns {
+            if !pat.is_empty() && current.contains(pat.as_str()) {
+                current = mask_token_prefix(&current, pat);
+                modified = true;
+            }
+        }
+        if modified {
+            HookDecision::Modify(current)
+        } else {
+            HookDecision::Continue
+        }
+    }
 }
 
 #[cfg(test)]
@@ -288,5 +504,52 @@ mod tests {
         let masked = pipeline.execute_post_tool_call("cmd", input.to_string());
         assert!(!masked.contains("sk-proj-1234567890abcdef"));
         assert!(masked.contains("sk-****"));
+    }
+
+    #[test]
+    fn test_custom_and_third_party_hooks_loading_and_execution() {
+        let mut pipeline = HookPipeline::default();
+        let custom_json = r#"{
+            "hooks": [
+                {
+                    "name": "ThirdPartyGitLabHook",
+                    "description": "第三方 GitLab Token 脱敏与危险命令拦截",
+                    "enabled": true,
+                    "pre_input_prefix": "[OrgRule]",
+                    "pre_input_block_patterns": ["FORBIDDEN_PROMPT"],
+                    "blocked_tools": ["drop_db"],
+                    "pre_tool_block_patterns": ["rm -rf /"],
+                    "mask_patterns": ["glpat-", "xoxb-"]
+                }
+            ]
+        }"#;
+        let loaded = pipeline.load_custom_hooks_from_str(custom_json);
+        assert_eq!(loaded, 1);
+        assert!(pipeline
+            .hook_names()
+            .contains(&"ThirdPartyGitLabHook".to_string()));
+
+        // Pre-Input 注入与拦截
+        let modified = pipeline.execute_pre_input("hello".into()).unwrap();
+        assert!(modified.starts_with("[OrgRule]\nhello"));
+        assert!(pipeline
+            .execute_pre_input("run FORBIDDEN_PROMPT".into())
+            .is_err());
+
+        // Pre-Tool 拦截
+        assert!(pipeline
+            .execute_pre_tool_call("drop_db", &json!({}))
+            .is_err());
+        assert!(pipeline
+            .execute_pre_tool_call("exec", &json!({ "cmd": "rm -rf /" }))
+            .is_err());
+
+        // Post-Response 第三方凭证脱敏
+        let resp = pipeline
+            .execute_post_response("token=glpat-abcdef123456 slack=xoxb-998877".into())
+            .unwrap();
+        assert!(resp.contains("glpat-****"));
+        assert!(resp.contains("xoxb-****"));
+        assert!(!resp.contains("abcdef123456"));
     }
 }

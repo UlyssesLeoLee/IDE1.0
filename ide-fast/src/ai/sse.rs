@@ -15,6 +15,8 @@ pub struct ToolCall {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Turn {
     pub content: String,
+    /// 模型输出的推理思维链 (DeepSeek / o1 / o3 / Claude `reasoning_content` 或 ReAct `<thought>` 块)
+    pub reasoning: String,
     pub tool_calls: Vec<ToolCall>,
     pub http_status: Option<u16>,
     pub error: Option<String>,
@@ -64,6 +66,14 @@ impl SseParser {
         }
         let ch = &v["choices"][0];
         let mut shown = None;
+        if let Some(rc) = ch["delta"]["reasoning_content"]
+            .as_str()
+            .filter(|s| !s.is_empty())
+        {
+            if self.turn.reasoning.len() < MAX_RESPONSE {
+                self.turn.reasoning.push_str(rc);
+            }
+        }
         if let Some(t) = ch["delta"]["content"].as_str().filter(|t| !t.is_empty()) {
             self.turn.content.push_str(t);
             shown = Some(t.to_string());
@@ -87,6 +97,20 @@ impl SseParser {
                     }
                 }
             }
+        } else if let Some(fc) = ch["delta"]["function_call"].as_object() {
+            // 兼容旧版 OpenAI `delta.function_call` 流式格式
+            if self.turn.tool_calls.is_empty() {
+                self.turn.tool_calls.push(ToolCall::default());
+            }
+            let slot = &mut self.turn.tool_calls[0];
+            if let Some(n) = fc.get("name").and_then(Value::as_str) {
+                slot.name.push_str(n);
+            }
+            if let Some(a) = fc.get("arguments").and_then(Value::as_str) {
+                if slot.args.len() < 1_000_000 {
+                    slot.args.push_str(a);
+                }
+            }
         }
         if ch["finish_reason"].is_string() {
             self.turn.done = true;
@@ -108,17 +132,43 @@ impl SseParser {
                             .and_then(Value::as_str)
                             .unwrap_or("")
                             .to_string();
+                        if let Some(rc) = m.get("reasoning_content").and_then(Value::as_str) {
+                            self.turn.reasoning = rc.to_string();
+                        }
                         for tc in m
                             .get("tool_calls")
                             .and_then(Value::as_array)
                             .into_iter()
                             .flatten()
                         {
+                            let args_s = match &tc["function"]["arguments"] {
+                                Value::String(s) => s.clone(),
+                                other if other.is_object() => other.to_string(),
+                                _ => "{}".into(),
+                            };
                             self.turn.tool_calls.push(ToolCall {
                                 id: tc["id"].as_str().unwrap_or("").into(),
                                 name: tc["function"]["name"].as_str().unwrap_or("").into(),
-                                args: tc["function"]["arguments"].as_str().unwrap_or("{}").into(),
+                                args: args_s,
                             });
+                        }
+                        if self.turn.tool_calls.is_empty() {
+                            if let Some(fc) = m.get("function_call").and_then(Value::as_object) {
+                                let args_s = match fc.get("arguments") {
+                                    Some(Value::String(s)) => s.clone(),
+                                    Some(other) if other.is_object() => other.to_string(),
+                                    _ => "{}".into(),
+                                };
+                                self.turn.tool_calls.push(ToolCall {
+                                    id: String::new(),
+                                    name: fc
+                                        .get("name")
+                                        .and_then(Value::as_str)
+                                        .unwrap_or("")
+                                        .into(),
+                                    args: args_s,
+                                });
+                            }
                         }
                         self.turn.done = true;
                     }
@@ -143,6 +193,15 @@ impl SseParser {
         } else if let Some(err) = self.turn.error.take() {
             self.turn.error = Some(format_http_error(self.turn.http_status, Some(&err), None));
         }
+        // 当服务端/开源模型未返回原生 tool_calls，而是在正文中使用 ReAct `<tool_call>{...}</tool_call>` 标签输出时，
+        // 执行零正则开销的标签解析，将其自动提升为标准 ToolCall。
+        if self.turn.tool_calls.is_empty() && self.turn.content.contains("<tool_call>") {
+            let (cleaned, extracted) = extract_inline_react_tool_calls(&self.turn.content);
+            if !extracted.is_empty() {
+                self.turn.content = cleaned;
+                self.turn.tool_calls = extracted;
+            }
+        }
         // 没有 id 的工具调用补一个, 回传时要对得上
         for (i, tc) in self.turn.tool_calls.iter_mut().enumerate() {
             if tc.id.is_empty() {
@@ -152,6 +211,61 @@ impl SseParser {
         self.turn.tool_calls.retain(|t| !t.name.is_empty());
         self.turn
     }
+}
+
+/// 从模型正文中提取 `<tool_call>{"name": "...", "arguments": ...}</tool_call>` 格式的内联 ReAct 工具调用
+/// （零正则开销，纯子串扫描，兼容 Qwen / DeepSeek-R1 / Llama / 本地网关文本态 Function Calling）
+pub fn extract_inline_react_tool_calls(content: &str) -> (String, Vec<ToolCall>) {
+    let mut cleaned = String::with_capacity(content.len());
+    let mut calls = Vec::new();
+    let mut rest = content;
+    while let Some(start) = rest.find("<tool_call>") {
+        cleaned.push_str(&rest[..start]);
+        let after_open = &rest[start + "<tool_call>".len()..];
+        let Some(end) = after_open.find("</tool_call>") else {
+            // 未闭合标签原样保留
+            cleaned.push_str(&rest[start..]);
+            rest = "";
+            break;
+        };
+        let payload = after_open[..end].trim();
+        let payload = payload
+            .strip_prefix("```json")
+            .or_else(|| payload.strip_prefix("```"))
+            .map(|s| s.trim_end_matches("```").trim())
+            .unwrap_or(payload);
+        if let Ok(v) = serde_json::from_str::<Value>(payload) {
+            let fn_obj = v.get("function").unwrap_or(&v);
+            if let Some(name) = fn_obj
+                .get("name")
+                .or_else(|| v.get("tool"))
+                .and_then(Value::as_str)
+                .filter(|n| !n.trim().is_empty())
+            {
+                let args_val = fn_obj
+                    .get("arguments")
+                    .or_else(|| fn_obj.get("parameters"))
+                    .or_else(|| v.get("args"));
+                let args_str = match args_val {
+                    Some(Value::String(s)) => s.clone(),
+                    Some(obj) if obj.is_object() => obj.to_string(),
+                    _ => "{}".to_string(),
+                };
+                calls.push(ToolCall {
+                    id: v
+                        .get("id")
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                        .to_string(),
+                    name: name.trim().to_string(),
+                    args: args_str,
+                });
+            }
+        }
+        rest = &after_open[end + "</tool_call>".len()..];
+    }
+    cleaned.push_str(rest);
+    (cleaned.trim().to_string(), calls)
 }
 
 /// 从服务端响应 JSON 中提取错误说明 (兼容 OpenAI、Claude、DeepSeek、OneAPI 等主流格式)

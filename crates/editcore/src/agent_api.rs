@@ -7,6 +7,7 @@
 //! - 读类工具只读调用方交上来的文本 / 行, 不碰磁盘; 文档数据的外发要用户授权 (NFR-026) —— 那是调用方(对话面板)的责任, 这里不联网。
 
 use serde_json::{json, Value};
+use std::sync::OnceLock;
 
 pub struct Tool {
     pub name: &'static str,
@@ -90,19 +91,52 @@ pub const TOOLS: &[Tool] = &[
         write: false,
         schema: r#"{"type":"object","properties":{"open":{"type":"boolean","description":"true打开显示, false隐藏关闭"}},"required":["open"]}"#,
     },
+    Tool {
+        name: "read_doc_lines",
+        description: "按行区间读取当前活跃文档的内容 (ReAct 观测工具): start_line 与 end_line 从 1 起算 (缺省读取前 120 行)，返回带行号的代码/文本片段与总行数",
+        write: false,
+        schema: r#"{"type":"object","properties":{"start_line":{"type":"integer","minimum":1,"description":"起始行号(1起)"},"end_line":{"type":"integer","minimum":1,"description":"结束行号(1起, 含)"}}}"#,
+    },
+    Tool {
+        name: "workspace_grep",
+        description: "在当前工作区中高速跨文件检索关键字或正则表达式 (ReAct 跨文件观测工具): 基于 SIMD 引擎，返回匹配的文件路径、行号与行内容",
+        write: false,
+        schema: r#"{"type":"object","properties":{"pattern":{"type":"string","description":"搜索关键字或正则表达式"},"regex":{"type":"boolean","description":"是否按正则表达式匹配"},"case_sensitive":{"type":"boolean","description":"是否区分大小写"},"whole_word":{"type":"boolean","description":"是否整词匹配"},"include_files":{"type":"string","description":"包含的文件名通配符，如 *.rs;*.md"},"max_results":{"type":"integer","minimum":1,"maximum":200,"description":"最大返回条数(默认50)"}},"required":["pattern"]}"#,
+    },
+    Tool {
+        name: "react_thought",
+        description: "记录 ReAct (Reasoning + Acting) 结构化推理步: 显式梳理当前思考 (thought)、行动计划 (plan) 与对上一轮工具观测结果的反思 (reflection)",
+        write: false,
+        schema: r#"{"type":"object","properties":{"thought":{"type":"string","description":"当前问题的根因分析与状态推理"},"plan":{"type":"string","description":"下一步准备调用的工具或验证计划"},"reflection":{"type":"string","description":"对上一步工具返回结果的自我校验与修正"}},"required":["thought"]}"#,
+    },
 ];
 
 /// 单个提案最多改动的行数 (防止一次提案把整个大文件换掉)
 const MAX_PATCH_LINES: usize = 2000;
 
-/// OpenAI `tools` 数组格式
+/// OpenAI `tools` 数组格式（使用 `OnceLock` 惰性缓存，进程冷启动 0 开销，运行期零重复 JSON 解析）
 pub fn tools_json() -> Value {
-    Value::Array(
-        TOOLS
-            .iter()
-            .map(|t| json!({ "type": "function", "function": { "name": t.name, "description": t.description, "parameters": serde_json::from_str::<Value>(t.schema).unwrap_or(Value::Null) }, "x-write": t.write }))
-            .collect(),
-    )
+    static CACHED_TOOLS: OnceLock<Value> = OnceLock::new();
+    CACHED_TOOLS
+        .get_or_init(|| {
+            Value::Array(
+                TOOLS
+                    .iter()
+                    .map(|t| {
+                        json!({
+                            "type": "function",
+                            "function": {
+                                "name": t.name,
+                                "description": t.description,
+                                "parameters": serde_json::from_str::<Value>(t.schema).unwrap_or(Value::Null)
+                            },
+                            "x-write": t.write
+                        })
+                    })
+                    .collect(),
+            )
+        })
+        .clone()
 }
 
 /// 一行大纲项
@@ -195,6 +229,96 @@ pub fn call(name: &str, args: &Value) -> Result<Value, String> {
         }
         "sticky_note_list" | "sticky_note_create" | "sticky_note_update" | "sticky_note_delete"
         | "sticky_note_open" => Ok(json!({ "status": "delegated_to_app" })),
+        "read_doc_lines" => {
+            let lines = args
+                .get("lines")
+                .and_then(Value::as_array)
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(Value::as_str)
+                        .map(String::from)
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            let total = lines.len();
+            if total == 0 {
+                return Ok(
+                    json!({ "total_rows": 0, "start_line": 1, "end_line": 0, "content": "" }),
+                );
+            }
+            let s1 = args
+                .get("start_line")
+                .and_then(Value::as_u64)
+                .map(|v| (v as usize).max(1))
+                .unwrap_or(1)
+                .min(total);
+            let e1 = args
+                .get("end_line")
+                .and_then(Value::as_u64)
+                .map(|v| (v as usize).max(s1))
+                .unwrap_or((s1 + 119).min(total))
+                .min(total);
+            let snippet: Vec<String> = lines[s1 - 1..e1]
+                .iter()
+                .enumerate()
+                .map(|(idx, l)| format!("{:>4} | {}", s1 + idx, l))
+                .collect();
+            Ok(json!({
+                "total_rows": total,
+                "start_line": s1,
+                "end_line": e1,
+                "content": snippet.join("\n")
+            }))
+        }
+        "workspace_grep" => {
+            let pattern = str_arg(args, "pattern")?;
+            let root_str = args
+                .get("workspace_root")
+                .and_then(Value::as_str)
+                .unwrap_or(".");
+            let max_res = args
+                .get("max_results")
+                .and_then(Value::as_u64)
+                .map(|v| (v as usize).clamp(1, 200))
+                .unwrap_or(50);
+            let inc = args
+                .get("include_files")
+                .and_then(Value::as_str)
+                .map(|s| {
+                    s.split([';', ','])
+                        .map(str::trim)
+                        .filter(|x| !x.is_empty())
+                        .map(String::from)
+                        .collect::<Vec<_>>()
+                })
+                .filter(|v| !v.is_empty());
+            let opts = crate::grep_engine::SearchOptions {
+                pattern: pattern.to_string(),
+                regex: args.get("regex").and_then(Value::as_bool),
+                case_sensitive: args.get("case_sensitive").and_then(Value::as_bool),
+                whole_word: args.get("whole_word").and_then(Value::as_bool),
+                include_files: inc,
+                max_results: Some(max_res),
+                ..Default::default()
+            };
+            let hits = crate::grep_engine::search(std::path::Path::new(root_str), &opts)?;
+            let items: Vec<Value> = hits
+                .iter()
+                .map(|h| json!({ "path": h.path, "line": h.line, "text": h.text }))
+                .collect();
+            Ok(json!({ "count": items.len(), "hits": items }))
+        }
+        "react_thought" => {
+            let thought = str_arg(args, "thought")?;
+            let plan = args.get("plan").and_then(Value::as_str).unwrap_or("");
+            let reflection = args.get("reflection").and_then(Value::as_str).unwrap_or("");
+            Ok(json!({
+                "status": "recorded",
+                "thought": thought,
+                "plan": plan,
+                "reflection": reflection
+            }))
+        }
         _ => Err(format!("未知工具: {name}")),
     }
 }
