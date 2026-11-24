@@ -12,12 +12,23 @@ use crate::ai;
 use crate::plugins::{self, HotModuleKind};
 use editcore::plugin_host::store::Installed;
 use ide_agent_router::{
-    AgentMemoryEngine, ContextCompactor, HookPipeline, LoopBreaker, McpConfig, McpManager,
-    SkillRegistry, WorkspaceRulesEngine,
+    AgentMemoryEngine, ContextCompactor, CustomHookSpec, CustomHooksConfig, HookInfo, HookPipeline,
+    LoopBreaker, McpConfig, McpManager, McpServerConfig, Skill, SkillRegistry,
+    WorkspaceRulesEngine,
 };
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, Receiver};
+
+/// 创建或更新自定义 Skill 时的结构化入参（消除零散多参数传递）
+#[derive(Clone, Copy, Debug)]
+pub struct CustomSkillDraft<'a> {
+    pub id: &'a str,
+    pub name: &'a str,
+    pub trigger: &'a str,
+    pub description: &'a str,
+    pub system_prompt: &'a str,
+}
 
 /// 单轮 Agent 对话准备结果（系统提示词、转换后的用户指令与可用工具列表）
 pub struct PreparedAgentTurn {
@@ -177,15 +188,26 @@ impl AgentPluginRuntime {
         self.hooks_loaded_root = Some(ws_root.to_path_buf());
     }
 
-    fn active_hook_pipeline(&mut self) -> &mut HookPipeline {
-        if self.hooks.is_none() {
+    fn ensure_default_hooks<'a>(
+        hooks: &'a mut Option<HookPipeline>,
+        loaded_root: Option<&Path>,
+    ) -> &'a mut HookPipeline {
+        if hooks.is_none() {
             let mut pipeline = HookPipeline::default();
             let user_root = plugins::root();
-            let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-            let _ = pipeline.load_workspace_and_user_hooks(&cwd, Some(&user_root));
-            self.hooks = Some(pipeline);
+            if let Some(ws) = loaded_root {
+                let _ = pipeline.load_workspace_and_user_hooks(ws, Some(&user_root));
+            } else {
+                let _ = pipeline.load_custom_hooks_from_file(&user_root.join("custom_hooks.json"));
+                let _ = pipeline.load_custom_hooks_from_dir(&user_root.join("custom_hooks"));
+            }
+            *hooks = Some(pipeline);
         }
-        self.hooks.as_mut().expect("hooks initialized")
+        hooks.as_mut().expect("hooks initialized")
+    }
+
+    fn active_hook_pipeline(&mut self) -> &mut HookPipeline {
+        Self::ensure_default_hooks(&mut self.hooks, self.hooks_loaded_root.as_deref())
     }
 
     /// 确保当前工作区与用户全局目录下的自定义及第三方 Skills 已扫描加载
@@ -203,6 +225,389 @@ impl AgentPluginRuntime {
         reg.load_workspace_and_user_skills(ws_root, Some(&user_root));
         self.skills = Some(reg);
         self.skills_loaded_root = Some(ws_root.to_path_buf());
+    }
+
+    /// 列出当前工作区与全局已生效的全部 Skills（内建 + 自定义 + 第三方）
+    pub fn list_active_skills(&mut self, ws_root: &Path) -> Vec<Skill> {
+        self.ensure_skills_config(ws_root);
+        self.skills
+            .as_ref()
+            .map(|r| r.list().into_iter().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    /// 列出当前工作区与全局已生效的全部 Hooks 名称（内建 + 自定义 + 第三方）
+    pub fn list_active_hooks(&mut self, ws_root: &Path) -> Vec<String> {
+        self.ensure_hooks_config(ws_root);
+        self.hooks
+            .as_ref()
+            .map(|h| h.hook_names())
+            .unwrap_or_default()
+    }
+
+    /// 列出当前工作区与全局已生效的全部 Hooks 元数据（含描述与是否内建标记）
+    pub fn list_active_hook_infos(&mut self, ws_root: &Path) -> Vec<HookInfo> {
+        self.ensure_hooks_config(ws_root);
+        self.hooks
+            .as_ref()
+            .map(|h| h.hook_infos())
+            .unwrap_or_default()
+    }
+
+    /// 列出当前工作区与全局合并后的全部 MCP 服务器配置
+    pub fn list_active_mcp_servers(&mut self, ws_root: &Path) -> Vec<(String, McpServerConfig)> {
+        self.ensure_mcp_config(ws_root);
+        self.mcp
+            .as_ref()
+            .map(|m| m.list_server_configs())
+            .unwrap_or_default()
+    }
+
+    /// 一键添加并持久化一条自定义或第三方 Skill 到 `<ws_root>/.skills/<id>/SKILL.md` 并立即热重载
+    pub fn add_custom_skill(
+        &mut self,
+        ws_root: &Path,
+        id: &str,
+        name: &str,
+        trigger: &str,
+        description: &str,
+        system_prompt: &str,
+    ) -> Result<PathBuf, String> {
+        self.add_custom_skill_spec(
+            ws_root,
+            CustomSkillDraft {
+                id,
+                name,
+                trigger,
+                description,
+                system_prompt,
+            },
+        )
+    }
+
+    /// 按结构化草稿添加并持久化自定义或第三方 Skill
+    pub fn add_custom_skill_spec(
+        &mut self,
+        ws_root: &Path,
+        draft: CustomSkillDraft<'_>,
+    ) -> Result<PathBuf, String> {
+        let clean_id: String = draft
+            .id
+            .trim()
+            .chars()
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                    c
+                } else {
+                    '-'
+                }
+            })
+            .collect();
+        let clean_id = clean_id.trim_matches('-').to_string();
+        if clean_id.is_empty() {
+            return Err("技能 ID 不能为空（请使用字母、数字或连字符，如 my-skill）".into());
+        }
+        let trig = draft.trigger.trim();
+        let final_trig = if trig.is_empty() {
+            format!("/{clean_id}")
+        } else if trig.starts_with('/') {
+            trig.to_string()
+        } else {
+            format!("/{trig}")
+        };
+        let final_name = if draft.name.trim().is_empty() {
+            clean_id.clone()
+        } else {
+            draft.name.trim().to_string()
+        };
+        let final_desc = if draft.description.trim().is_empty() {
+            "用户自定义/第三方扩展技能".to_string()
+        } else {
+            draft.description.trim().to_string()
+        };
+        let final_prompt = if draft.system_prompt.trim().is_empty() {
+            "你是一位资深系统架构师与代码专家，请按高标准完成用户请求。".to_string()
+        } else {
+            draft.system_prompt.trim().to_string()
+        };
+
+        let skill_dir = ws_root.join(".skills").join(&clean_id);
+        std::fs::create_dir_all(&skill_dir).map_err(|e| format!("创建技能目录失败: {e}"))?;
+        let target = skill_dir.join("SKILL.md");
+        let content = format!(
+            "---\nname: {final_name}\ndescription: {final_desc}\ntrigger: {final_trig}\ntags: custom, extension\n---\n\n{final_prompt}\n"
+        );
+        std::fs::write(&target, content).map_err(|e| format!("写入 SKILL.md 失败: {e}"))?;
+        self.reload_custom_extensions();
+        self.ensure_skills_config(ws_root);
+        Ok(target)
+    }
+
+    /// 删除一条自定义或第三方 Skill 文件/目录并立即热重载
+    pub fn remove_custom_skill(&mut self, ws_root: &Path, id: &str) -> Result<(), String> {
+        let user_root = plugins::root();
+        let candidates = [
+            ws_root.join(".skills").join(id),
+            ws_root.join(".skills").join(format!("{id}.md")),
+            ws_root.join(".skills").join(format!("{id}.json")),
+            ws_root.join(".claude/skills").join(id),
+            ws_root.join(".claude/commands").join(format!("{id}.md")),
+            ws_root.join(".agents/skills").join(id),
+            ws_root.join("skills").join(id),
+            user_root.join("custom_skills").join(id),
+            user_root.join("custom_skills").join(format!("{id}.md")),
+            user_root.join("custom_skills").join(format!("{id}.json")),
+        ];
+        let mut removed = false;
+        for p in candidates {
+            if p.is_dir() {
+                std::fs::remove_dir_all(&p)
+                    .map_err(|e| format!("删除技能目录 {} 失败: {e}", p.display()))?;
+                removed = true;
+            } else if p.is_file() {
+                std::fs::remove_file(&p)
+                    .map_err(|e| format!("删除技能文件 {} 失败: {e}", p.display()))?;
+                removed = true;
+            }
+        }
+        if !removed {
+            return Err(format!("未找到可删除的自定义技能文件: {id}"));
+        }
+        self.reload_custom_extensions();
+        self.ensure_skills_config(ws_root);
+        Ok(())
+    }
+
+    /// 一键添加并持久化一条自定义或第三方 Hook 规则到 `<ws_root>/.hooks.json` 并立即热重载
+    pub fn add_custom_hook(
+        &mut self,
+        ws_root: &Path,
+        spec: CustomHookSpec,
+    ) -> Result<PathBuf, String> {
+        let name = spec.name.trim().to_string();
+        if name.is_empty() {
+            return Err("Hook 名称不能为空".into());
+        }
+        let target = ws_root.join(".hooks.json");
+        let mut cfg: CustomHooksConfig = if target.exists() {
+            let raw = std::fs::read_to_string(&target)
+                .map_err(|e| format!("读取现有配置 {} 失败: {e}", target.display()))?;
+            serde_json::from_str(&raw).map_err(|e| {
+                format!(
+                    "解析现有配置文件 {} 失败，已拒绝覆盖以防数据损坏: {e}",
+                    target.display()
+                )
+            })?
+        } else {
+            CustomHooksConfig::default()
+        };
+        cfg.hooks.retain(|h| h.name != name);
+        let mut clean_spec = spec;
+        clean_spec.name = name;
+        clean_spec.enabled = true;
+        cfg.hooks.push(clean_spec);
+        let pretty =
+            serde_json::to_string_pretty(&cfg).map_err(|e| format!("序列化 Hook 失败: {e}"))?;
+        if let Some(parent) = target.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("创建目录 {} 失败: {e}", parent.display()))?;
+        }
+        std::fs::write(&target, pretty).map_err(|e| format!("写入 .hooks.json 失败: {e}"))?;
+        self.reload_custom_extensions();
+        self.ensure_hooks_config(ws_root);
+        Ok(target)
+    }
+
+    /// 删除指定名称的自定义或第三方 Hook 并立即热重载
+    pub fn remove_custom_hook(&mut self, ws_root: &Path, hook_name: &str) -> Result<(), String> {
+        let user_root = plugins::root();
+        let files = [
+            ws_root.join(".hooks.json"),
+            ws_root.join("hooks.json"),
+            ws_root.join(".ide-hooks.json"),
+            user_root.join("custom_hooks.json"),
+        ];
+        let mut changed = false;
+        for f in files {
+            if let Ok(raw) = std::fs::read_to_string(&f) {
+                if let Ok(mut cfg) = serde_json::from_str::<CustomHooksConfig>(&raw) {
+                    let before = cfg.hooks.len();
+                    cfg.hooks.retain(|h| h.name != hook_name);
+                    if cfg.hooks.len() < before {
+                        let pretty = serde_json::to_string_pretty(&cfg)
+                            .map_err(|e| format!("序列化 Hook 配置失败: {e}"))?;
+                        std::fs::write(&f, pretty)
+                            .map_err(|e| format!("更新 {} 失败: {e}", f.display()))?;
+                        changed = true;
+                    }
+                }
+            }
+        }
+        for dir in [
+            ws_root.join(".hooks"),
+            ws_root.join(".claude/hooks"),
+            user_root.join("custom_hooks"),
+        ] {
+            if let Ok(rd) = std::fs::read_dir(&dir) {
+                for e in rd.flatten() {
+                    let p = e.path();
+                    if p.is_file() && p.extension().is_some_and(|ext| ext == "json") {
+                        if let Ok(raw) = std::fs::read_to_string(&p) {
+                            if let Ok(mut cfg) = serde_json::from_str::<CustomHooksConfig>(&raw) {
+                                let before = cfg.hooks.len();
+                                cfg.hooks.retain(|h| h.name != hook_name);
+                                if cfg.hooks.len() < before {
+                                    if cfg.hooks.is_empty() {
+                                        std::fs::remove_file(&p).map_err(|e| {
+                                            format!("删除 {} 失败: {e}", p.display())
+                                        })?;
+                                    } else {
+                                        let pretty = serde_json::to_string_pretty(&cfg)
+                                            .map_err(|e| format!("序列化 Hook 失败: {e}"))?;
+                                        std::fs::write(&p, pretty).map_err(|e| {
+                                            format!("写入 {} 失败: {e}", p.display())
+                                        })?;
+                                    }
+                                    changed = true;
+                                }
+                            } else if let Ok(single) = serde_json::from_str::<CustomHookSpec>(&raw)
+                            {
+                                if single.name == hook_name {
+                                    std::fs::remove_file(&p)
+                                        .map_err(|e| format!("删除 {} 失败: {e}", p.display()))?;
+                                    changed = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if !changed {
+            return Err(format!("未找到可删除的自定义 Hook: {hook_name}"));
+        }
+        self.reload_custom_extensions();
+        self.ensure_hooks_config(ws_root);
+        Ok(())
+    }
+
+    /// 一键添加并持久化一条自定义或第三方 MCP Server 配置到 `<ws_root>/.mcp.json` 并立即热重载
+    pub fn add_custom_mcp_server(
+        &mut self,
+        ws_root: &Path,
+        server_id: &str,
+        command: &str,
+        args: Vec<String>,
+    ) -> Result<PathBuf, String> {
+        self.add_custom_mcp_server_with_env(ws_root, server_id, command, args, Default::default())
+    }
+
+    /// 一键添加并持久化带有环境变量 (`env`) 的自定义或第三方 MCP Server 配置到 `<ws_root>/.mcp.json` 并立即热重载
+    pub fn add_custom_mcp_server_with_env(
+        &mut self,
+        ws_root: &Path,
+        server_id: &str,
+        command: &str,
+        args: Vec<String>,
+        env: std::collections::HashMap<String, String>,
+    ) -> Result<PathBuf, String> {
+        let id = server_id.trim();
+        let cmd = command.trim();
+        if id.is_empty() {
+            return Err("MCP 服务名称 (Server ID) 不能为空".into());
+        }
+        if cmd.is_empty() {
+            return Err(
+                "MCP 启动命令 (Command) 不能为空，例如 npx、uvx、node 或可执行文件路径".into(),
+            );
+        }
+        let target = ws_root.join(".mcp.json");
+        let mut cfg = if target.exists() {
+            let raw = std::fs::read_to_string(&target)
+                .map_err(|e| format!("读取现有配置 {} 失败: {e}", target.display()))?;
+            McpConfig::from_json_str(&raw).map_err(|e| {
+                format!(
+                    "解析现有配置文件 {} 失败，已拒绝覆盖以防数据损坏: {e}",
+                    target.display()
+                )
+            })?
+        } else {
+            McpConfig::default()
+        };
+        cfg.mcp_servers.insert(
+            id.to_string(),
+            McpServerConfig {
+                command: cmd.to_string(),
+                args,
+                env,
+                disabled: false,
+            },
+        );
+        let pretty =
+            serde_json::to_string_pretty(&cfg).map_err(|e| format!("序列化 MCP 配置失败: {e}"))?;
+        if let Some(parent) = target.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("创建配置目录 {} 失败: {e}", parent.display()))?;
+        }
+        std::fs::write(&target, pretty).map_err(|e| format!("写入 .mcp.json 失败: {e}"))?;
+        self.reload_custom_extensions();
+        self.ensure_mcp_config(ws_root);
+        Ok(target)
+    }
+
+    /// 删除指定 ID 的自定义或第三方 MCP Server 配置并立即热重载
+    pub fn remove_custom_mcp_server(
+        &mut self,
+        ws_root: &Path,
+        server_id: &str,
+    ) -> Result<(), String> {
+        let user_root = plugins::root();
+        let files = [
+            ws_root.join(".mcp.json"),
+            ws_root.join("mcp_servers.json"),
+            ws_root.join(".cursor/mcp.json"),
+            user_root.join("mcp_servers.json"),
+            user_root.join(".mcp.json"),
+        ];
+        let mut changed = false;
+        for f in files {
+            if let Some(mut cfg) = McpConfig::load_from_file(&f) {
+                if cfg.mcp_servers.remove(server_id).is_some() {
+                    let pretty = serde_json::to_string_pretty(&cfg)
+                        .map_err(|e| format!("序列化 MCP 配置失败: {e}"))?;
+                    std::fs::write(&f, pretty)
+                        .map_err(|e| format!("更新 {} 失败: {e}", f.display()))?;
+                    changed = true;
+                }
+            }
+        }
+        if let Ok(rd) = std::fs::read_dir(user_root.join("custom_mcp")) {
+            for e in rd.flatten() {
+                let p = e.path();
+                if p.is_file() && p.extension().is_some_and(|ext| ext == "json") {
+                    if let Some(mut cfg) = McpConfig::load_from_file(&p) {
+                        if cfg.mcp_servers.remove(server_id).is_some() {
+                            if cfg.mcp_servers.is_empty() {
+                                std::fs::remove_file(&p)
+                                    .map_err(|e| format!("删除 {} 失败: {e}", p.display()))?;
+                            } else {
+                                let pretty = serde_json::to_string_pretty(&cfg)
+                                    .map_err(|e| format!("序列化 MCP 配置失败: {e}"))?;
+                                std::fs::write(&p, pretty)
+                                    .map_err(|e| format!("写入 {} 失败: {e}", p.display()))?;
+                            }
+                            changed = true;
+                        }
+                    }
+                }
+            }
+        }
+        if !changed {
+            return Err(format!("未找到可删除的 MCP 服务配置: {server_id}"));
+        }
+        self.reload_custom_extensions();
+        self.ensure_mcp_config(ws_root);
+        Ok(())
     }
 
     /// 克隆当前活跃的 MCP 管理器用于后台工作线程并发调用（若 `"mcp"` 未激活则返回 `None`）
@@ -267,22 +672,13 @@ impl AgentPluginRuntime {
 
     fn run_tool_gate(
         hooks: &mut Option<HookPipeline>,
+        hooks_loaded_root: Option<&Path>,
         breaker: &mut LoopBreaker,
         tool_name: &str,
         args: &Value,
     ) -> Result<(), String> {
         breaker.check_and_record(tool_name, args)?;
-        if hooks.is_none() {
-            let mut pipeline = HookPipeline::default();
-            let user_root = plugins::root();
-            let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-            let _ = pipeline.load_workspace_and_user_hooks(&cwd, Some(&user_root));
-            *hooks = Some(pipeline);
-        }
-        hooks
-            .as_ref()
-            .expect("hooks initialized")
-            .execute_pre_tool_call(tool_name, args)
+        Self::ensure_default_hooks(hooks, hooks_loaded_root).execute_pre_tool_call(tool_name, args)
     }
 
     /// 工具调用前统一闸门（使用调用方隔离的 `LoopBreaker` + `PreToolCall` 钩子；仅 `"hooks"` 插件激活时生效）
@@ -298,7 +694,13 @@ impl AgentPluginRuntime {
             self.loop_breaker = None;
             return Ok(());
         }
-        Self::run_tool_gate(&mut self.hooks, breaker, tool_name, args)
+        Self::run_tool_gate(
+            &mut self.hooks,
+            self.hooks_loaded_root.as_deref(),
+            breaker,
+            tool_name,
+            args,
+        )
     }
 
     /// 工具调用前统一闸门（单 Agent 共用内部 `LoopBreaker`；仅 `"hooks"` 插件激活时生效）
@@ -310,7 +712,13 @@ impl AgentPluginRuntime {
             return Ok(());
         }
         let breaker = self.loop_breaker.get_or_insert_with(LoopBreaker::default);
-        Self::run_tool_gate(&mut self.hooks, breaker, tool_name, args)
+        Self::run_tool_gate(
+            &mut self.hooks,
+            self.hooks_loaded_root.as_deref(),
+            breaker,
+            tool_name,
+            args,
+        )
     }
 
     /// 工具调用后执行 `PostToolCall` 脱敏与清洗钩子（仅当 `"hooks"` 插件激活时生效）
@@ -358,8 +766,8 @@ impl AgentPluginRuntime {
             if plugins::is_hot_module_active(HotModuleKind::Skills) {
                 self.ensure_skills_config(ws_root);
                 let registry = self.skills.get_or_insert_with(SkillRegistry::default);
-                if let Some((skill, rest)) = registry.match_prompt(raw_prompt) {
-                    (Some(skill.clone()), rest.to_string())
+                if let Some((skill, combined)) = registry.match_prompt_with_prefix(raw_prompt) {
+                    (Some(skill.clone()), combined)
                 } else {
                     (None, raw_prompt.to_string())
                 }
@@ -423,7 +831,7 @@ impl AgentPluginRuntime {
         if plugins::is_hot_module_active(HotModuleKind::Mcp) {
             self.ensure_mcp_config(ws_root);
             if let Some(mcp) = self.mcp.as_mut() {
-                tools.extend(mcp.aggregate_openai_tools());
+                tools.extend(mcp.aggregate_openai_tools_nonblocking());
             }
         }
 
@@ -645,5 +1053,131 @@ mod tests {
             "触发词 /review 应已被 Skill 引擎剥离: {}",
             turn.user_prompt
         );
+    }
+
+    #[test]
+    fn custom_skills_hooks_and_mcp_crud_work_end_to_end() {
+        let guard = PluginDirGuard::new("custom_crud_e2e");
+        let ws = guard.dir.join("workspace");
+        std::fs::create_dir_all(&ws).unwrap();
+
+        let mut rt = AgentPluginRuntime::default();
+
+        // 1. 添加自定义 Skill -> 列表可见 -> /trigger 真实生效 -> 删除后移除
+        let skill_path = rt
+            .add_custom_skill(
+                &ws,
+                "sec-audit",
+                "安全审计技能",
+                "/sec-audit",
+                "自定义安全审计",
+                "请严格输出 [SEC_AUDIT_SKILL_PROMPT]",
+            )
+            .unwrap();
+        assert!(skill_path.is_file());
+        let skills = rt.list_active_skills(&ws);
+        assert!(skills.iter().any(|s| s.id == "sec-audit" && !s.is_builtin));
+        let turn = rt.prepare_agent_turn("BASE", "/sec-audit 检查鉴权", "code", &ws, None, &[]);
+        assert!(turn.system_prompt.contains("[SEC_AUDIT_SKILL_PROMPT]"));
+        assert_eq!(turn.user_prompt, "检查鉴权");
+        rt.remove_custom_skill(&ws, "sec-audit").unwrap();
+        assert!(!rt
+            .list_active_skills(&ws)
+            .iter()
+            .any(|s| s.id == "sec-audit"));
+
+        // 2. 添加自定义 Hook -> 列表可见 -> PreInput/PreTool/PostResponse 真实生效 -> 删除后移除
+        let hook_path = rt
+            .add_custom_hook(
+                &ws,
+                CustomHookSpec {
+                    name: "TeamGuardHook".into(),
+                    description: "团队安全门禁".into(),
+                    enabled: true,
+                    pre_input_prefix: Some("[TEAM_GUARD]".into()),
+                    pre_input_block_patterns: vec!["BLOCK_ME".into()],
+                    blocked_tools: vec!["danger_tool".into()],
+                    pre_tool_block_patterns: vec!["rm -rf /".into()],
+                    mask_patterns: vec!["teamtok-".into()],
+                },
+            )
+            .unwrap();
+        assert!(hook_path.is_file());
+        assert!(rt
+            .list_active_hooks(&ws)
+            .iter()
+            .any(|h| h == "TeamGuardHook"));
+        let pre = rt.run_pre_input_hook("hello".into()).unwrap();
+        assert!(pre.starts_with("[TEAM_GUARD]\nhello"));
+        assert!(rt.run_pre_input_hook("please BLOCK_ME".into()).is_err());
+        assert!(rt.check_tool_gate("danger_tool", &json!({})).is_err());
+        assert!(rt
+            .check_tool_gate("exec", &json!({"cmd": "rm -rf /"}))
+            .is_err());
+        let post = rt.run_post_response_hook("key=teamtok-12345678".into());
+        assert!(post.contains("teamtok-****"));
+        assert!(!post.contains("12345678"));
+        rt.remove_custom_hook(&ws, "TeamGuardHook").unwrap();
+        assert!(!rt
+            .list_active_hooks(&ws)
+            .iter()
+            .any(|h| h == "TeamGuardHook"));
+
+        // 3. 添加自定义/第三方 MCP Server -> 列表可见 -> 删除后移除
+        let mcp_path = rt
+            .add_custom_mcp_server(
+                &ws,
+                "custom-fs",
+                "npx",
+                vec![
+                    "-y".into(),
+                    "@modelcontextprotocol/server-filesystem".into(),
+                    ".".into(),
+                ],
+            )
+            .unwrap();
+        assert!(mcp_path.is_file());
+        let servers = rt.list_active_mcp_servers(&ws);
+        assert!(servers
+            .iter()
+            .any(|(id, cfg)| id == "custom-fs" && cfg.command == "npx" && !cfg.disabled));
+        rt.remove_custom_mcp_server(&ws, "custom-fs").unwrap();
+        assert!(!rt
+            .list_active_mcp_servers(&ws)
+            .iter()
+            .any(|(id, _)| id == "custom-fs"));
+
+        // 4. 校验 Pre-Input Hook 前置提示词不会破坏后续 /skill 触发匹配，且 HookInfo 保留 description
+        let desc_hook = rt
+            .add_custom_hook(
+                &ws,
+                CustomHookSpec {
+                    name: "PrefixHook".into(),
+                    description: "带有描述的前置注入钩子".into(),
+                    enabled: true,
+                    pre_input_prefix: Some("[Custom Hook] 注意边界".into()),
+                    pre_input_block_patterns: vec![],
+                    blocked_tools: vec![],
+                    pre_tool_block_patterns: vec![],
+                    mask_patterns: vec![],
+                },
+            )
+            .unwrap();
+        assert!(desc_hook.is_file());
+        let infos = rt.list_active_hook_infos(&ws);
+        assert!(infos.iter().any(|h| h.name == "PrefixHook"
+            && h.description == "带有描述的前置注入钩子"
+            && !h.is_builtin));
+        let pre_skill = rt.run_pre_input_hook("/review 检查逻辑".into()).unwrap();
+        let turn_after_hook = rt.prepare_agent_turn("BASE", &pre_skill, "code", &ws, None, &[]);
+        assert!(
+            turn_after_hook.system_prompt.contains("[Active Skill:"),
+            "Pre-Input Hook 前置注入后 /review 仍须触发 Skill: {}",
+            turn_after_hook.system_prompt
+        );
+        assert!(turn_after_hook
+            .user_prompt
+            .contains("[Custom Hook] 注意边界"));
+        rt.remove_custom_hook(&ws, "PrefixHook").unwrap();
     }
 }

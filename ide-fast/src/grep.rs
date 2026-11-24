@@ -933,7 +933,7 @@ impl Grep {
                     if ui
                         .add_sized(
                             [browse_w, r_folders.rect.height().max(20.0)],
-                            egui::Button::new(crate::i18n::trz("📁 浏览…")),
+                            egui::Button::new(crate::i18n::trz("浏览…")),
                         )
                         .tip(crate::i18n::trz(
                             "打开文件夹选择对话框，选择要检索的目录路径",
@@ -1025,9 +1025,9 @@ impl Grep {
                 ev.push(Ev::Start);
             }
             let no_tab_label = if self.o.no_tab {
-                crate::i18n::trz("✓ 结果不开标签页")
+                format!("✓ {}", crate::i18n::trz("结果不开标签页"))
             } else {
-                crate::i18n::trz("结果不开标签页")
+                crate::i18n::trz("结果不开标签页").to_string()
             };
             if ui
                 .selectable_label(self.o.no_tab, no_tab_label)
@@ -1082,7 +1082,7 @@ impl Grep {
                     let hit_text = h.text.clone();
                     resp.context_menu(|ui| {
                         if ui
-                            .button(crate::i18n::trz("📂 打开该文件并跳转到命中行"))
+                            .button(crate::i18n::trz("打开该文件并跳转到命中行"))
                             .clicked()
                         {
                             ev.push(Ev::Open {
@@ -1093,25 +1093,25 @@ impl Grep {
                             ui.close();
                         }
                         ui.separator();
-                        if ui.button(crate::i18n::trz("📋 复制完整路径")).clicked() {
+                        if ui.button(crate::i18n::trz("复制完整路径")).clicked() {
                             ui.ctx().copy_text(full_path.clone());
                             ui.close();
                         }
-                        if ui.button(crate::i18n::trz("📄 复制相对路径")).clicked() {
+                        if ui.button(crate::i18n::trz("复制相对路径")).clicked() {
                             ui.ctx().copy_text(rel.clone());
                             ui.close();
                         }
-                        if ui.button(crate::i18n::trz("📌 复制 路径:行号")).clicked() {
+                        if ui.button(crate::i18n::trz("复制 路径:行号")).clicked() {
                             ui.ctx().copy_text(format!("{full_path}:{hit_line}"));
                             ui.close();
                         }
-                        if ui.button(crate::i18n::trz("📝 复制命中行文本")).clicked() {
+                        if ui.button(crate::i18n::trz("复制命中行文本")).clicked() {
                             ui.ctx().copy_text(hit_text.trim().to_string());
                             ui.close();
                         }
                         ui.separator();
                         if ui
-                            .button(crate::i18n::trz("🗂️ 在文件资源管理器中定位该文件"))
+                            .button(crate::i18n::trz("在文件资源管理器中定位该文件"))
                             .clicked()
                         {
                             ev.push(Ev::RevealPath(full_path.clone()));
@@ -1121,7 +1121,7 @@ impl Grep {
                             let parent_str = parent.display().to_string();
                             if !parent_str.is_empty()
                                 && ui
-                                    .button(crate::i18n::trz("🔍 以此文件所在目录作为搜索文件夹"))
+                                    .button(crate::i18n::trz("以此文件所在目录作为搜索文件夹"))
                                     .clicked()
                             {
                                 set_search_folder = Some(parent_str);
@@ -1129,7 +1129,7 @@ impl Grep {
                             }
                         }
                         if ui
-                            .button(crate::i18n::trz("📑 结果在主编辑区作为标签页打开"))
+                            .button(crate::i18n::trz("结果在主编辑区作为标签页打开"))
                             .clicked()
                         {
                             ev.push(Ev::ResultDoc);

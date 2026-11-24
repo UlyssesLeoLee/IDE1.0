@@ -885,7 +885,7 @@ impl CollabState {
             return;
         }
         let q = if let Some(rt) = turn_ctx.plugin_rt.as_deref_mut() {
-            match rt.run_pre_input_hook(raw_q) {
+            match rt.run_pre_input_hook(raw_q.clone()) {
                 Ok(clean) => clean,
                 Err(err) => {
                     self.master_history.push(CollabMsg::error("系统", &err));
@@ -893,12 +893,13 @@ impl CollabState {
                 }
             }
         } else {
-            raw_q
+            raw_q.clone()
         };
         self.master_input.clear();
-        self.master_history.push(CollabMsg::user("统筹管理员", &q));
+        self.master_history
+            .push(CollabMsg::user("统筹管理员", &raw_q));
         if let Some(rt) = turn_ctx.plugin_rt.as_deref_mut() {
-            rt.record_working_item("user", &q, vec!["collab_master".into()]);
+            rt.record_working_item("user", &raw_q, vec!["collab_master".into()]);
         }
 
         let total_agents = self.agents.len();

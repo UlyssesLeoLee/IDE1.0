@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.9.6 — 2026-11-24
+
+### 扩展栏 `Skills` · `Hooks` · `MCP` 交互式添加与管理中心、非阻塞 MCP 工具预热与子进程生命周期管理
+
+#### 1. 扩展栏（`Tab::Plugins`）点击展开交互式添加与独立管理中心 (`app.rs`, `plugin_ui.rs`, `agent_plugins.rs`)
+- **点击即展开添加面板与独立管理中心**：在左侧扩展栏点击 **`▸ Skills 专业研发技能包`**、**`▸ Hooks 安全与生命周期拦截器`** 或 **`▸ MCP 模型上下文协议`** 标题行（或点击 `➕ 展开添加与管理` / `🗔 独立管理窗口`），即可在原位展开交互式管理抽屉或打开独立管理中心窗口；插件状态弹窗顶部同步内嵌快捷添加与导入按钮。
+- **`Skills` 可视化添加、一键触发与批量目录导入**：支持直接在表单填写技能 ID、名称、`/trigger`、描述与 System Prompt 一键生成 `<workspace>/.skills/<id>/SKILL.md` 并即时热重载；列表支持点击 **`▶ 使用`** 将触发词自动填入右侧 AI 对话框，支持单个 `.md/.json` 导入与 **`📂 导入技能目录`** 批量导入。
+- **`Hooks` 可视化规则配置与单/多 Agent 全链路生效**：支持在表单填写 Hook 名称、规则描述、Pre-Input 前置提示词、输入拦截词、禁用工具名、参数拦截串与第三方凭证脱敏前缀，一键写入 `<workspace>/.hooks.json` 并热挂载；单 Agent (`aichat.rs`) 与多 Agent (`collab.rs`) 对话入口统一执行 `Pre-Input`、`Pre-Tool`、`Post-Tool` 与 `Post-Response` 完整拦截链。
+- **`MCP` 可视化服务添加、引号参数/环境变量支持与常用第三方模板**：支持在表单直接填写服务 ID、启动命令、支持双引号包裹空格路径的启动参数（`parse_quoted_args`）及 `KEY=VAL` 环境变量（`parse_env_pairs`），内置 `📁 Filesystem`、`🗄 SQLite`、`🌐 Fetch` 常用第三方模板一键填充。
+
+#### 2. MCP 子进程生命周期安全、非阻塞后台预热与服务名最长前缀路由 (`ide-agent-router::mcp`, `agent_plugins.rs`)
+- **子进程确定性回收 (`Drop for ClientWorker`)**：为 `ClientWorker` 实现 `Drop` 自动 `kill()` 并 `wait()` 回收外部 MCP Server 子进程，消除热重载或卸载时的孤儿进程泄漏。
+- **非阻塞后台工具预热 (`aggregate_openai_tools_nonblocking`)**：对话轮次准备阶段采用非阻塞缓存读取并异步触发后台线程握手与 `tools/list` 预热，彻底避免外部 MCP 子进程冷启动阻塞 UI 主线程。
+- **支持含下划线 (`_`) 的 MCP 服务名路由**：`McpManager::dispatch_tool_call` 采用已注册服务器最长前缀匹配替代首下划线切分，确保 `my_custom_mcp` 等包含下划线的服务名准确路由。
+
+---
+
 ## 0.9.5 — 2026-11-23
 
 ### 中国默认区域用户协议 v1.1、Grep 主编辑区标签页与 SIMD 并行提速、全屏 0px 贴边、无遮罩弹窗及 90%+ 覆盖率门禁

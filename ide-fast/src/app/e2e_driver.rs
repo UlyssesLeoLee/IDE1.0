@@ -617,8 +617,123 @@ impl App {
                         "Hooks Post-Response secret-mask 未对明文 sk- 密钥脱敏: {masked}"
                     ));
                 }
+                // 校验扩展栏 (Tab::Plugins) 点击展开 Skills / Hooks / MCP 后直接添加与删除的端到端有效性
+                self.side.open = true;
+                self.cfg.view.side_collapsed = false;
+                self.side.tab = crate::sidebar::Tab::Plugins;
+                for kind in [
+                    super::ExtCoreKind::Skills,
+                    super::ExtCoreKind::Hooks,
+                    super::ExtCoreKind::Mcp,
+                ] {
+                    self.dialogs.ext_mgr.expanded = Some(kind);
+                    self.dialogs.ext_mgr.win = Some(kind);
+                }
+                let parsed_args = super::parse_quoted_args(
+                    "-y @modelcontextprotocol/server-filesystem \"C:\\My Workspace\"",
+                );
+                if parsed_args.last().map(String::as_str) != Some("C:\\My Workspace") {
+                    return Err(format!("带空格引号参数解析异常: {parsed_args:?}"));
+                }
+                let parsed_env =
+                    super::parse_env_pairs("GITHUB_TOKEN=ghp_test123, BRAVE_API_KEY=\"brave_456\"");
+                if parsed_env.get("GITHUB_TOKEN").map(String::as_str) != Some("ghp_test123")
+                    || parsed_env.get("BRAVE_API_KEY").map(String::as_str) != Some("brave_456")
+                {
+                    return Err(format!("MCP 环境变量解析异常: {parsed_env:?}"));
+                }
+                let ws_root = driver.workspace_root.clone();
+                let rt = self.ai.plugin_rt_mut();
+                // 1) 端到端添加并触发自定义 Skill
+                let skill_file = rt.add_custom_skill(
+                    &ws_root,
+                    "e2e-custom-skill",
+                    "E2E 专项技能",
+                    "/e2e-skill",
+                    "E2E 测试添加的自定义技能",
+                    "你必须输出 [E2E_CUSTOM_SKILL_ACTIVE] 标记。",
+                )?;
+                if !skill_file.is_file() {
+                    return Err("扩展栏添加自定义 Skill 后未落盘 SKILL.md".into());
+                }
+                let active_skills = rt.list_active_skills(&ws_root);
+                if !active_skills.iter().any(|s| s.id == "e2e-custom-skill") {
+                    return Err("扩展栏添加的自定义 Skill 未出现在已生效列表中".into());
+                }
+                let turn = rt.prepare_agent_turn(
+                    "BASE_SYS",
+                    "/e2e-skill 请执行检查",
+                    "code",
+                    &ws_root,
+                    None,
+                    &[],
+                );
+                if !turn.system_prompt.contains("[E2E_CUSTOM_SKILL_ACTIVE]") {
+                    return Err(format!(
+                        "扩展栏添加的自定义 Skill 在 /e2e-skill 触发时未注入系统提示词: {}",
+                        turn.system_prompt
+                    ));
+                }
+                rt.remove_custom_skill(&ws_root, "e2e-custom-skill")?;
+                // 2) 端到端添加并触发自定义 Hook
+                rt.add_custom_hook(
+                    &ws_root,
+                    ide_agent_router::CustomHookSpec {
+                        name: "E2eCustomHook".into(),
+                        description: "E2E 自定义拦截与脱敏".into(),
+                        enabled: true,
+                        pre_input_prefix: Some("[E2E_HOOK_PREFIX]".into()),
+                        pre_input_block_patterns: vec!["E2E_FORBIDDEN_INPUT".into()],
+                        blocked_tools: vec!["e2e_banned_tool".into()],
+                        pre_tool_block_patterns: vec!["DROP PROD".into()],
+                        mask_patterns: vec!["e2etok_".into()],
+                    },
+                )?;
+                if !rt
+                    .list_active_hooks(&ws_root)
+                    .iter()
+                    .any(|h| h == "E2eCustomHook")
+                {
+                    return Err("扩展栏添加的自定义 Hook 未出现在已挂载列表中".into());
+                }
+                let hooked_in = rt.run_pre_input_hook("正常请求".into())?;
+                if !hooked_in.contains("[E2E_HOOK_PREFIX]") {
+                    return Err(format!("自定义 Hook Pre-Input 未注入前缀: {hooked_in}"));
+                }
+                if rt
+                    .run_pre_input_hook("包含 E2E_FORBIDDEN_INPUT".into())
+                    .is_ok()
+                {
+                    return Err("自定义 Hook 未拦截 E2E_FORBIDDEN_INPUT".into());
+                }
+                if rt.check_tool_gate("e2e_banned_tool", &json!({})).is_ok() {
+                    return Err("自定义 Hook 未拦截被封禁工具 e2e_banned_tool".into());
+                }
+                let hooked_out = rt.run_post_response_hook("secret=e2etok_99887766".into());
+                if !hooked_out.contains("e2etok_****") {
+                    return Err(format!("自定义 Hook Post-Response 未脱敏: {hooked_out}"));
+                }
+                rt.remove_custom_hook(&ws_root, "E2eCustomHook")?;
+                // 3) 端到端添加并查询自定义/第三方 MCP 服务（含下划线服务名与 env 环境变量）
+                rt.add_custom_mcp_server_with_env(
+                    &ws_root,
+                    "e2e_third_party_mcp",
+                    "npx",
+                    parsed_args,
+                    parsed_env,
+                )?;
+                let active_mcp = rt.list_active_mcp_servers(&ws_root);
+                if !active_mcp.iter().any(|(id, cfg)| {
+                    id == "e2e_third_party_mcp"
+                        && cfg.command == "npx"
+                        && cfg.env.get("GITHUB_TOKEN").map(String::as_str) == Some("ghp_test123")
+                }) {
+                    return Err("扩展栏添加的自定义/第三方 MCP 服务未出现在活跃列表中".into());
+                }
+                rt.remove_custom_mcp_server(&ws_root, "e2e_third_party_mcp")?;
+                self.dialogs.ext_mgr.win = None;
                 Ok(
-                    "中国默认区域用户协议 v1.1 与自定义/第三方 Hooks · Skills · MCP 扩展校验通过"
+                    "中国默认区域用户协议 v1.1 与扩展栏自定义/第三方 Hooks · Skills · MCP 端到端添加及生效校验通过"
                         .into(),
                 )
             }

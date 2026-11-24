@@ -56,7 +56,119 @@ mod titlebar;
 mod updateui;
 mod welcome;
 
-/// 小型辅助对话框状态组 (行跳转 / 书签 / 文档比较选择与列表 / 文件属性 / 关于)
+/// 核心可扩展 Agent 模块类型（`Skills` / `Hooks` / `MCP`）
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(super) enum ExtCoreKind {
+    Skills,
+    Hooks,
+    Mcp,
+}
+
+impl ExtCoreKind {
+    pub fn from_plugin_id(id: &str) -> Option<Self> {
+        match id {
+            "skills" => Some(Self::Skills),
+            "hooks" => Some(Self::Hooks),
+            "mcp" => Some(Self::Mcp),
+            _ => None,
+        }
+    }
+
+    pub fn tab_label(self) -> &'static str {
+        match self {
+            Self::Skills => "⚡ Skills 研发技能",
+            Self::Hooks => "🛡 Hooks 安全拦截器",
+            Self::Mcp => "🔌 MCP 上下文服务",
+        }
+    }
+}
+
+/// Skill 表单草稿状态
+#[derive(Default)]
+pub(super) struct SkillFormDraft {
+    pub id: String,
+    pub name: String,
+    pub trigger: String,
+    pub desc: String,
+    pub prompt: String,
+}
+
+/// Hook 表单草稿状态
+#[derive(Default)]
+pub(super) struct HookFormDraft {
+    pub name: String,
+    pub desc: String,
+    pub prefix: String,
+    pub block_input: String,
+    pub block_tools: String,
+    pub block_args: String,
+    pub mask: String,
+}
+
+/// MCP Server 表单草稿状态
+#[derive(Default)]
+pub(super) struct McpFormDraft {
+    pub id: String,
+    pub cmd: String,
+    pub args: String,
+    pub env: String,
+}
+
+/// 扩展栏与独立管理中心的自定义/第三方添加表单状态
+#[derive(Default)]
+pub(super) struct ExtensionManagerState {
+    pub expanded: Option<ExtCoreKind>,
+    pub win: Option<ExtCoreKind>,
+    pub skill: SkillFormDraft,
+    pub hook: HookFormDraft,
+    pub mcp: McpFormDraft,
+    pub feedback: String,
+}
+
+/// 解析支持双引号/单引号包裹路径的命令行参数字符串
+pub(super) fn parse_quoted_args(raw: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut cur = String::new();
+    let mut in_quote: Option<char> = None;
+    for ch in raw.chars() {
+        match in_quote {
+            Some(q) if ch == q => {
+                in_quote = None;
+            }
+            Some(_) => cur.push(ch),
+            None if ch == '"' || ch == '\'' => {
+                in_quote = Some(ch);
+            }
+            None if ch.is_whitespace() => {
+                if !cur.is_empty() {
+                    out.push(std::mem::take(&mut cur));
+                }
+            }
+            None => cur.push(ch),
+        }
+    }
+    if !cur.is_empty() {
+        out.push(cur);
+    }
+    out
+}
+
+/// 解析 `KEY=VALUE, KEY2=VALUE2` 或换行分隔的环境变量配置
+pub(super) fn parse_env_pairs(raw: &str) -> std::collections::HashMap<String, String> {
+    let mut map = std::collections::HashMap::new();
+    for part in raw.split([',', ';', '\n']) {
+        if let Some((k, v)) = part.split_once('=') {
+            let k = k.trim();
+            let v = v.trim().trim_matches('"').trim_matches('\'');
+            if !k.is_empty() {
+                map.insert(k.to_string(), v.to_string());
+            }
+        }
+    }
+    map
+}
+
+/// 小型辅助对话框状态组 (行跳转 / 书签 / 文档比较选择与列表 / 文件属性 / 关于 / 扩展栏 Skills·Hooks·MCP 添加管理)
 #[derive(Default)]
 struct Dialogs {
     goto_open: bool,
@@ -67,6 +179,7 @@ struct Dialogs {
     diff_pick: bool,
     about_open: bool,
     props: Option<String>,
+    ext_mgr: ExtensionManagerState,
 }
 
 /// 后台文件对话框异步载入与进度状态 (防止 Windows COM / Shell 首发阻塞 UI，带进度条与首次启动较慢提示)
@@ -2747,18 +2860,51 @@ impl App {
                                 .color(hot_mod.badge_color()),
                         );
                     }
-                    let lbl = ui.label(format!(
-                        "{} {}{}",
-                        r.name,
-                        r.version,
-                        if r.script_only && r.pele_like() {
-                            tr("ui.script-only")
-                        } else {
-                            ""
+                    let ext_kind = ExtCoreKind::from_plugin_id(&r.id);
+                    let is_open = ext_kind.is_some() && self.dialogs.ext_mgr.expanded == ext_kind;
+                    let title_txt = if ext_kind.is_some() {
+                        format!(
+                            "{} {} {}",
+                            if is_open { "▼" } else { "▸" },
+                            r.name,
+                            r.version
+                        )
+                    } else {
+                        format!(
+                            "{} {}{}",
+                            r.name,
+                            r.version,
+                            if r.script_only && r.pele_like() {
+                                tr("ui.script-only")
+                            } else {
+                                ""
+                            }
+                        )
+                    };
+                    if let Some(kind) = ext_kind {
+                        let resp = ui
+                            .selectable_label(is_open, title_txt)
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .on_hover_text(format!(
+                                "{}\n\n点击展开/收起「{}」添加与管理面板，直接添加自定义或导入第三方配置",
+                                r.description, r.name
+                            ));
+                        if resp.clicked() {
+                            if is_open {
+                                self.dialogs.ext_mgr.expanded = None;
+                            } else {
+                                if !r.enabled {
+                                    let _ = plugins::set_enabled(&r.id, true);
+                                    self.on_plugin_hot_swap(&r.id);
+                                }
+                                self.dialogs.ext_mgr.expanded = Some(kind);
+                            }
                         }
-                    ));
-                    if !r.description.is_empty() {
-                        lbl.on_hover_text(&r.description);
+                    } else {
+                        let lbl = ui.label(title_txt);
+                        if !r.description.is_empty() {
+                            lbl.on_hover_text(&r.description);
+                        }
                     }
                 }
                 if ui.small_button(tr("c.delete")).clicked() {
@@ -2790,78 +2936,72 @@ impl App {
                     }
                 });
             }
-            if r.enabled && matches!(r.id.as_str(), "hooks" | "skills" | "mcp") {
+            if let Some(kind) = ExtCoreKind::from_plugin_id(&r.id).filter(|_| r.enabled) {
+                let is_open = self.dialogs.ext_mgr.expanded == Some(kind);
                 ui.horizontal_wrapped(|ui| {
                     ui.add_space(24.0);
-                    ui.weak("自定义/第三方:");
-                    match r.id.as_str() {
-                        "hooks" => {
-                            if ui
-                                .small_button("➕ 新建/编辑自定义 Hook")
-                                .on_hover_text(
-                                    "在工作区创建或打开 .hooks.json，自定义输入注入、工具拦截与第三方凭证脱敏规则",
-                                )
-                                .clicked()
-                            {
-                                ui.close();
-                                self.open_or_create_custom_hooks_file();
-                            }
-                            if ui
-                                .small_button("📥 导入第三方 Hook (.json)")
-                                .on_hover_text("从本地选择第三方或团队共享的 Hook 规则 JSON 文件并导入")
-                                .clicked()
-                            {
-                                ui.close();
-                                self.import_third_party_hook_file();
-                            }
+                    ui.weak("添加/管理:");
+                    if ui
+                        .small_button(if is_open {
+                            "🔼 收起添加面板"
+                        } else {
+                            "➕ 展开添加与管理"
+                        })
+                        .on_hover_text("直接在扩展栏内填写表单一键添加自定义或第三方条目")
+                        .clicked()
+                    {
+                        if is_open {
+                            self.dialogs.ext_mgr.expanded = None;
+                        } else {
+                            self.dialogs.ext_mgr.expanded = Some(kind);
                         }
-                        "skills" => {
-                            if ui
-                                .small_button("➕ 新建自定义 Skill")
-                                .on_hover_text(
-                                    "在工作区 .skills/ 创建并打开自定义 SKILL.md 技能模板（支持 /slash 快捷触发）",
-                                )
-                                .clicked()
-                            {
-                                ui.close();
-                                self.open_or_create_custom_skill_file();
-                            }
-                            if ui
-                                .small_button("📥 导入第三方 Skill (.md/.json)")
-                                .on_hover_text(
-                                    "导入第三方 SKILL.md、Claude Code 命令 (.md) 或 JSON 技能定义文件",
-                                )
-                                .clicked()
-                            {
-                                ui.close();
-                                self.import_third_party_skill_file();
-                            }
-                        }
-                        "mcp" => {
-                            if ui
-                                .small_button("➕ 添加/编辑 MCP 服务")
-                                .on_hover_text(
-                                    "创建或打开 .mcp.json，添加自定义本地 MCP 服务或 npx/uvx 第三方 MCP Server",
-                                )
-                                .clicked()
-                            {
-                                ui.close();
-                                self.open_or_create_custom_mcp_file();
-                            }
-                            if ui
-                                .small_button("📥 导入第三方 MCP 配置 (.json)")
-                                .on_hover_text(
-                                    "导入第三方 .mcp.json / mcp_servers.json / claude_desktop_config.json 并自动合并",
-                                )
-                                .clicked()
-                            {
-                                ui.close();
-                                self.import_third_party_mcp_file();
-                            }
-                        }
-                        _ => {}
+                    }
+                    if ui
+                        .small_button("🗔 独立管理窗口")
+                        .on_hover_text(
+                            "打开独立管理中心窗口，查看已生效条目并添加自定义/第三方扩展",
+                        )
+                        .clicked()
+                    {
+                        ui.close();
+                        self.dialogs.ext_mgr.win = Some(kind);
+                    }
+                    if ui
+                        .small_button("📄 编辑配置文件")
+                        .on_hover_text("在主编辑区打开或创建当前扩展的自定义配置文件")
+                        .clicked()
+                    {
+                        ui.close();
+                        self.open_or_create_ext_file(kind);
+                    }
+                    if ui
+                        .small_button("📥 导入第三方文件")
+                        .on_hover_text("从本地选择第三方扩展配置文件并一键导入热重载")
+                        .clicked()
+                    {
+                        ui.close();
+                        self.import_third_party_ext_file(kind);
+                    }
+                    if kind == ExtCoreKind::Skills
+                        && ui
+                            .small_button("📂 导入技能目录")
+                            .on_hover_text("批量导入包含多个第三方 Skill 的文件夹")
+                            .clicked()
+                    {
+                        ui.close();
+                        self.import_third_party_skill_folder();
                     }
                 });
+                if is_open {
+                    ui.horizontal(|ui| {
+                        ui.add_space(16.0);
+                        ui.vertical(|ui| {
+                            ui.group(|ui| {
+                                self.render_extension_manager_body(ui, kind);
+                            });
+                        });
+                    });
+                }
             }
             if r.id == "mod" && r.enabled && !r.mod_modes.is_empty() {
                 ui.horizontal(|ui| {
@@ -2927,9 +3067,30 @@ impl App {
         }
     }
 
-    /// 获取用于存放自定义 Hooks / Skills / MCP 的目标工作区根目录（无工作区时回退到全局插件目录）
+    /// 获取用于存放自定义 Hooks / Skills / MCP 的目标工作区根目录（与 AI 对话的 `ws_root` 解析保持严格一致）
     fn extension_target_root(&mut self) -> PathBuf {
-        self.grep_root().unwrap_or_else(plugins::root)
+        self.side.root.clone().unwrap_or_else(|| {
+            let i = self.active.min(self.docs.len().saturating_sub(1));
+            aichat::find_workspace_root(self.docs.get(i).and_then(|d| d.path.as_deref()))
+        })
+    }
+
+    /// 统一按 `ExtCoreKind` 打开或创建对应配置文件
+    pub(super) fn open_or_create_ext_file(&mut self, kind: ExtCoreKind) {
+        match kind {
+            ExtCoreKind::Skills => self.open_or_create_custom_skill_file(),
+            ExtCoreKind::Hooks => self.open_or_create_custom_hooks_file(),
+            ExtCoreKind::Mcp => self.open_or_create_custom_mcp_file(),
+        }
+    }
+
+    /// 统一按 `ExtCoreKind` 导入外部第三方配置文件
+    pub(super) fn import_third_party_ext_file(&mut self, kind: ExtCoreKind) {
+        match kind {
+            ExtCoreKind::Skills => self.import_third_party_skill_file(),
+            ExtCoreKind::Hooks => self.import_third_party_hook_file(),
+            ExtCoreKind::Mcp => self.import_third_party_mcp_file(),
+        }
     }
 
     /// 创建或打开工作区 `.hooks.json` 自定义/第三方 Hook 规则配置文件
@@ -2952,7 +3113,12 @@ impl App {
   ]
 }
 "#;
-            let _ = std::fs::write(&target, template);
+            if let Err(e) = std::fs::write(&target, template) {
+                let msg = format!("创建 .hooks.json 失败: {e}");
+                self.dialogs.ext_mgr.feedback = msg.clone();
+                self.cur().tip = msg;
+                return;
+            }
         }
         self.ai.plugin_rt_mut().reload_custom_extensions();
         self.open_at(&target, 1, 0);
@@ -2979,7 +3145,10 @@ impl App {
             return;
         }
         let dest_dir = plugins::root().join("custom_hooks");
-        let _ = std::fs::create_dir_all(&dest_dir);
+        if let Err(e) = std::fs::create_dir_all(&dest_dir) {
+            self.cur().tip = format!("创建 custom_hooks 目录失败: {e}");
+            return;
+        }
         let fname = picked
             .file_name()
             .map(|s| s.to_string_lossy().into_owned())
@@ -2998,7 +3167,12 @@ impl App {
     pub(super) fn open_or_create_custom_skill_file(&mut self) {
         let root = self.extension_target_root();
         let skill_dir = root.join(".skills").join("my-skill");
-        let _ = std::fs::create_dir_all(&skill_dir);
+        if let Err(e) = std::fs::create_dir_all(&skill_dir) {
+            let msg = format!("创建 .skills 目录失败: {e}");
+            self.dialogs.ext_mgr.feedback = msg.clone();
+            self.cur().tip = msg;
+            return;
+        }
         let target = skill_dir.join("SKILL.md");
         if !target.exists() {
             let template = r#"---
@@ -3013,7 +3187,12 @@ tags: custom, workflow
 2. 给出最小化、可验证的高质量代码实现；
 3. 说明关键设计权衡与测试要点。
 "#;
-            let _ = std::fs::write(&target, template);
+            if let Err(e) = std::fs::write(&target, template) {
+                let msg = format!("创建 SKILL.md 模板失败: {e}");
+                self.dialogs.ext_mgr.feedback = msg.clone();
+                self.cur().tip = msg;
+                return;
+            }
         }
         self.ai.plugin_rt_mut().reload_custom_extensions();
         self.open_at(&target, 1, 0);
@@ -3041,7 +3220,10 @@ tags: custom, workflow
             .unwrap_or("md")
             .to_ascii_lowercase();
         let dest_base = plugins::root().join("custom_skills");
-        let _ = std::fs::create_dir_all(&dest_base);
+        if let Err(e) = std::fs::create_dir_all(&dest_base) {
+            self.cur().tip = format!("创建 custom_skills 目录失败: {e}");
+            return;
+        }
         let dest = if picked
             .file_name()
             .is_some_and(|n| n.eq_ignore_ascii_case("SKILL.md"))
@@ -3052,7 +3234,10 @@ tags: custom, workflow
                 .map(|s| s.to_string_lossy().into_owned())
                 .unwrap_or_else(|| "third-party-skill".into());
             let sub = dest_base.join(folder_name);
-            let _ = std::fs::create_dir_all(&sub);
+            if let Err(e) = std::fs::create_dir_all(&sub) {
+                self.cur().tip = format!("创建技能子目录失败: {e}");
+                return;
+            }
             sub.join("SKILL.md")
         } else {
             let fname = picked
@@ -3098,7 +3283,12 @@ tags: custom, workflow
   }
 }
 "#;
-            let _ = std::fs::write(&target, template);
+            if let Err(e) = std::fs::write(&target, template) {
+                let msg = format!("创建 .mcp.json 失败: {e}");
+                self.dialogs.ext_mgr.feedback = msg.clone();
+                self.cur().tip = msg;
+                return;
+            }
         }
         self.ai.plugin_rt_mut().reload_custom_extensions();
         self.open_at(&target, 1, 0);
@@ -3131,9 +3321,20 @@ tags: custom, workflow
         for (k, v) in incoming.mcp_servers {
             merged.mcp_servers.insert(k, v);
         }
-        if let Ok(pretty) = serde_json::to_string_pretty(&merged) {
-            let _ = std::fs::create_dir_all(plugins::root());
-            let _ = std::fs::write(&global_path, pretty);
+        let pretty = match serde_json::to_string_pretty(&merged) {
+            Ok(p) => p,
+            Err(e) => {
+                self.cur().tip = format!("序列化 MCP 配置失败: {e}");
+                return;
+            }
+        };
+        if let Err(e) = std::fs::create_dir_all(plugins::root()) {
+            self.cur().tip = format!("创建插件配置目录失败: {e}");
+            return;
+        }
+        if let Err(e) = std::fs::write(&global_path, pretty) {
+            self.cur().tip = format!("写入全局 MCP 配置失败: {e}");
+            return;
         }
         self.ai.plugin_rt_mut().reload_custom_extensions();
         self.open_at(&global_path, 1, 0);
@@ -3141,6 +3342,612 @@ tags: custom, workflow
             "已成功合并导入 {count} 个自定义/第三方 MCP 服务器配置（共 {} 个活跃服务）",
             merged.mcp_servers.len()
         );
+    }
+
+    /// 批量导入外部/第三方 Skill 文件夹（支持包含多个 `<id>/SKILL.md`、`*.md` 或 `*.json` 的目录）
+    pub(super) fn import_third_party_skill_folder(&mut self) {
+        fn copy_skill_dir(
+            src_dir: &std::path::Path,
+            dest_base: &std::path::Path,
+        ) -> Result<bool, String> {
+            let skill_md = src_dir.join("SKILL.md");
+            if !skill_md.is_file() {
+                return Ok(false);
+            }
+            let folder_name = src_dir
+                .file_name()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "imported-skill".into());
+            let sub = dest_base.join(folder_name);
+            std::fs::create_dir_all(&sub)
+                .map_err(|e| format!("创建技能目录 {} 失败: {e}", sub.display()))?;
+            let raw = std::fs::read_to_string(&skill_md)
+                .map_err(|e| format!("读取 {} 失败: {e}", skill_md.display()))?;
+            std::fs::write(sub.join("SKILL.md"), raw)
+                .map_err(|e| format!("写入 {} 失败: {e}", sub.join("SKILL.md").display()))?;
+            Ok(true)
+        }
+
+        let Some(picked_dir) = rfd::FileDialog::new().pick_folder() else {
+            return;
+        };
+        let dest_base = plugins::root().join("custom_skills");
+        if let Err(e) = std::fs::create_dir_all(&dest_base) {
+            let msg = format!("创建 custom_skills 目录失败: {e}");
+            self.dialogs.ext_mgr.feedback = msg.clone();
+            self.cur().tip = msg;
+            return;
+        }
+        let mut imported = 0usize;
+        let mut errors: Vec<String> = Vec::new();
+        match copy_skill_dir(&picked_dir, &dest_base) {
+            Ok(true) => imported += 1,
+            Err(e) => errors.push(e),
+            Ok(false) => match std::fs::read_dir(&picked_dir) {
+                Ok(rd) => {
+                    for entry in rd.flatten() {
+                        let p = entry.path();
+                        if p.is_dir() {
+                            match copy_skill_dir(&p, &dest_base) {
+                                Ok(true) => imported += 1,
+                                Ok(false) => {}
+                                Err(e) => errors.push(e),
+                            }
+                        } else if p.is_file()
+                            && p.extension().and_then(|s| s.to_str()).is_some_and(|e| {
+                                e.eq_ignore_ascii_case("md") || e.eq_ignore_ascii_case("json")
+                            })
+                        {
+                            if let Some(fname) = p.file_name() {
+                                match std::fs::read_to_string(&p) {
+                                    Ok(raw) => {
+                                        let target = dest_base.join(fname);
+                                        if let Err(e) = std::fs::write(&target, raw) {
+                                            errors.push(format!(
+                                                "写入 {} 失败: {e}",
+                                                target.display()
+                                            ));
+                                        } else {
+                                            imported += 1;
+                                        }
+                                    }
+                                    Err(e) => {
+                                        errors.push(format!("读取 {} 失败: {e}", p.display()))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(e) => errors.push(format!("读取目录 {} 失败: {e}", picked_dir.display())),
+            },
+        }
+        self.ai.plugin_rt_mut().reload_custom_extensions();
+        let msg = match (imported, errors.is_empty()) {
+            (0, false) => format!("导入第三方 Skill 失败: {}", errors[0]),
+            (0, true) => "所选文件夹中未发现有效的 SKILL.md、.md 或 .json 技能文件".into(),
+            (n, true) => format!("已从文件夹成功导入并启用 {n} 个第三方 Skill"),
+            (n, false) => format!(
+                "已导入 {n} 个第三方 Skill，另有 {} 个文件失败: {}",
+                errors.len(),
+                errors[0]
+            ),
+        };
+        self.dialogs.ext_mgr.feedback = msg.clone();
+        self.cur().tip = msg;
+    }
+
+    /// 渲染 `Skills` / `Hooks` / `MCP` 的交互式添加表单、第三方导入与已生效清单（供扩展栏折叠抽屉、插件窗口与独立管理中心共用）
+    pub(super) fn render_extension_manager_body(&mut self, ui: &mut egui::Ui, kind: ExtCoreKind) {
+        let ws_root = self.extension_target_root();
+        match kind {
+            ExtCoreKind::Skills => {
+                let skills = self.ai.plugin_rt_mut().list_active_skills(&ws_root);
+                let custom_count = skills.iter().filter(|s| !s.is_builtin).count();
+                ui.label(
+                    egui::RichText::new(format!(
+                        "⚡ 已生效 Skills ({} 个: 内建 {} + 自定义/第三方 {})",
+                        skills.len(),
+                        skills.len().saturating_sub(custom_count),
+                        custom_count
+                    ))
+                    .strong(),
+                );
+                let mut delete_skill_id: Option<String> = None;
+                let mut trigger_now: Option<String> = None;
+                egui::ScrollArea::vertical()
+                    .id_salt(("skills_active_list", ui.id()))
+                    .max_height(135.0)
+                    .show(ui, |ui| {
+                        for s in &skills {
+                            ui.horizontal(|ui| {
+                                let trig =
+                                    s.triggers.first().map(String::as_str).unwrap_or("/skill");
+                                let badge = if s.is_builtin {
+                                    "[内建]"
+                                } else {
+                                    "[自定义/第三方]"
+                                };
+                                ui.label(egui::RichText::new(badge).small().color(
+                                    if s.is_builtin {
+                                        self.tc.fg_dim
+                                    } else {
+                                        Color32::from_rgb(168, 85, 247)
+                                    },
+                                ));
+                                ui.label(egui::RichText::new(trig).monospace().strong());
+                                ui.label(&s.name).on_hover_text(&s.description);
+                                if ui
+                                    .small_button("▶ 使用")
+                                    .on_hover_text("填充该技能触发词到右侧 AI 对话框")
+                                    .clicked()
+                                {
+                                    trigger_now = Some(format!("{trig} "));
+                                }
+                                if !s.is_builtin
+                                    && ui
+                                        .small_button("🗑")
+                                        .on_hover_text("删除此自定义/第三方技能")
+                                        .clicked()
+                                {
+                                    delete_skill_id = Some(s.id.clone());
+                                }
+                            });
+                        }
+                    });
+                if let Some(trig) = trigger_now {
+                    self.ai.open = true;
+                    self.cfg.view.right_collapsed = false;
+                    self.expand_dock(crate::panels::Dock::Right);
+                    self.ai.fill_skill_trigger(&trig);
+                    self.dialogs.ext_mgr.feedback =
+                        format!("已将技能触发词 {trig} 填入右侧 AI 面板");
+                }
+                if let Some(del_id) = delete_skill_id {
+                    match self
+                        .ai
+                        .plugin_rt_mut()
+                        .remove_custom_skill(&ws_root, &del_id)
+                    {
+                        Ok(()) => {
+                            let msg = format!("已删除自定义/第三方 Skill: {del_id}");
+                            self.dialogs.ext_mgr.feedback = msg.clone();
+                            self.cur().tip = msg;
+                        }
+                        Err(e) => self.dialogs.ext_mgr.feedback = e,
+                    }
+                }
+                ui.separator();
+                ui.label(egui::RichText::new("➕ 直接添加自定义 / 第三方 Skill").strong());
+                egui::Grid::new(("add_skill_grid", ui.id()))
+                    .num_columns(2)
+                    .spacing([6.0, 4.0])
+                    .show(ui, |ui| {
+                        ui.label("技能 ID:");
+                        ui.add(
+                            egui::TextEdit::singleline(&mut self.dialogs.ext_mgr.skill.id)
+                                .hint_text("如 sql-audit 或 third-party-sec")
+                                .desired_width(180.0),
+                        );
+                        ui.end_row();
+                        ui.label("显示名称:");
+                        ui.add(
+                            egui::TextEdit::singleline(&mut self.dialogs.ext_mgr.skill.name)
+                                .hint_text("如 SQL 性能与安全审计")
+                                .desired_width(180.0),
+                        );
+                        ui.end_row();
+                        ui.label("触发词:");
+                        ui.add(
+                            egui::TextEdit::singleline(&mut self.dialogs.ext_mgr.skill.trigger)
+                                .hint_text("如 /sql-audit（留空默认 /<ID>）")
+                                .desired_width(180.0),
+                        );
+                        ui.end_row();
+                        ui.label("功能描述:");
+                        ui.add(
+                            egui::TextEdit::singleline(&mut self.dialogs.ext_mgr.skill.desc)
+                                .hint_text("简要说明该技能的作用")
+                                .desired_width(180.0),
+                        );
+                        ui.end_row();
+                    });
+                ui.label("系统提示词 / 技能指令 (System Prompt):");
+                ui.add(
+                    egui::TextEdit::multiline(&mut self.dialogs.ext_mgr.skill.prompt)
+                        .desired_rows(3)
+                        .hint_text(
+                            "输入注入给 AI Agent 的专业角色约束、执行步骤或第三方 Prompt 规范…",
+                        )
+                        .desired_width(f32::INFINITY),
+                );
+                ui.horizontal_wrapped(|ui| {
+                    if ui.button("✅ 立即添加并启用 Skill").clicked() {
+                        let res = {
+                            let draft = crate::app::agent_plugins::CustomSkillDraft {
+                                id: &self.dialogs.ext_mgr.skill.id,
+                                name: &self.dialogs.ext_mgr.skill.name,
+                                trigger: &self.dialogs.ext_mgr.skill.trigger,
+                                description: &self.dialogs.ext_mgr.skill.desc,
+                                system_prompt: &self.dialogs.ext_mgr.skill.prompt,
+                            };
+                            self.ai
+                                .plugin_rt_mut()
+                                .add_custom_skill_spec(&ws_root, draft)
+                        };
+                        match res {
+                            Ok(path) => {
+                                let msg = format!("已添加并启用自定义 Skill: {}", path.display());
+                                self.dialogs.ext_mgr.feedback = msg.clone();
+                                self.cur().tip = msg;
+                                self.dialogs.ext_mgr.skill = SkillFormDraft::default();
+                            }
+                            Err(e) => self.dialogs.ext_mgr.feedback = e,
+                        }
+                    }
+                    if ui.button("📄 打开 SKILL.md 模板").clicked() {
+                        self.open_or_create_ext_file(ExtCoreKind::Skills);
+                    }
+                    if ui.button("📥 导入第三方 (.md/.json)").clicked() {
+                        self.import_third_party_ext_file(ExtCoreKind::Skills);
+                    }
+                    if ui.button("📂 导入技能文件夹").clicked() {
+                        self.import_third_party_skill_folder();
+                    }
+                });
+            }
+            ExtCoreKind::Hooks => {
+                let hooks = self.ai.plugin_rt_mut().list_active_hook_infos(&ws_root);
+                ui.label(
+                    egui::RichText::new(format!("🛡 已挂载生命周期 Hooks ({} 个)", hooks.len()))
+                        .strong(),
+                );
+                let mut delete_hook: Option<String> = None;
+                egui::ScrollArea::vertical()
+                    .id_salt(("hooks_active_list", ui.id()))
+                    .max_height(120.0)
+                    .show(ui, |ui| {
+                        for h in &hooks {
+                            ui.horizontal(|ui| {
+                                ui.label(
+                                    egui::RichText::new(if h.is_builtin {
+                                        "[内建]"
+                                    } else {
+                                        "[自定义/第三方]"
+                                    })
+                                    .small()
+                                    .color(if h.is_builtin {
+                                        self.tc.fg_dim
+                                    } else {
+                                        Color32::from_rgb(245, 158, 11)
+                                    }),
+                                );
+                                let name_lbl =
+                                    ui.label(egui::RichText::new(&h.name).monospace().strong());
+                                if !h.description.is_empty() {
+                                    name_lbl.on_hover_text(&h.description);
+                                }
+                                if !h.is_builtin
+                                    && ui
+                                        .small_button("🗑")
+                                        .on_hover_text("删除此自定义/第三方 Hook 规则")
+                                        .clicked()
+                                {
+                                    delete_hook = Some(h.name.clone());
+                                }
+                            });
+                        }
+                    });
+                if let Some(hname) = delete_hook {
+                    match self.ai.plugin_rt_mut().remove_custom_hook(&ws_root, &hname) {
+                        Ok(()) => {
+                            let msg = format!("已删除自定义/第三方 Hook: {hname}");
+                            self.dialogs.ext_mgr.feedback = msg.clone();
+                            self.cur().tip = msg;
+                        }
+                        Err(e) => self.dialogs.ext_mgr.feedback = e,
+                    }
+                }
+                ui.separator();
+                ui.label(egui::RichText::new("➕ 直接添加自定义 / 第三方 Hook 规则").strong());
+                egui::Grid::new(("add_hook_grid", ui.id()))
+                    .num_columns(2)
+                    .spacing([6.0, 4.0])
+                    .show(ui, |ui| {
+                        ui.label("Hook 名称:");
+                        ui.add(
+                            egui::TextEdit::singleline(&mut self.dialogs.ext_mgr.hook.name)
+                                .hint_text("如 CorpSecurityGate 或 ThirdPartyTokenGuard")
+                                .desired_width(180.0),
+                        );
+                        ui.end_row();
+                        ui.label("规则描述:");
+                        ui.add(
+                            egui::TextEdit::singleline(&mut self.dialogs.ext_mgr.hook.desc)
+                                .hint_text("如 团队 GitLab 令牌脱敏与危险命令门禁")
+                                .desired_width(180.0),
+                        );
+                        ui.end_row();
+                        ui.label("前置提示词:");
+                        ui.add(
+                            egui::TextEdit::singleline(&mut self.dialogs.ext_mgr.hook.prefix)
+                                .hint_text("Pre-Input 自动注入的规范前缀（可选）")
+                                .desired_width(180.0),
+                        );
+                        ui.end_row();
+                        ui.label("输入拦截词:");
+                        ui.add(
+                            egui::TextEdit::singleline(&mut self.dialogs.ext_mgr.hook.block_input)
+                                .hint_text("逗号分隔，如 ProductionDB,DROP")
+                                .desired_width(180.0),
+                        );
+                        ui.end_row();
+                        ui.label("禁用工具名:");
+                        ui.add(
+                            egui::TextEdit::singleline(&mut self.dialogs.ext_mgr.hook.block_tools)
+                                .hint_text("逗号分隔，如 exec_shell,drop_table")
+                                .desired_width(180.0),
+                        );
+                        ui.end_row();
+                        ui.label("参数拦截串:");
+                        ui.add(
+                            egui::TextEdit::singleline(&mut self.dialogs.ext_mgr.hook.block_args)
+                                .hint_text("逗号分隔，如 rm -rf /,.env.production")
+                                .desired_width(180.0),
+                        );
+                        ui.end_row();
+                        ui.label("脱敏前缀:");
+                        ui.add(
+                            egui::TextEdit::singleline(&mut self.dialogs.ext_mgr.hook.mask)
+                                .hint_text("逗号分隔，如 glpat-,xoxb-,AIza")
+                                .desired_width(180.0),
+                        );
+                        ui.end_row();
+                    });
+                ui.horizontal_wrapped(|ui| {
+                    if ui.button("✅ 立即添加并启用 Hook").clicked() {
+                        let split_csv = |s: &str| -> Vec<String> {
+                            s.split(',')
+                                .map(str::trim)
+                                .filter(|x| !x.is_empty())
+                                .map(String::from)
+                                .collect()
+                        };
+                        let prefix = self.dialogs.ext_mgr.hook.prefix.trim().to_string();
+                        let spec = ide_agent_router::CustomHookSpec {
+                            name: self.dialogs.ext_mgr.hook.name.trim().to_string(),
+                            description: if self.dialogs.ext_mgr.hook.desc.trim().is_empty() {
+                                "用户自定义/第三方扩展 Hook".into()
+                            } else {
+                                self.dialogs.ext_mgr.hook.desc.trim().to_string()
+                            },
+                            enabled: true,
+                            pre_input_prefix: if prefix.is_empty() {
+                                None
+                            } else {
+                                Some(prefix)
+                            },
+                            pre_input_block_patterns: split_csv(
+                                &self.dialogs.ext_mgr.hook.block_input,
+                            ),
+                            blocked_tools: split_csv(&self.dialogs.ext_mgr.hook.block_tools),
+                            pre_tool_block_patterns: split_csv(
+                                &self.dialogs.ext_mgr.hook.block_args,
+                            ),
+                            mask_patterns: split_csv(&self.dialogs.ext_mgr.hook.mask),
+                        };
+                        match self.ai.plugin_rt_mut().add_custom_hook(&ws_root, spec) {
+                            Ok(path) => {
+                                let msg =
+                                    format!("已添加并启用自定义 Hook 规则: {}", path.display());
+                                self.dialogs.ext_mgr.feedback = msg.clone();
+                                self.cur().tip = msg;
+                                self.dialogs.ext_mgr.hook = HookFormDraft::default();
+                            }
+                            Err(e) => self.dialogs.ext_mgr.feedback = e,
+                        }
+                    }
+                    if ui.button("📄 编辑 .hooks.json").clicked() {
+                        self.open_or_create_ext_file(ExtCoreKind::Hooks);
+                    }
+                    if ui.button("📥 导入第三方 (.json)").clicked() {
+                        self.import_third_party_ext_file(ExtCoreKind::Hooks);
+                    }
+                });
+            }
+            ExtCoreKind::Mcp => {
+                let servers = self.ai.plugin_rt_mut().list_active_mcp_servers(&ws_root);
+                ui.label(
+                    egui::RichText::new(format!(
+                        "🔌 已配置自定义 & 第三方 MCP 服务器 ({} 个)",
+                        servers.len()
+                    ))
+                    .strong(),
+                );
+                let mut delete_srv: Option<String> = None;
+                if servers.is_empty() {
+                    ui.weak("暂无外部 MCP 服务器，可在下方一键添加或导入 .mcp.json");
+                } else {
+                    egui::ScrollArea::vertical()
+                        .id_salt(("mcp_active_list", ui.id()))
+                        .max_height(125.0)
+                        .show(ui, |ui| {
+                            for (sid, cfg) in &servers {
+                                ui.horizontal(|ui| {
+                                    let status_col = if cfg.disabled {
+                                        self.tc.fg_dim
+                                    } else {
+                                        Color32::from_rgb(56, 189, 248)
+                                    };
+                                    ui.label(
+                                        egui::RichText::new(if cfg.disabled {
+                                            "[已禁用]"
+                                        } else {
+                                            "[已启用]"
+                                        })
+                                        .small()
+                                        .color(status_col),
+                                    );
+                                    ui.label(egui::RichText::new(sid).monospace().strong());
+                                    ui.weak(format!("{} {}", cfg.command, cfg.args.join(" ")));
+                                    if !cfg.env.is_empty() {
+                                        ui.weak(format!("(env: {} 项)", cfg.env.len()));
+                                    }
+                                    if ui
+                                        .small_button("🗑")
+                                        .on_hover_text("移除此 MCP 服务器配置")
+                                        .clicked()
+                                    {
+                                        delete_srv = Some(sid.clone());
+                                    }
+                                });
+                            }
+                        });
+                }
+                if let Some(sid) = delete_srv {
+                    match self
+                        .ai
+                        .plugin_rt_mut()
+                        .remove_custom_mcp_server(&ws_root, &sid)
+                    {
+                        Ok(()) => {
+                            let msg = format!("已移除 MCP 服务器: {sid}");
+                            self.dialogs.ext_mgr.feedback = msg.clone();
+                            self.cur().tip = msg;
+                        }
+                        Err(e) => self.dialogs.ext_mgr.feedback = e,
+                    }
+                }
+                ui.separator();
+                ui.label(egui::RichText::new("➕ 直接添加自定义 / 第三方 MCP 服务").strong());
+                egui::Grid::new(("add_mcp_grid", ui.id()))
+                    .num_columns(2)
+                    .spacing([6.0, 4.0])
+                    .show(ui, |ui| {
+                        ui.label("服务 ID:");
+                        ui.add(
+                            egui::TextEdit::singleline(&mut self.dialogs.ext_mgr.mcp.id)
+                                .hint_text("如 filesystem、sqlite、github_mcp")
+                                .desired_width(180.0),
+                        );
+                        ui.end_row();
+                        ui.label("启动命令:");
+                        ui.add(
+                            egui::TextEdit::singleline(&mut self.dialogs.ext_mgr.mcp.cmd)
+                                .hint_text("如 npx、uvx、node、python")
+                                .desired_width(180.0),
+                        );
+                        ui.end_row();
+                        ui.label("启动参数:");
+                        ui.add(
+                            egui::TextEdit::singleline(&mut self.dialogs.ext_mgr.mcp.args)
+                                .hint_text(
+                                    "支持双引号包裹含空格路径，如 -y @modelcontextprotocol/server-filesystem \"C:\\My Project\"",
+                                )
+                                .desired_width(180.0),
+                        );
+                        ui.end_row();
+                        ui.label("环境变量:");
+                        ui.add(
+                            egui::TextEdit::singleline(&mut self.dialogs.ext_mgr.mcp.env)
+                                .hint_text("可选，KEY=VAL 逗号分隔，如 GITHUB_TOKEN=ghp_xxx")
+                                .desired_width(180.0),
+                        );
+                        ui.end_row();
+                    });
+                ui.horizontal_wrapped(|ui| {
+                    ui.weak("常用第三方模板:");
+                    if ui.small_button("📁 Filesystem").clicked() {
+                        self.dialogs.ext_mgr.mcp.id = "filesystem".into();
+                        self.dialogs.ext_mgr.mcp.cmd = "npx".into();
+                        self.dialogs.ext_mgr.mcp.args =
+                            "-y @modelcontextprotocol/server-filesystem .".into();
+                    }
+                    if ui.small_button("🗄 SQLite").clicked() {
+                        self.dialogs.ext_mgr.mcp.id = "sqlite".into();
+                        self.dialogs.ext_mgr.mcp.cmd = "uvx".into();
+                        self.dialogs.ext_mgr.mcp.args = "mcp-server-sqlite --db-path app.db".into();
+                    }
+                    if ui.small_button("🌐 Fetch").clicked() {
+                        self.dialogs.ext_mgr.mcp.id = "fetch".into();
+                        self.dialogs.ext_mgr.mcp.cmd = "uvx".into();
+                        self.dialogs.ext_mgr.mcp.args = "mcp-server-fetch".into();
+                    }
+                });
+                ui.horizontal_wrapped(|ui| {
+                    if ui.button("✅ 立即添加并启用 MCP 服务").clicked() {
+                        let id = self.dialogs.ext_mgr.mcp.id.clone();
+                        let cmd = self.dialogs.ext_mgr.mcp.cmd.clone();
+                        let args = parse_quoted_args(&self.dialogs.ext_mgr.mcp.args);
+                        let env = parse_env_pairs(&self.dialogs.ext_mgr.mcp.env);
+                        match self
+                            .ai
+                            .plugin_rt_mut()
+                            .add_custom_mcp_server_with_env(&ws_root, &id, &cmd, args, env)
+                        {
+                            Ok(path) => {
+                                let msg = format!(
+                                    "已添加并启用 MCP 服务 '{}': {}",
+                                    id.trim(),
+                                    path.display()
+                                );
+                                self.dialogs.ext_mgr.feedback = msg.clone();
+                                self.cur().tip = msg;
+                                self.dialogs.ext_mgr.mcp = McpFormDraft::default();
+                            }
+                            Err(e) => self.dialogs.ext_mgr.feedback = e,
+                        }
+                    }
+                    if ui.button("📄 编辑 .mcp.json").clicked() {
+                        self.open_or_create_ext_file(ExtCoreKind::Mcp);
+                    }
+                    if ui.button("📥 导入第三方 (.json)").clicked() {
+                        self.import_third_party_ext_file(ExtCoreKind::Mcp);
+                    }
+                });
+            }
+        }
+        if !self.dialogs.ext_mgr.feedback.is_empty() {
+            ui.add_space(2.0);
+            ui.colored_label(
+                Color32::from_rgb(56, 189, 248),
+                &self.dialogs.ext_mgr.feedback,
+            );
+        }
+    }
+
+    /// 独立弹出的「扩展管理与自定义/第三方添加中心」窗口（支持切换 Skills / Hooks / MCP 页签）
+    pub(super) fn ext_manager_window(&mut self, ctx: &egui::Context) {
+        let Some(mut current_tab) = self.dialogs.ext_mgr.win else {
+            return;
+        };
+        let mut open = true;
+        egui::Window::new("🧩 扩展管理与自定义/第三方添加中心 (Skills · Hooks · MCP)")
+            .id(egui::Id::new("ext_custom_manager_window"))
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(true)
+            .default_width(540.0)
+            .default_pos(egui::pos2(48.0, 68.0))
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    for kind in [ExtCoreKind::Skills, ExtCoreKind::Hooks, ExtCoreKind::Mcp] {
+                        if ui
+                            .selectable_label(current_tab == kind, kind.tab_label())
+                            .clicked()
+                        {
+                            current_tab = kind;
+                        }
+                    }
+                });
+                ui.separator();
+                self.render_extension_manager_body(ui, current_tab);
+            });
+        if !open || ctx.input(|i| i.key_pressed(Key::Escape)) {
+            self.dialogs.ext_mgr.win = None;
+        } else {
+            self.dialogs.ext_mgr.win = Some(current_tab);
+        }
     }
 
     /// 把当前文档的文本当 Sakura 宏运行 (作用在上一份活动的另一个文档上; 只有一份就作用在自己上)
@@ -3189,8 +3996,48 @@ tags: custom, workflow
             }
         };
         let a = self.active;
+        let ext_kind = ExtCoreKind::from_plugin_id(plugin);
+        let extra = if ext_kind.is_some() {
+            let ws_root = self.extension_target_root();
+            let rt = self.ai.plugin_rt_mut();
+            let active_skills: Vec<serde_json::Value> = rt
+                .list_active_skills(&ws_root)
+                .into_iter()
+                .map(|s| {
+                    serde_json::json!({
+                        "id": s.id,
+                        "name": s.name,
+                        "trigger": s.triggers.first().cloned().unwrap_or_default(),
+                        "is_builtin": s.is_builtin,
+                    })
+                })
+                .collect();
+            let active_hooks = rt.list_active_hooks(&ws_root);
+            let active_mcp: Vec<serde_json::Value> = rt
+                .list_active_mcp_servers(&ws_root)
+                .into_iter()
+                .map(|(sid, cfg)| {
+                    serde_json::json!({
+                        "id": sid,
+                        "command": cfg.command,
+                        "args": cfg.args,
+                        "disabled": cfg.disabled,
+                    })
+                })
+                .collect();
+            Some(serde_json::json!({
+                "active_skills": active_skills,
+                "active_hooks": active_hooks,
+                "active_mcp": active_mcp,
+            }))
+        } else {
+            None
+        };
+        if let Some(kind) = ext_kind {
+            self.dialogs.ext_mgr.expanded = Some(kind);
+        }
         self.plug
-            .start(plugin, &row.perms, cmd, title, &self.docs[a], None);
+            .start(plugin, &row.perms, cmd, title, &self.docs[a], extra);
         self.docs[a].tip = trf("dlg.plugin-running", &[title]);
     }
 
@@ -4386,6 +5233,7 @@ tags: custom, workflow
         if self.dialogs.about_open {
             self.about_window(ctx);
         }
+        self.ext_manager_window(ctx);
         self.gh_window(ctx);
         self.nema_interpreter_window(ctx);
         self.upd_window(ctx);
@@ -7807,7 +8655,10 @@ impl App {
         }
         self.plug.poll(&mut self.docs, self.active, ctx);
         if self.plug.win.is_some() {
-            if let Some((id, row)) = self.plug.window(
+            let mut open_mgr: Option<ExtCoreKind> = None;
+            let mut open_file_for: Option<ExtCoreKind> = None;
+            let mut import_for: Option<ExtCoreKind> = None;
+            if let Some((id, row)) = self.plug.window_with_extra(
                 ctx,
                 self.theme_visuals
                     .as_ref()
@@ -7817,12 +8668,42 @@ impl App {
                     } else {
                         egui::Color32::from_gray(30)
                     })),
+                |ui, plugin_id| {
+                    if let Some(kind) = plugin_id.and_then(ExtCoreKind::from_plugin_id) {
+                        ui.horizontal_wrapped(|ui| {
+                            if ui
+                                .button("➕ 打开交互式添加与管理中心")
+                                .on_hover_text("直接在表单中一键添加自定义或第三方条目")
+                                .clicked()
+                            {
+                                open_mgr = Some(kind);
+                            }
+                            if ui.button("📄 打开/新建配置文件").clicked() {
+                                open_file_for = Some(kind);
+                            }
+                            if ui.button("📥 导入第三方文件").clicked() {
+                                import_for = Some(kind);
+                            }
+                        });
+                        ui.separator();
+                    }
+                },
             ) {
                 if let Some(i) = self.docs.iter().position(|d| d.id == id) {
                     self.active = i;
                     self.docs[i].goto(row, 0);
                     self.center_once = true;
                 }
+            }
+            if let Some(kind) = open_mgr {
+                self.dialogs.ext_mgr.expanded = Some(kind);
+                self.dialogs.ext_mgr.win = Some(kind);
+            }
+            if let Some(kind) = open_file_for {
+                self.open_or_create_ext_file(kind);
+            }
+            if let Some(kind) = import_for {
+                self.import_third_party_ext_file(kind);
             }
         }
         self.term.poll();

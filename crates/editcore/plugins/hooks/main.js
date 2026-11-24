@@ -35,18 +35,21 @@ ide.register({
       "• Post-Response (secret-mask): 自动脱敏响应中的凭证（支持自定义/第三方 mask_patterns 如 glpat-/xoxb-/AIza）",
       "• 自定义与第三方扩展: 支持工作区 .hooks.json / .hooks/*.json 及全局 custom_hooks/*.json（插件面板可一键新建/导入）"
     ].join("\n");
+    const runtimeHooks = doc && Array.isArray(doc.active_hooks) && doc.active_hooks.length > 0
+      ? `\n当前已挂载运行时 Hook 链 (${doc.active_hooks.length} 个):\n` + doc.active_hooks.map(h => `  - ${h}`).join("\n")
+      : "";
     if (findings.length === 0) {
       return {
         summary: "Hooks 安全巡检通过: 未发现明文密钥或危险路径引用",
         html: `<pre>${esc(
-          `[Hooks 生命周期安全引擎状态: 已启用]\n已扫描当前文档: ${lineCount} 行\n巡检结论: ✅ 安全巡检通过，未发现明文密钥或危险路径引用。\n\n当前挂载生命周期钩子:\n${activeHooks}`
+          `[Hooks 生命周期安全引擎状态: 已启用]\n已扫描当前文档: ${lineCount} 行\n巡检结论: ✅ 安全巡检通过，未发现明文密钥或危险路径引用。\n\n当前挂载生命周期钩子:\n${activeHooks}${runtimeHooks}`
         )}</pre>`
       };
     }
     return {
       summary: `Hooks 巡检发现 ${findings.length} 项风险`,
       html: `<pre>${esc(
-        `[Hooks 生命周期安全引擎状态: 发现 ${findings.length} 项风险]\n已扫描当前文档: ${lineCount} 行\n\n风险明细:\n${findings.join("\n")}\n\n当前挂载生命周期钩子:\n${activeHooks}`
+        `[Hooks 生命周期安全引擎状态: 发现 ${findings.length} 项风险]\n已扫描当前文档: ${lineCount} 行\n\n风险明细:\n${findings.join("\n")}\n\n当前挂载生命周期钩子:\n${activeHooks}${runtimeHooks}`
       )}</pre>`
     };
   },

@@ -35,8 +35,8 @@ pub mod verifier;
 pub use cookie::{CookieJar, CookieStats, FileCookie, PrunePolicy, TaskState};
 pub use guard::{ContextCompactor, LoopBreaker};
 pub use hooks::{
-    AgentHook, CustomHookSpec, CustomHooksConfig, CustomRuleHook, HookDecision, HookPipeline,
-    PathSanitizerHook, PayloadLimitHook, SensitiveDataMaskHook,
+    AgentHook, CustomHookSpec, CustomHooksConfig, CustomRuleHook, HookDecision, HookInfo,
+    HookPipeline, PathSanitizerHook, PayloadLimitHook, SensitiveDataMaskHook,
 };
 pub use mcp::{
     McpCallToolResult, McpClient, McpConfig, McpContent, McpManager, McpServerConfig,

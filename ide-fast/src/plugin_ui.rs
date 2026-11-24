@@ -21,6 +21,7 @@ struct Job {
 
 /// 结果窗口的内容
 pub struct ResultWin {
+    pub plugin_id: Option<String>,
     pub title: String,
     pub summary: String,
     pub svg: Option<Svg>,
@@ -170,6 +171,7 @@ impl PlugState {
         self.next_gen = self.next_gen.wrapping_add(1);
         let gen = self.next_gen;
         self.win = Some(ResultWin {
+            plugin_id: None,
             title: title.to_string(),
             summary,
             svg: None,
@@ -242,6 +244,7 @@ impl PlugState {
         self.next_gen = self.next_gen.wrapping_add(1);
         let gen = self.next_gen;
         self.win = Some(ResultWin {
+            plugin_id: Some(job.plugin_id.clone()),
             title: job.title.clone(),
             summary: out.summary,
             svg,
@@ -258,36 +261,52 @@ impl PlugState {
         ctx: &egui::Context,
         dark_text: Option<egui::Color32>,
     ) -> Option<(u64, usize)> {
-        let w = self.win.as_ref()?;
+        self.window_with_extra(ctx, dark_text, |_, _| {})
+    }
+
+    /// 结果窗口（支持附加自定义/第三方扩展交互管理面板）
+    pub fn window_with_extra(
+        &mut self,
+        ctx: &egui::Context,
+        dark_text: Option<egui::Color32>,
+        mut extra_ui: impl FnMut(&mut egui::Ui, Option<&str>),
+    ) -> Option<(u64, usize)> {
+        let plugin_id = self.win.as_ref()?.plugin_id.clone();
+        let title = self.win.as_ref()?.title.clone();
+        let summary = self.win.as_ref()?.summary.clone();
+        let doc_id = self.win.as_ref()?.doc_id;
+        let gen = self.win.as_ref()?.gen;
         let mut open = true;
         let mut jump = None;
-        let doc_id = w.doc_id;
-        let win_id = egui::Id::new(("plugin_result_window", w.gen));
-        egui::Window::new(w.title.clone())
+        let win_id = egui::Id::new(("plugin_result_window", gen));
+        egui::Window::new(title)
             .id(win_id)
             .open(&mut open)
-            .default_size([540.0, 440.0])
+            .default_size([560.0, 480.0])
             .resizable(true)
             .default_pos(egui::pos2(24.0, 56.0))
             .show(ctx, |ui| {
-                if !w.summary.is_empty() {
-                    ui.label(&w.summary);
+                if !summary.is_empty() {
+                    ui.label(&summary);
                     ui.separator();
                 }
-                egui::ScrollArea::both()
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        if let Some(svg) = &w.svg {
-                            if let Some(line) = svg_lite::show(ui, svg, dark_text) {
-                                jump = Some((doc_id, line.saturating_sub(1)));
+                extra_ui(ui, plugin_id.as_deref());
+                if let Some(w) = self.win.as_ref() {
+                    egui::ScrollArea::both()
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            if let Some(svg) = &w.svg {
+                                if let Some(line) = svg_lite::show(ui, svg, dark_text) {
+                                    jump = Some((doc_id, line.saturating_sub(1)));
+                                }
+                            } else {
+                                ui.add(
+                                    egui::Label::new(egui::RichText::new(&w.text).monospace())
+                                        .selectable(true),
+                                );
                             }
-                        } else {
-                            ui.add(
-                                egui::Label::new(egui::RichText::new(&w.text).monospace())
-                                    .selectable(true),
-                            );
-                        }
-                    });
+                        });
+                }
             });
         if !open || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             self.win = None;

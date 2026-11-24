@@ -166,7 +166,14 @@ impl McpConfig {
 struct ClientWorker {
     req_tx: Sender<JsonRpcRequest>,
     resp_rx: Arc<Mutex<Receiver<JsonRpcResponse>>>,
-    _child: Child,
+    child: Child,
+}
+
+impl Drop for ClientWorker {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
 }
 
 /// 外部 MCP 服务器的活跃客户端连接
@@ -176,6 +183,9 @@ pub struct McpClient {
     next_id: AtomicU64,
     worker: Mutex<Option<ClientWorker>>,
     cached_tools: Mutex<Option<Vec<McpToolDefinition>>>,
+    warming: std::sync::atomic::AtomicBool,
+    warm_failed: std::sync::atomic::AtomicBool,
+    last_error: Mutex<Option<String>>,
 }
 
 impl McpClient {
@@ -186,7 +196,20 @@ impl McpClient {
             next_id: AtomicU64::new(1),
             worker: Mutex::new(None),
             cached_tools: Mutex::new(None),
+            warming: std::sync::atomic::AtomicBool::new(false),
+            warm_failed: std::sync::atomic::AtomicBool::new(false),
+            last_error: Mutex::new(None),
         }
+    }
+
+    /// 非阻塞读取已缓存的工具清单（若尚未拉取则返回 `None`，绝不阻塞 UI 主线程）
+    pub fn cached_tools(&self) -> Option<Vec<McpToolDefinition>> {
+        self.cached_tools.lock().ok().and_then(|g| g.clone())
+    }
+
+    /// 返回最近一次连接或预热失败原因（保证所有失败可观测）
+    pub fn last_error(&self) -> Option<String> {
+        self.last_error.lock().ok().and_then(|g| g.clone())
     }
 
     /// 惰性确保子进程已启动并完成 initialize 握手
@@ -260,7 +283,7 @@ impl McpClient {
         *lock = Some(ClientWorker {
             req_tx,
             resp_rx: Arc::new(Mutex::new(resp_rx)),
-            _child: child,
+            child,
         });
 
         // 握手完成 initialize
@@ -283,7 +306,7 @@ impl McpClient {
                 },
                 "clientInfo": {
                     "name": "IDE1.0-Fast",
-                    "version": "0.6.7"
+                    "version": env!("CARGO_PKG_VERSION")
                 }
             }),
         };
@@ -433,6 +456,27 @@ pub struct McpManager {
     servers: HashMap<String, Arc<McpClient>>,
 }
 
+struct WarmingResetGuard<'a>(&'a std::sync::atomic::AtomicBool);
+
+impl Drop for WarmingResetGuard<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::SeqCst);
+    }
+}
+
+fn format_openai_tool(server_name: &str, t: &McpToolDefinition) -> Value {
+    let function_name = format!("mcp_{}_{}", server_name, t.name);
+    let description = format!("[MCP: {}] {}", server_name, t.description);
+    json!({
+        "type": "function",
+        "function": {
+            "name": function_name,
+            "description": description,
+            "parameters": t.input_schema
+        }
+    })
+}
+
 impl McpManager {
     pub fn new() -> Self {
         Self {
@@ -440,12 +484,90 @@ impl McpManager {
         }
     }
 
-    /// 从配置对象加载 (只登记配置，不立即起进程，零耗时)
+    /// 从配置对象加载 (登记配置并触发后台异步预热；若配置未变则复用已有连接与缓存)
     pub fn load_config(&mut self, config: McpConfig) {
         for (name, srv_cfg) in config.mcp_servers {
+            if let Some(existing) = self.servers.get(&name) {
+                if existing.config == srv_cfg {
+                    continue;
+                }
+            }
             let client = Arc::new(McpClient::new(name.clone(), srv_cfg));
             self.servers.insert(name, client);
         }
+        self.warm_tools_async();
+    }
+
+    /// 异步后台预热未缓存的 MCP Server 工具列表（失败或启动错误记录到 `last_error` 并阻断无节制重连，绝不阻塞 UI）
+    pub fn warm_tools_async(&self) {
+        for client in self.servers.values() {
+            if client.config.disabled
+                || client.cached_tools().is_some()
+                || client.warm_failed.load(Ordering::SeqCst)
+            {
+                continue;
+            }
+            if client
+                .warming
+                .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+            {
+                let c = Arc::clone(client);
+                if let Err(e) = std::thread::Builder::new()
+                    .name(format!("mcp-warm-{}", c.server_name))
+                    .spawn(move || {
+                        let _guard = WarmingResetGuard(&c.warming);
+                        if let Err(err) = c.list_tools() {
+                            if let Ok(mut le) = c.last_error.lock() {
+                                *le = Some(err);
+                            }
+                            c.warm_failed.store(true, Ordering::SeqCst);
+                        } else if let Ok(mut le) = c.last_error.lock() {
+                            *le = None;
+                        }
+                    })
+                {
+                    if let Ok(mut le) = client.last_error.lock() {
+                        *le = Some(format!("无法启动 MCP 工具预热线程: {e}"));
+                    }
+                    client.warm_failed.store(true, Ordering::SeqCst);
+                    client.warming.store(false, Ordering::SeqCst);
+                }
+            }
+        }
+    }
+
+    /// 非阻塞聚合已缓存的 MCP 工具列表（后台预热若正在进行中，最多微等待 150ms 让快速本地 stdio 服务就绪）
+    pub fn aggregate_openai_tools_nonblocking(&self) -> Vec<Value> {
+        self.warm_tools_async();
+        let has_warming = self
+            .servers
+            .values()
+            .any(|c| !c.config.disabled && c.warming.load(Ordering::SeqCst));
+        if has_warming {
+            for _ in 0..15 {
+                if self
+                    .servers
+                    .values()
+                    .all(|c| c.config.disabled || !c.warming.load(Ordering::SeqCst))
+                {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+        let mut out = Vec::new();
+        for (server_name, client) in &self.servers {
+            if client.config.disabled {
+                continue;
+            }
+            if let Some(tools) = client.cached_tools() {
+                for t in tools {
+                    out.push(format_openai_tool(server_name, &t));
+                }
+            }
+        }
+        out
     }
 
     /// 聚合获取所有已配置 MCP Server 的工具列表并转换为 OpenAI Function Tools 格式
@@ -457,34 +579,35 @@ impl McpManager {
             }
             if let Ok(tools) = client.list_tools() {
                 for t in tools {
-                    let function_name = format!("mcp_{}_{}", server_name, t.name);
-                    let description = format!("[MCP: {}] {}", server_name, t.description);
-                    out.push(json!({
-                        "type": "function",
-                        "function": {
-                            "name": function_name,
-                            "description": description,
-                            "parameters": t.input_schema
-                        }
-                    }));
+                    out.push(format_openai_tool(server_name, &t));
                 }
             }
         }
         out
     }
 
-    /// 执行以 `mcp_<server>_<tool>` 格式命名的工具调用
+    /// 执行以 `mcp_<server>_<tool>` 格式命名的工具调用（支持 `server_name` 中包含 `_` 或 `-`，按最长注册服务名前缀匹配）
     pub fn dispatch_tool_call(
         &self,
         full_name: &str,
         arguments: Value,
     ) -> Option<Result<McpCallToolResult, String>> {
         let rest = full_name.strip_prefix("mcp_")?;
-        let sep = rest.find('_')?;
-        let server_name = &rest[..sep];
-        let tool_name = &rest[sep + 1..];
-
-        let client = self.servers.get(server_name)?;
+        let mut matched: Option<(&str, &Arc<McpClient>, &str)> = None;
+        for (srv_name, client) in &self.servers {
+            if let Some(after_srv) = rest.strip_prefix(srv_name.as_str()) {
+                if let Some(tool_name) = after_srv.strip_prefix('_') {
+                    if !tool_name.is_empty()
+                        && matched
+                            .as_ref()
+                            .is_none_or(|(prev_srv, _, _)| srv_name.len() > prev_srv.len())
+                    {
+                        matched = Some((srv_name.as_str(), client, tool_name));
+                    }
+                }
+            }
+        }
+        let (_, client, tool_name) = matched?;
         Some(client.call_tool(tool_name, arguments))
     }
 
@@ -496,6 +619,17 @@ impl McpManager {
             .map(|(k, v)| (k.as_str(), !v.config.disabled))
             .collect();
         list.sort_by_key(|(k, _)| *k);
+        list
+    }
+
+    /// 列出所有已注册服务器的完整启动配置（按名称升序排序）
+    pub fn list_server_configs(&self) -> Vec<(String, McpServerConfig)> {
+        let mut list: Vec<(String, McpServerConfig)> = self
+            .servers
+            .iter()
+            .map(|(k, v)| (k.clone(), v.config.clone()))
+            .collect();
+        list.sort_by(|a, b| a.0.cmp(&b.0));
         list
     }
 }
@@ -518,7 +652,7 @@ impl McpServerHost {
         Self {
             server_info: json!({
                 "name": "IDE1.0-Fast-Host",
-                "version": "0.6.7",
+                "version": env!("CARGO_PKG_VERSION"),
             }),
         }
     }
@@ -751,9 +885,29 @@ mod tests {
 
     #[test]
     fn test_mcp_manager_dispatch_name_formatting() {
-        let mgr = McpManager::new();
+        let mut mgr = McpManager::new();
         // 验证不是以 mcp_ 开头的不会分派
         assert!(mgr.dispatch_tool_call("ordinary_tool", json!({})).is_none());
         assert!(mgr.dispatch_tool_call("mcp_server", json!({})).is_none());
+
+        // 验证带下划线的 server_id (如 my_custom_srv) 能通过最长前缀匹配准确路由到对应的服务器而非截断在第一个 '_'
+        let cfg = McpConfig::from_json_str(
+            r#"{
+                "mcpServers": {
+                    "my_custom_srv": {
+                        "command": "nonexistent_cmd_for_test",
+                        "args": [],
+                        "disabled": true
+                    }
+                }
+            }"#,
+        )
+        .unwrap();
+        mgr.load_config(cfg);
+        let res = mgr.dispatch_tool_call("mcp_my_custom_srv_read_file", json!({}));
+        assert!(
+            res.is_some_and(|r| r.is_err()),
+            "带下划线的 server_name 必须能匹配到 my_custom_srv"
+        );
     }
 }

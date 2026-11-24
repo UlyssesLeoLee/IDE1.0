@@ -22,10 +22,28 @@ pub enum HookDecision {
     Reject(String),
 }
 
+/// Hook 元数据摘要（供 UI 展示名称、描述与内建/自定义区分）
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HookInfo {
+    pub name: String,
+    pub description: String,
+    pub is_builtin: bool,
+}
+
 /// 智能体生命周期钩子特征
 pub trait AgentHook: Send + Sync {
     /// 钩子名称
     fn name(&self) -> &str;
+
+    /// 钩子功能说明（可选）
+    fn description(&self) -> &str {
+        ""
+    }
+
+    /// 是否为只读内建钩子
+    fn is_builtin(&self) -> bool {
+        true
+    }
 
     /// 1. 用户输入到达，发送至 LLM 之前的预处理
     fn pre_input(&self, _input: &str) -> HookDecision {
@@ -77,6 +95,18 @@ impl HookPipeline {
     /// 返回当前已挂载的全部 Hook 名称清单（含内建、用户自定义与第三方 Hook）
     pub fn hook_names(&self) -> Vec<String> {
         self.hooks.iter().map(|h| h.name().to_string()).collect()
+    }
+
+    /// 返回当前已挂载的全部 Hook 详细元数据（名称、描述与是否内建）
+    pub fn hook_infos(&self) -> Vec<HookInfo> {
+        self.hooks
+            .iter()
+            .map(|h| HookInfo {
+                name: h.name().to_string(),
+                description: h.description().to_string(),
+                is_builtin: h.is_builtin(),
+            })
+            .collect()
     }
 
     /// 从单个 JSON 配置文件加载用户自定义或第三方 Hook 规则（支持 `{"hooks": [...]}` 或单条对象）
@@ -220,6 +250,10 @@ impl AgentHook for PathSanitizerHook {
         "PathSanitizerHook"
     }
 
+    fn description(&self) -> &str {
+        "内建目录穿越与私钥防泄露拦截"
+    }
+
     fn pre_tool_call(&self, _tool: &str, args: &Value) -> HookDecision {
         let path = args
             .get("path")
@@ -266,6 +300,10 @@ impl AgentHook for PayloadLimitHook {
         "PayloadLimitHook"
     }
 
+    fn description(&self) -> &str {
+        "内建超大工具输出自动截断保护 (20K)"
+    }
+
     fn post_tool_call(&self, _tool: &str, result: &str) -> HookDecision {
         if result.len() > self.max_chars {
             let truncated: String = result.chars().take(self.max_chars).collect();
@@ -285,6 +323,10 @@ pub struct SensitiveDataMaskHook;
 impl AgentHook for SensitiveDataMaskHook {
     fn name(&self) -> &str {
         "SensitiveDataMaskHook"
+    }
+
+    fn description(&self) -> &str {
+        "内建 API Key 与敏感凭证自动脱敏"
     }
 
     fn post_tool_call(&self, _tool: &str, result: &str) -> HookDecision {
@@ -381,11 +423,35 @@ impl CustomRuleHook {
     pub fn new(spec: CustomHookSpec) -> Self {
         Self { spec }
     }
+
+    fn apply_mask_patterns(&self, text: &str) -> HookDecision {
+        let mut current = text.to_string();
+        let mut modified = false;
+        for pat in &self.spec.mask_patterns {
+            if !pat.is_empty() && current.contains(pat.as_str()) {
+                current = mask_token_prefix(&current, pat);
+                modified = true;
+            }
+        }
+        if modified {
+            HookDecision::Modify(current)
+        } else {
+            HookDecision::Continue
+        }
+    }
 }
 
 impl AgentHook for CustomRuleHook {
     fn name(&self) -> &str {
         &self.spec.name
+    }
+
+    fn description(&self) -> &str {
+        &self.spec.description
+    }
+
+    fn is_builtin(&self) -> bool {
+        false
     }
 
     fn pre_input(&self, input: &str) -> HookDecision {
@@ -428,35 +494,11 @@ impl AgentHook for CustomRuleHook {
     }
 
     fn post_tool_call(&self, _tool: &str, result: &str) -> HookDecision {
-        let mut current = result.to_string();
-        let mut modified = false;
-        for pat in &self.spec.mask_patterns {
-            if !pat.is_empty() && current.contains(pat.as_str()) {
-                current = mask_token_prefix(&current, pat);
-                modified = true;
-            }
-        }
-        if modified {
-            HookDecision::Modify(current)
-        } else {
-            HookDecision::Continue
-        }
+        self.apply_mask_patterns(result)
     }
 
     fn post_response(&self, response: &str) -> HookDecision {
-        let mut current = response.to_string();
-        let mut modified = false;
-        for pat in &self.spec.mask_patterns {
-            if !pat.is_empty() && current.contains(pat.as_str()) {
-                current = mask_token_prefix(&current, pat);
-                modified = true;
-            }
-        }
-        if modified {
-            HookDecision::Modify(current)
-        } else {
-            HookDecision::Continue
-        }
+        self.apply_mask_patterns(response)
     }
 }
 

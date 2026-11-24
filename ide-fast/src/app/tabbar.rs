@@ -401,17 +401,17 @@ impl App {
                 ui.close();
             }
             if doc.grep_result {
-                if ui.button(trz("📂 打开当前命中文件")).clicked() {
+                if ui.button(trz("打开当前命中文件")).clicked() {
                     *cmd = Some(TabCmd::OpenGrepHit(i));
                     ui.close();
                 }
-                if ui.button(trz("📑 复制全部 Grep 结果文本")).clicked() {
+                if ui.button(trz("复制全部 Grep 结果文本")).clicked() {
                     ctx.copy_text(doc.lines.join("\n"));
                     ui.close();
                 }
             } else if let Some(p) = &doc.path {
                 let p_clone = p.clone();
-                if ui.button(trz("🗂️ 在资源管理器中定位")).clicked() {
+                if ui.button(trz("在资源管理器中定位")).clicked() {
                     Self::reveal_in_file_manager(&p_clone);
                     ui.close();
                 }

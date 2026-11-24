@@ -225,6 +225,38 @@ impl SkillRegistry {
         None
     }
 
+    /// 兼容 Pre-Input Hook 前置提示词注入后的触发词匹配（如 `"[Custom Hook]\n/review check"`）
+    /// 返回 `(匹配技能, 保留前置注入并与触发词后正文拼接的新提示词)`
+    pub fn match_prompt_with_prefix<'a>(&'a self, prompt: &'a str) -> Option<(&'a Skill, String)> {
+        if let Some((skill, rest)) = self.match_prompt(prompt) {
+            return Some((skill, rest.to_string()));
+        }
+        let mut offset = 0usize;
+        for line in prompt.split_inclusive('\n') {
+            let line_trimmed = line.trim_start();
+            if line_trimmed.starts_with('/') {
+                if let Some(first_word) = line_trimmed.split_whitespace().next() {
+                    if let Some(skill) = self.find_by_trigger(first_word) {
+                        let prefix = prompt[..offset].trim_end();
+                        let leading_ws = line.len() - line_trimmed.len();
+                        let after_trigger =
+                            prompt[offset + leading_ws + first_word.len()..].trim_start();
+                        let combined = if prefix.is_empty() {
+                            after_trigger.to_string()
+                        } else if after_trigger.is_empty() {
+                            prefix.to_string()
+                        } else {
+                            format!("{prefix}\n{after_trigger}")
+                        };
+                        return Some((skill, combined));
+                    }
+                }
+            }
+            offset += line.len();
+        }
+        None
+    }
+
     /// 列出所有技能清单 (内建排在前面，保持确定性排序)
     pub fn list(&self) -> Vec<&Skill> {
         let mut list: Vec<&Skill> = self.skills.values().collect();
@@ -491,5 +523,15 @@ mod tests {
         let (matched, rest) = reg.match_prompt("/sql SELECT * FROM users").unwrap();
         assert_eq!(matched.id, "sql-optimizer");
         assert_eq!(rest, "SELECT * FROM users");
+
+        // Pre-Input Hook 注入前缀后仍可匹配后续行的 /trigger 并保留前缀
+        let (matched2, combined) = reg
+            .match_prompt_with_prefix("[Custom Hook] 请注意安全\n/sql SELECT id FROM accounts")
+            .unwrap();
+        assert_eq!(matched2.id, "sql-optimizer");
+        assert_eq!(
+            combined,
+            "[Custom Hook] 请注意安全\nSELECT id FROM accounts"
+        );
     }
 }

@@ -153,6 +153,17 @@ impl AiState {
     pub(super) fn plugin_rt_mut(&mut self) -> &mut AgentPluginRuntime {
         self.plugin_rt.get_or_insert_with(Default::default)
     }
+
+    /// 将指定技能触发词（如 `/my-skill`）填充到当前 AI 对话输入框（保留已有输入正文）
+    pub(super) fn fill_skill_trigger(&mut self, trigger: &str) {
+        let trig = trigger.trim();
+        let existing = self.input.trim();
+        if existing.is_empty() {
+            self.input = format!("{trig} ");
+        } else if !existing.starts_with(trig) {
+            self.input = format!("{trig} {existing}");
+        }
+    }
 }
 
 /// 字节数 → 人读文本 (设置菜单的 Cookie 占用显示)
@@ -732,9 +743,24 @@ impl App {
         )
     }
 
-    fn ai_start(&mut self, q: String, with_ctx: bool, ctx: &egui::Context) {
+    fn ai_start(&mut self, raw_q: String, with_ctx: bool, ctx: &egui::Context) {
         let i = self.active.min(self.docs.len() - 1);
-        let ws_root = find_workspace_root(self.docs[i].path.as_deref());
+        let ws_root = self
+            .side
+            .root
+            .clone()
+            .unwrap_or_else(|| find_workspace_root(self.docs[i].path.as_deref()));
+
+        // 0. 执行 Pre-Input 生命周期拦截与前置提示词注入钩子 (仅在 hooks 插件激活时生效)
+        self.ai.plugin_rt_mut().ensure_hooks_config(&ws_root);
+        let q = match self.ai.plugin_rt_mut().run_pre_input_hook(raw_q.clone()) {
+            Ok(processed) => processed,
+            Err(reject_reason) => {
+                self.ai.items.push(Item::User(raw_q));
+                self.ai.items.push(Item::Err(reject_reason));
+                return;
+            }
+        };
 
         let c = if with_ctx { self.ai_context(i) } else { None };
         let mut sys = ai::system_prompt(&self.docs[i].name, self.docs[i].lines.len(), c.as_ref());
@@ -753,7 +779,7 @@ impl App {
         }
 
         // 文件即任务: 载入该文件的会话 Cookie (断点续航 + 局部不变量), 并把本轮意图记进去
-        let (run_cookie, resume) = self.cookie_begin(i, &ws_root, &q);
+        let (run_cookie, resume) = self.cookie_begin(i, &ws_root, &raw_q);
 
         let installed = self.ai.plugin_rt_mut().refresh_installed_plugins().to_vec();
         let active_mod = self.ai.active_mod.clone();
@@ -777,11 +803,11 @@ impl App {
         let tools = prepared.tools;
 
         self.ai.input.clear();
-        self.ai.items.push(Item::User(q.clone()));
+        self.ai.items.push(Item::User(raw_q.clone()));
         // 记录工作记忆 (零分配环形缓冲)
         self.ai
             .plugin_rt_mut()
-            .record_working_item("user", &q, vec!["prompt".into()]);
+            .record_working_item("user", &raw_q, vec!["prompt".into()]);
 
         let (rx, handle) = self.ai_spawn(&msgs, &tools, ctx);
         self.ai.run = Some(Run {
